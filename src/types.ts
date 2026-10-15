@@ -1,0 +1,21 @@
+export type Shape='rect'|'booth';
+export type TStatus='available'|'occupied'|'lapsed'|'blocked_private';
+export type PType='W'|'P'|'R'|'V';
+export type Heat='HOT_GREEN'|'CAUTION_WAIT'|'NO_TABLE'|'WARM_AMBER';
+export interface Floor{id:string;name:string;description:string;is_active:boolean}
+export interface Section{id:string;name:string;color:string;min_occupancy?:number;min_turns?:number}
+export interface Table{id:string;label:string;capacity:number;min_capacity:number;x:number;y:number;width:number;height:number;shape:Shape;status:TStatus;assigned_waiter_id:string|null;section_id:string|null;floor_id:string}
+export interface Assoc{id:string;primary_table_id:string;associated_table_ids:string[];created_at:string}
+export interface Waiter{id:string;name:string;active_cover_count:number;last_seated_at:string|null;section_ids:string[];is_active:boolean;skip_penalty?:number;tally_covers?:number}
+export interface Slot{id:string;table_id:string;party_id:number;party_label:string;party_size:number;seated_at:string;expected_turn_at:string;status:'ACTIVE'|'LAPSED'|'COMPLETED';ended_at?:string}
+export interface Reservation{id:string;party_id:number;prefix:string;type:PType;name:string;party_size:number;time:string;duration_min:number;phone:string;notes:string;table_id:string|null;status:'BOOKED'|'ARRIVED'|'SEATED'|'NO_SHOW'|'QUEUED';arrived_count?:number;arrived_at?:string}
+export interface QueueEntry{id:string;party_id:number;prefix:string;type:PType;name:string;party_size:number;queued_at:string;quoted_wait_min:number;notes:string;origin_reservation_id:string|null;status:'WAITING'|'SEATED';arrived_count?:number}
+export interface Unit{id:string;tableIds:string[];label:string;capacity:number;status:TStatus;floor_id:string;sectionId:string|null}
+export interface Data{floors:Floor[];sections:Section[];tables:Table[];assocs:Assoc[];slots:Slot[];waiters:Waiter[];reservations:Reservation[];queue:QueueEntry[];nextPartyId:number;prefix:string;events:PrivateEvent[];audit:AuditEntry[];sim?:SimEntry[]}
+export type Snap=Pick<Data,'tables'|'assocs'|'slots'|'waiters'|'reservations'|'queue'|'events'>;
+export interface PrivateEvent{id:string;name:string;table_ids:string[];start:string;end:string;locked_ids:string[];reclaimed:boolean}
+export interface AuditEntry{id:string;at:string;actor:'host'|'system';action:'create'|'update'|'delete'|'event';entity:string;ref:string;label:string;changes?:{f:string;from:string;to:string}[];note?:string}
+export interface Ref{label:string;value:string;tid?:string;warn?:boolean}
+export interface Receipt{k:number;title:string;refs:Ref[]}
+/** Simulation door list: guests at/heading to the door. 'walkin' = party (here of size present); 'arrive' = +size guests for an existing reservation or queued party. */
+export interface SimEntry{id:string;at:string;kind:'walkin'|'arrive';name:string;size:number;here?:number;ref?:{type:'res'|'queue';id:string}}
