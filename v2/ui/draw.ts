@@ -17,6 +17,7 @@ const CHIP: Record<string, string> = {
 const SHORT: Record<string, string> = {banquette: 'bnq', hightop: 'high', window: 'view', sunny: 'sun', accessible: 'ada'}
 const IMPLIED = ['chairs'] // the table's shape already says it
 const ON_FLOOR = ['seat'] // chip groups drawn on the layout: how it seats; the rest (zone, air, access) stay in the tooltip and the host's intake
+const SMALL = 25 // tables shorter than this (stools) show only their label; the tooltip has the rest
 const SHOWN = 3 // chips under a table; the rest fold into "+n" (the tooltip lists all)
 const feats = defaultPolicy.host.feats
 const cw = (s: string) => s.length * 5.4 + 10
@@ -32,8 +33,9 @@ export const chips = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => 
 const tip = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => (t.feat?.tags.length ? ` | ${t.feat.tags.map(f => feats[f]?.label ?? f).join(', ')}` : '')
 export const table = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
   `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
-  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
-  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + '</g>'
+  (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
+    txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
+    txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
 /** `live` = the active mode has standing holds; otherwise the chunk tints fade (nobody holds them). */
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
   const lead = [...ts].sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x)[0]
