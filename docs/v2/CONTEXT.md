@@ -20,3 +20,4 @@
 - v1 parity not yet in v2: Gantt, audit log, ledger, locator, sections-as-blobs editing, layout mode/editing, shifts, drawer widgets, book wizard.
 - Convention (pinned): a party is "led, not seated" when it has an `offer` with `status: 'accepted'` on a table and no `slot` on that table; "seated" = has the slot. Stage for requests: arrived | seated accordingly.
 - Starters: `ui/scenario.ts` `load(app,id)` loads presets or `scenarios[id]`; `choices()` lists both; `controls.ts` picker must render `choices()` (U4).
+- Match (E1): a want counts only once `said` or in `heard` (the host asks, then records); "elsewhere" = another floor or section than the best-scoring spot; `heard` events derive from the intake patch in E0 (Decision carries no events).
