@@ -17,9 +17,19 @@ test('every table carries an area tag with the expected counts', () => {
   assert.deepEqual(['main', 'grotto', 'patio', 'bar', 'upstairs'].map(a => inArea(a).length), [24, 6, 7, 18, 11])
   assert.deepEqual(labels(inArea('grotto')).sort(), ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'])
 })
-test('main is four contiguous section chunks by table number, held by the four floor servers', () => {
-  const main = inArea('main').sort((a, b) => Number(a.table.label) - Number(b.table.label))
-  assert.deepEqual(main.map(t => t.table.section), Array.from({length: 24}, (_, i) => `sec_m${Math.floor(i / 6) + 1}`))
+test('main is four quadrant blocks with balanced covers, never interleaved, held by the four floor servers', () => {
+  const main = having(w, 'table', 'area', 'pos').filter(t => t.area.id === 'main')
+  const sec = (label: string) => main.find(t => t.table.label === label)!.table.section
+  const by = (s: number) => main.filter(t => t.table.section === `sec_m${s}`)
+  const covers = [1, 2, 3, 4].map(s => by(s).reduce((a, t) => a + t.table.capacity, 0))
+  assert.equal([1, 2, 3, 4].reduce((a, s) => a + by(s).length, 0), 24)
+  assert.ok(Math.max(...covers) - Math.min(...covers) <= defaultPolicy.section.tol * (covers.reduce((a, b) => a + b, 0) / 4) * 2 + 2, `covers ${covers}`)
+  assert.ok(new Set(['1', '2', '3', '4', '24'].map(sec)).size >= 2, 'no server holds every booth')
+  assert.deepEqual([sec('5') === sec('7'), sec('13') === sec('15'), sec('6') === sec('8'), sec('14') === sec('16')], [true, true, true, true]) // each quad splits along its horizontal aisle
+  assert.deepEqual([sec('5') !== sec('6'), sec('13') !== sec('14')], [true, true])
+  const bx = (s: number) => { const ts = by(s); return {x0: Math.min(...ts.map(t => t.pos.x)), x1: Math.max(...ts.map(t => t.pos.x + t.pos.w)), y0: Math.min(...ts.map(t => t.pos.y)), y1: Math.max(...ts.map(t => t.pos.y + t.pos.h))} }
+  const inside = (s: number, o: number) => by(o).filter(t => t.pos.x >= bx(s).x0 && t.pos.x + t.pos.w <= bx(s).x1 && t.pos.y >= bx(s).y0 && t.pos.y + t.pos.h <= bx(s).y1).length
+  assert.deepEqual([1, 2, 3, 4].flatMap(s => [1, 2, 3, 4].filter(o => o !== s).map(o => inside(s, o))).filter(Boolean), [], 'no section has another section\'s table inside its bounds')
   const servers = having(w, 'staff').filter(s => !s.staff.area)
   assert.deepEqual(servers.map(s => [s.staff.weight, s.staff.sections]), [1, 2, 3, 4].map(i => [undefined, [`sec_m${i}`]]))
 })
@@ -58,8 +68,14 @@ test('main floor is laid out physically: no overlaps, and adjacency (adj) is sym
   assert.deepEqual(ts.flatMap((a, i) => ts.slice(i + 1).filter(b => hit(a, b)).map(b => [a.id, b.id])), [])
   const adj = (id: string) => w.ents[id]!.adj?.with ?? []
   assert.ok(ts.every(t => adj(t.id).every(o => adj(o).includes(t.id) && w.ents[o]!.area!.id === t.area.id)))
-  assert.deepEqual([adj('rf_5'), adj('rf_6')], [['rf_6'], ['rf_5', 'rf_7']])
-  assert.deepEqual([adj('rf_4').includes('rf_5'), adj('rf_9').includes('rf_13'), adj('rf_24')], [false, false, []])
+  assert.deepEqual([adj('rf_5'), adj('rf_6')], [['rf_6', 'rf_7'], ['rf_5', 'rf_8']])
+  assert.deepEqual([adj('rf_4').includes('rf_5'), adj('rf_9').includes('rf_13'), adj('rf_24')], [false, false, ['rf_23']])
+})
+const caps = (ids: string[]) => ids.map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.table!.shape])
+test('grotto tables are 4-tops; bar B1-B12 are single stools, B14/B16/B20/B22 are 3-top corner booths, B15 a 2-top, B21 a 4-top', () => {
+  assert.deepEqual(caps(['g1', 'g2', 'g3', 'g4', 'g5', 'g6']), Array(6).fill([4, 'rect']))
+  assert.deepEqual(caps(Array.from({length: 12}, (_, i) => `b${i + 1}`)), Array(12).fill([1, 'stool']))
+  assert.deepEqual(caps(['b14', 'b16', 'b20', 'b22', 'b15', 'b21']), [...Array(4).fill([3, 'booth']), [2, 'rect'], [4, 'rect']])
 })
 test('adjacency covers only the main area (the only physical layout): grotto, bar, patio, upstairs carry none', () => {
   assert.deepEqual(having(w, 'table', 'area').filter(t => t.area.id !== 'main' && w.ents[t.id]!.adj).map(t => t.id), [])

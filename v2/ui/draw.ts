@@ -14,29 +14,31 @@ const CHIP: Record<string, string> = {
   seat: 'fill-sky-100 stroke-sky-500 dark:fill-sky-950 dark:stroke-sky-400', zone: 'fill-emerald-100 stroke-emerald-500 dark:fill-emerald-950 dark:stroke-emerald-400',
   air: 'fill-amber-100 stroke-amber-500 dark:fill-amber-950 dark:stroke-amber-400', access: 'fill-violet-100 stroke-violet-500 dark:fill-violet-950 dark:stroke-violet-400',
 }
+const SHORT: Record<string, string> = {banquette: 'bnq', hightop: 'high', window: 'view', sunny: 'sun', accessible: 'ada'}
+const IMPLIED = ['chairs'] // the table's shape already says it
+const ON_FLOOR = ['seat'] // chip groups drawn on the layout: how it seats; the rest (zone, air, access) stay in the tooltip and the host's intake
 const SHOWN = 3 // chips under a table; the rest fold into "+n" (the tooltip lists all)
 const feats = defaultPolicy.host.feats
-const cw = (s: string) => s.length * 4.2 + 6
+const cw = (s: string) => s.length * 5.4 + 10
 /** Feature chips in a centred row under the table: a 4-letter tag per feature, coloured by its group. */
 export const chips = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => {
-  const tags = (t.feat?.tags ?? []).map(f => ({f, s: (feats[f]?.label ?? f).slice(0, 4), cls: CHIP[feats[f]?.group ?? 'air']}))
-  const row = [...tags.slice(0, SHOWN), ...(tags.length > SHOWN ? [{f: '+', s: `+${tags.length - SHOWN}`, cls: CHIP.access}] : [])]
+  const tags = (t.feat?.tags ?? []).filter(f => !IMPLIED.includes(f) && ON_FLOOR.includes(feats[f]?.group ?? '')).map(f => ({f, tip: feats[f]?.label ?? f, s: SHORT[f] ?? (feats[f]?.label ?? f).slice(0, 5), cls: CHIP[feats[f]?.group ?? 'air']}))
+  const row = [...tags.slice(0, SHOWN), ...(tags.length > SHOWN ? [{f: '+', tip: tags.slice(SHOWN).map(x => x.tip).join(', '), s: `+${tags.length - SHOWN}`, cls: CHIP.access}] : [])]
   const ws = row.map(c => cw(c.s)), total = ws.reduce((a, b) => a + b + 2, -2)
   const xs = ws.map((_, i) => t.pos.x + t.pos.w / 2 - total / 2 + ws.slice(0, i).reduce((a, b) => a + b + 2, 0))
-  return row.map((c, i) => `<g data-feat="${esc(c.f)}"><rect x="${xs[i]}" y="${t.pos.y + t.pos.h + 3}" width="${ws[i]}" height="9" rx="4" stroke-width="1" class="${c.cls}"/>` +
-    txt(xs[i] + ws[i] / 2, t.pos.y + t.pos.h + 10, 'fill-slate-700 text-[7px] dark:fill-slate-200', c.s) + '</g>').join('')
+  return row.map((c, i) => `<g data-feat="${esc(c.f)}"><title>${esc(c.tip)}</title><rect x="${xs[i]}" y="${t.pos.y + t.pos.h + 4}" width="${ws[i]}" height="13" rx="5" stroke-width="1" class="${c.cls}"/>` +
+    txt(xs[i] + ws[i] / 2, t.pos.y + t.pos.h + 13.5, 'fill-slate-700 text-[9px] font-medium dark:fill-slate-200', c.s) + '</g>').join('')
 }
 const tip = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => (t.feat?.tags.length ? ` | ${t.feat.tags.map(f => feats[f]?.label ?? f).join(', ')}` : '')
 export const table = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
-  `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${t.table.shape === 'booth' ? 4 : 12}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
+  `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
   txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
-  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + chips(t) + '</g>'
+  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + '</g>'
 /** `live` = the active mode has standing holds; otherwise the chunk tints fade (nobody holds them). */
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
-  const xs = ts.flatMap(t => [t.pos.x, t.pos.x + t.pos.w]), ys = ts.flatMap(t => [t.pos.y, t.pos.y + t.pos.h])
-  const [x, y] = [Math.min(...xs) - 16, Math.min(...ys) - 16]
-  return ts.length ? `<rect x="${x}" y="${y}" width="${Math.max(...xs) + 16 - x}" height="${Math.max(...ys) + 16 - y}" rx="16" fill="${esc(s.section.color)}" fill-opacity="${live ? '.12' : '.04'}"/>` +
-    txt(x + 30, y + 12, 'fill-slate-500 text-[10px] uppercase dark:fill-slate-400', s.section.name) : ''
+  const lead = [...ts].sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x)[0]
+  const tint = ts.map(t => `<rect x="${t.pos.x - 10}" y="${t.pos.y - 10}" width="${t.pos.w + 20}" height="${t.pos.h + 20}" rx="14" fill="${esc(s.section.color)}" fill-opacity="${live ? '.14' : '.05'}"/>`)
+  return lead ? tint.join('') + txt(lead.pos.x + lead.pos.w / 2, lead.pos.y - 14, 'fill-slate-500 text-[10px] uppercase dark:fill-slate-400', s.section.name) : ''
 }
 export const link = (w: World) => (k: Ent<'link'>) => {
   const [a, ...rest] = k.link.members.map(m => locate(w, m))

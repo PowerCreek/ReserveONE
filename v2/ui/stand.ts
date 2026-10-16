@@ -8,6 +8,7 @@ import {HKIND, explain, spotName} from './events.ts'
 import {note, ping} from './log.ts'
 import {arg, esc, panel} from './render.ts'
 import {reqOf, seatNow} from './seat.ts'
+import {modeNow} from './assign.ts'
 import {uiOf} from './state.ts'
 import {card, on} from './tone.ts'
 const H = defaultPolicy.host
@@ -31,7 +32,7 @@ const door = (w: World) => parties(w).filter(p => (p.queue?.status === 'WAITING'
   .sort((a, b) => tier[a.party.kind] - tier[b.party.kind] || since(a) - since(b))
 const focus = (app: App) => {
   const w = world(app), at = door(w)
-  return (w.ents[st(app).party]?.party ? st(app).party : (at.find(p => !st(app).greeted.includes(p.id)) ?? at[0])?.id) ?? ''
+  return (at.some(p => p.id === st(app).party) ? st(app).party : (at.find(p => !st(app).greeted.includes(p.id)) ?? at[0])?.id) ?? ''
 }
 const crew = (e?: Entity) => (e?.party ? `${e.party.name || e.party.label} party` : '')
 const hostOf = (w: World) => having(w, 'body').find(b => b.body.role === 'host')?.id ?? 'host'
@@ -76,15 +77,23 @@ const intake = (app: App) => {
   return part('Intake', e?.party ? `<div class="flex flex-wrap gap-1">${recorded(e).map(wantChip).join('') || muted('Nothing recorded yet.')}${none.map(f => `<span class="text-xs text-slate-500">asked: no ${esc(feat(f))}</span>`).join(' ')}</div>
 <div class="mt-1 flex flex-wrap items-center gap-1"><span class="text-xs text-slate-500">Ask about</span>${asks}</div>` : muted('Pick a party.'))
 }
-const rung = (r: Rung) => `<li class="py-1 text-xs"><b>${esc(r.step)}</b> ${esc(r.say)} ${r.gives.map(g => `<span class="${pill}">+${esc(feat(g))}</span>`).join(' ')} ${r.lacks.map(m => `<span class="${pill}">-${esc(feat(m.feat))} (${m.level})</span>`).join(' ')}
-${r.spot ? act('offer', `data-step="${esc(r.step)}" data-spot="${esc(r.spot)}"`, 'Offer') : ''}</li>`
+const nameOf = (w: World, id?: Id | null) => (id ? (w.ents[id]?.staff?.crew?.join(' + ') ?? w.ents[id]?.staff?.name ?? '') : '')
+/** Who would serve a spot if it were seated now (the section holder, or the next in the rotation). */
+const serves = (app: App, spot: Id) => nameOf(world(app), ask(app, 'serverFor', partsOf(world(app), spot))?.staff)
+const rung = (app: App) => (r: Rung) => `<li class="py-1 text-xs"><b>${esc(r.step)}</b> ${esc(r.say)} ${r.gives.map(g => `<span class="${pill}">+${esc(feat(g))}</span>`).join(' ')} ${r.lacks.map(m => `<span class="${pill}">-${esc(feat(m.feat))} (${m.level})</span>`).join(' ')}
+${r.spot ? `<span class="text-xs text-slate-500">server ${esc(serves(app, r.spot) || 'none yet')}</span> ` : ''}${r.spot ? act('offer', `data-step="${esc(r.step)}" data-spot="${esc(r.spot)}"`, 'Offer') : ''}</li>`
 const open = (w: World, e: Entity) => e.offer?.status === 'open'
   ? `<div class="mb-1 rounded border border-violet-500 p-1 text-xs">Offered ${esc(spotName(w, e.offer.spot))} (${esc(e.offer.step)}) ${act('answer', `data-id="${e.id}" data-yes="1"`, 'Accept', on)} ${act('answer', `data-id="${e.id}" data-yes="0"`, 'Decline')}</div>`
   : ''
+/** In a rotation mode: the units in turn order; each offer below says who takes it. */
+const nextUp = (app: App) => {
+  const w = world(app), order = (ask(app, 'rotate') ?? []).filter(r => w.ents[r.staff]?.staff?.active).map(r => nameOf(w, r.staff))
+  return modeNow(app) === 'rotation' && order.length ? `<p class="mb-1 text-xs"><span class="text-slate-500">Rotation order (a pair only takes its own level)</span> <b>${esc(order[0]!)}</b>${order.length > 1 ? `, then ${esc(order.slice(1, 5).join(', '))}` : ''}</p>` : ''
+}
 const ladder = (app: App) => {
   const w = world(app), f = focus(app), e = w.ents[f]
   const rs = ask(app, 'ladder', f)
-  return part('Ladder offers', !e?.party ? muted('Pick a party.') : `${open(w, e)}${rs ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rs.map(rung).join('') || muted('No rungs: the party fits as asked.')}</ul>` : muted('Engine host service not available.')}`)
+  return part('Ladder offers', nextUp(app) + (!e?.party ? muted('Pick a party.') : `${open(w, e)}${rs ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rs.map(rung(app)).join('') || muted('No rungs: the party fits as asked.')}</ul>` : muted('Engine host service not available.')}`))
 }
 const options = (app: App) => (e: P) => {
   const r = e.request!
@@ -99,11 +108,12 @@ const requests = (app: App) => {
 // ---- awareness: main-floor servers see a seating; elsewhere the host tells the table's server (engine.tell sets `slot.told`)
 type Row = {slot: Ent<'slot'>; seen: boolean; server: string}
 const areaOf = (w: World, table: Id) => w.ents[table]?.area?.id ?? 'main'
-const serverOf = (app: App, table: Id) => ask(app, 'serverFor', [table])?.staff
+/** The server on a seated table (recorded at seating), else who the engine would pick now. */
+const serverOf = (app: App, table: Id) => world(app).ents[table]?.table?.waiter ?? ask(app, 'serverFor', [table])?.staff
 const rowOf = (app: App) => (slot: Ent<'slot'>): Row => ({slot, seen: areas[areaOf(world(app), slot.slot.table)]?.seen ?? false, server: world(app).ents[serverOf(app, slot.slot.table) ?? '']?.staff?.name ?? ''})
 const state = (r: Row) => (r.seen ? 'seen' : r.slot.slot.told ? 'told' : 'pending')
 const chips: Record<string, (r: Row) => string> = {
-  seen: () => '<span class="rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">server sees it</span>',
+  seen: r => `<span class="rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">${esc(r.server || 'server')} sees it</span>`,
   told: r => `<span class="rounded-full bg-sky-600 px-2 py-0.5 text-xs text-white">Told ${esc(r.server || 'server')}</span>`,
   pending: r => `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">Not told yet</span> ${act('tell', `data-table="${r.slot.slot.table}"`, `Tell ${r.server || 'server'}`, on)}`,
 }

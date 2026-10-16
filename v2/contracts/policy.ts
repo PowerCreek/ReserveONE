@@ -13,7 +13,7 @@ export interface Policy {
   merge: {gapPx: number; areas: string[]} // tables push together when their gap on the sim floor is at most gapPx and they share an area listed here (venue derives `adj` from this once)
   look: {probes: number; tight: number; sizes: number[]; msg: Record<Heat, string>} // lookahead: probe count, tight-runway depth, default sizes, heat messages
   rows: {past: number; future: number} // turnover rows around the current one
-  section: {minOcc: number; share: number; horizonMin: number} // underflow: min occupancy, share of tables needing a turn, turn horizon
+  section: {minOcc: number; share: number; horizonMin: number; tol: number; spread: Record<string, number>} // underflow: min occupancy, share of tables needing a turn, turn horizon; tol: how far a carved cluster's covers may stray from an even share (fraction of the share); spread: per table shape, the most of them (fraction of all of that shape, rounded up) one cluster may hold, so no server gets every booth
   spawn: {names: string[]; sizes: [size: number, weight: number][]} // sim walk-in arrivals
   service: ServiceCfg // day mode schedule, areas (awareness, carve) and mode rows (contracts/service.ts)
   host: Host // host-service registries: features, reasons, responses, ladder, clock (contracts/host.ts)
@@ -24,10 +24,10 @@ export const defaultPolicy: Policy = {
   rotation: {idleCapMin: 600, idleWeight: 0.001},
   alerts: {prepMin: 30, warnMin: 15, busBase: 30.5, busDemand: 10, busRank: 5},
   sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [24, 260], floor: [800, 520], autoSeat: false},
-  merge: {gapPx: 14, areas: ['main']},
+  merge: {gapPx: 37, areas: ['main']},
   look: {probes: 40, tight: 3, sizes: [1, 2, 3, 4, 5, 6], msg: {NO_TABLE: 'No table fits', CAUTION_WAIT: 'EXHAUSTED NOW', WARM_AMBER: 'Tight Runway', HOT_GREEN: 'Clear'}},
   rows: {past: 3, future: 5},
-  section: {minOcc: 0.2, share: 0.25, horizonMin: 30},
+  section: {minOcc: 0.2, share: 0.25, horizonMin: 30, tol: 0.1, spread: {booth: 0.5}},
   spawn: {
     names: ['Garcia', 'Chen', 'Okafor', 'Smith', 'Kim', 'Patel', 'Nguyen', 'Silva', 'Cohen', 'Rossi', 'Tanaka', 'Moreau'],
     sizes: [[1, 6], [2, 40], [3, 12], [4, 25], [5, 6], [6, 6], [8, 3], [10, 2]],

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {having} from '../contracts/index.ts'
 import {dom, settle} from './dom.ts'
 import {start} from '../main.ts'
-const busy = (app: ReturnType<typeof start>) => having(app.store.state.world, 'table').filter(t => t.table.status !== 'available').length
+const busy = (app: ReturnType<typeof start>) => having(app.store.state.world, 'table').filter(t => t.table.status === 'occupied').length
 test('a manual seat is one undoable step: undo restores the world, redo re-applies it', async () => {
   const el = dom().getElementById('app')!
   const app = start(el)

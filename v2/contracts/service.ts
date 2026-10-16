@@ -18,7 +18,7 @@ export const defaultService: ServiceCfg = {
     main: {label: 'Main floor', seen: true, carve: ['chunk']},
     grotto: {label: 'Grotto', seen: false, carve: ['whole', 'tops']},
     patio: {label: 'Patio', seen: false, carve: ['tops']},
-    bar: {label: 'Bar', seen: false, carve: ['level']},
+    bar: {label: 'Bar', seen: true, carve: ['level']},
     upstairs: {label: 'Upstairs', seen: false, carve: ['level']},
   },
 }

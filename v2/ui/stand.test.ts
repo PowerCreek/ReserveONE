@@ -83,6 +83,9 @@ test('ladder: rungs offer, Accept leads the party, Seat books the table; Decline
   assert.equal(el.querySelectorAll('[data-act="stand-greet"]').length, 0) // led parties leave the door list
   click(el, '[data-act="stand-seatled"]')
   assert.equal(having(app.store.state.world, 'table').filter(t => t.table.status === 'occupied').length, 1)
+  await settle()
+  assert.equal(el.querySelectorAll('[data-act="stand-offer"]').length, 0) // a seated party is out of the offer flow: no next table is offered for it
+  assert.match(text(el, '[data-stand]'), /Pick a party/)
 })
 test('requests: open request lists the reason and options; a reply applies patches and narrates host events', async () => {
   const sat = {...chen(), request: {reason: 'noise', stage: 'seated', table: 't1', at: 0, status: 'open', spot: null}} as Entity
@@ -142,12 +145,12 @@ const service: Partial<HostEngine> = {
   },
 }
 const world3 = () => [dana, seatedP(1, 'Chen'), seatedP(2, 'Ortiz'), inArea(tbl('t4', 'P4', 4), 'grotto'), tbl('t5', 'P5', 4), sat('s1', 'p1', 't4'), sat('s2', 'p2', 't5')]
-test('awareness: untold grotto seating is pending with Tell Dana; main floor says the server sees it and has no action', async () => {
+test('awareness: untold grotto seating is pending with Tell Dana; main floor names the server who sees it and has no action', async () => {
   const {el} = mount(world3(), {...fake(), ...coach, ...service})
   await settle()
   const pane = text(el, '[data-stand]')
   assert.match(pane, /Chen party at P4 \(Grotto\) Not told yet Tell Dana/)
-  assert.match(pane, /Ortiz party at P5 \(Main floor\) server sees it/)
+  assert.match(pane, /Ortiz party at P5 \(Main floor\) Dana sees it/)
   assert.deepEqual([...el.querySelectorAll('[data-act="stand-tell"]')].map(b => b.getAttribute('data-table')), ['t4'])
 })
 test('awareness: Tell calls engine.tell, writes slot.told, swaps the badge and narrates "You told Dana ..."', async () => {

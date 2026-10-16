@@ -28,13 +28,13 @@ test('rotation 12:00: seatings spread across every unit; a bartender pair (weigh
   const bar = having(base(), 'table', 'area').filter(t => t.area.id === 'bar').map(t => t.id).slice(0, 10)
   const up = having(base(), 'table', 'area').filter(t => t.area.id === 'upstairs').map(t => t.id).slice(0, 10)
   const tables = bar.flatMap((t, i) => [t, up[i]])
-  const w = tables.reduce((x, t) => sit(x, at(12), t), base())
+  const w = tables.reduce((x, t) => sit(x, at(12), t, 1), base()) // singles: the bar's stools seat one
   assert.equal(Engine.modeAt(defaultPolicy, w, at(12)), 'rotation')
   const tally = Object.fromEntries(having(w, 'staff').map(s => [s.id, s.staff.tally / (s.staff.weight ?? 1)]))
   assert.deepEqual(Object.keys(tally).sort(), ['bt_bar', 'bt_upstairs', 'sv1', 'sv2', 'sv3', 'sv4'])
   assert.ok(Object.values(tally).every(n => n > 0), JSON.stringify(tally))
   const per = Object.values(tally)
-  assert.ok(Math.max(...per) - Math.min(...per) <= 2, `covers per rotation slot stay level: ${JSON.stringify(tally)}`) // one party of 2 at most
+  assert.ok(Math.max(...per) - Math.min(...per) <= 2, `covers per rotation slot stay level: ${JSON.stringify(tally)}`) // one party of 1 at most
   const raw = (id: Id) => w.ents[id].staff!.tally
   assert.ok(raw('bt_bar') > raw('sv1') && raw('bt_upstairs') > raw('sv1'), 'a pair counts as two rotation slots: more raw covers than a floor server')
   assert.ok(tables.every(t => waiter(w, t) !== null))

@@ -20,7 +20,7 @@ test('the built page boots in jsdom without errors, shows the selected floor, th
   assert.deepEqual(errs, [])
   const doc = win.document
   const w = seed().world
-  const per = having(w, 'floor').map(f => [f.id, having(w, 'table', 'pos').filter(t => t.pos.floor === f.id).length] as const)
+  const per = having(w, 'floor').map(f => [f.id, having(w, 'table', 'pos').filter(t => t.pos.floor === f.id && t.table.status === 'available').length] as const)
   assert.ok(doc.querySelector('[data-floor] svg'), 'floor svg rendered')
   assert.equal(avail(doc), per[0][1], 'the first floor alone is on show')
   const shown = await per.reduce<Promise<number[]>>(async (acc, [id]) => {
@@ -30,7 +30,7 @@ test('the built page boots in jsdom without errors, shows the selected floor, th
     return [...seen, avail(doc)]
   }, Promise.resolve([]))
   assert.deepEqual(shown, per.map(([, n]) => n))
-  assert.equal(shown.reduce((a, b) => a + b, 0), 66)
+  assert.equal(shown.reduce((a, b) => a + b, 0), 65) // B22 (the managers' desk) is never offered
   assert.match(doc.querySelector('[data-stand]')!.textContent!, /At the door[\s\S]*Greet/)
   win.close()
 })
@@ -40,7 +40,7 @@ test('seed: 4 floors, 66 held and featured tables inside the policy floor, a hos
   assert.equal(having(w, 'floor').length, 4)
   assert.equal(having(w, 'table', 'pos').length, 66)
   assert.ok(Object.entries(w.ents).every(([k, e]) => e.id === k))
-  assert.ok(having(w, 'table').every(t => t.table.status === 'available' && (w.ents[t.id].feat?.tags.length ?? 0) > 0))
+  assert.ok(having(w, 'table').every(t => (t.table.status === 'available' || t.id === 'rf_b22') && (w.ents[t.id].feat?.tags.length ?? 0) > 0))
   assert.ok(having(w, 'table').every(t => t.table.section !== null || w.ents[t.id].assign || ['bar', 'upstairs'].includes(w.ents[t.id].area?.id ?? '')), 'every table has a holder: section, dealt top, or area pair')
   assert.ok(having(w, 'table', 'pos').every(t => t.pos.x + t.pos.w <= fw && t.pos.y + t.pos.h <= fh))
   assert.deepEqual(having(w, 'section').map(s => s.id), ['sec_m1', 'sec_m2', 'sec_m3', 'sec_m4', 'sec_grotto'])

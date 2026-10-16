@@ -1,7 +1,7 @@
 // Floor view (U2, U3): top-down SVG of one floor at a time (tabs pick it), with sections, tables and their feature chips, link groups, door, units, task lines and pings.
 import {having} from '../contracts/index.ts'
 import type {App, Hold, Id, World} from '../contracts/index.ts'
-import {badge, door, link, ping, section, table, unit} from './draw.ts'
+import {badge, chips, door, link, ping, section, table, unit} from './draw.ts'
 import {H, W, doorFloor, floorOf} from './geo.ts'
 import {holdsOf, live} from './assign.ts'
 import {presets} from './presets.ts'
@@ -30,7 +30,7 @@ export const floorSvg = (w: World, fx: Fx[], fid?: Id, held: Holding = {holds: [
   const links = having(w, 'link').filter(k => fid === undefined || floorOf(w, k.link.members[0]) === fid)
   const at = doorFloor(w)
   return `<svg viewBox="0 0 ${W} ${H}" class="w-full rounded bg-slate-100 dark:bg-slate-900" role="img" aria-label="restaurant floor">` + [
-    ...secs, ...links.map(link(w)), ...ts.map(table), ...ts.map(badge(w, held.holds)), ...(fid === undefined || at === undefined || at === fid ? [door] : []),
+    ...secs, ...links.map(link(w)), ...ts.map(table), ...ts.map(badge(w, held.holds)), ...ts.map(chips), ...(fid === undefined || at === undefined || at === fid ? [door] : []),
     ...having(w, 'body').filter(b => fid === undefined || floorOf(w, b.id) === fid).map(unit(w)),
     ...fx.filter(f => fid === undefined || !f.floor || f.floor === fid).map(ping),
   ].join('') + '</svg>'

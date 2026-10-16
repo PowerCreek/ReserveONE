@@ -11,10 +11,11 @@ test('knows: a main-floor server sees every seating, told or not, and even an em
   const w = world([t('m1'), seating('m1')])
   assert.deepEqual([knows(w, 'm1'), knows(world([t('m2', 'main')]), 'm2')], [true, true])
 })
-test('knows: elsewhere (grotto, patio, bar, upstairs) the server knows only once the active slot is told', () => {
-  const areas = ['grotto', 'patio', 'bar', 'upstairs']
-  assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x')]), 'x')), [false, false, false, false])
-  assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x', {by: 'host', at: N})]), 'x')), [true, true, true, true])
+test('knows: the bar sees its seatings like the main floor; grotto, patio and upstairs know only once the active slot is told', () => {
+  assert.equal(knows(world([t('x', 'bar'), seating('x')]), 'x'), true)
+  const areas = ['grotto', 'patio', 'upstairs']
+  assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x')]), 'x')), [false, false, false])
+  assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x', {by: 'host', at: N})]), 'x')), [true, true, true])
 })
 test('knows: an empty table or a finished (told) seating tells nothing; a link member finds the group slot', () => {
   const done = world([t('x', 'patio'), seating('x', {by: 'host', at: N}, 'COMPLETED')])

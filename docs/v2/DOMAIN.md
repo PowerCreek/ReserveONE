@@ -19,6 +19,7 @@ host service
   - match: score every spot for the party; needs are hard filters -> fn: match -> Fit[] (met, missed, waitMin)
     - capacity and tightest-fit baseline -> fn: fit, spots (existing); policy: seat
     - queue order and tiers -> fn: queueOrder (existing); policy: queue.tier
+  - seating sides: wall side is upholstered bench (2), aisle side chairs (2): main 17-23, bar outer perimeter (B15, B21); grotto all chairs; corner booths (B14, B16, B20) are 3-tops (table surface), bar B1-B12 single stools, B22 managers' desk (blocked) -> comp: feat.tags (banquette, chairs), table.status
   - merge: adjacent free tables combine capacities when no single spot fits -> fn: merges; policy: host.ladder[merge], merge; comp: adj, link.merged
   - fallback ladder when the preferred feature has run out -> fn: ladder -> Rung[]; policy: host.ladder
     - exact: the ready match -> ladder step kind exact
@@ -52,7 +53,7 @@ host service
   - day mode: sectioned (servers hold sections/tops) or rotation (no holds, seatings rotate across the crew) -> fn: modeAt; policy: service.modes
     - mode by time of day (rotation ~11:00-15:00) -> policy: service.schedule; manual override -> comp: service.override
   - area of a table: main, grotto, patio, bar, upstairs -> comp: area; policy: service.areas
-    - main floor: sections as contiguous chunks, servers stay inside -> policy: service.areas.main.carve; comp: table.section; fn: assign
+    - main floor: sections are quadrant blocks (rectangles, never interleaved), covers (capacity) balanced, no server holds every booth, quads of 2-tops split along their horizontal aisle -> policy: service.areas.main.carve, section.tol, section.spread; fn: partition (seed time); comp: table.section
     - grotto: one whole section, or piecemeal tops like the patio -> policy: service.areas.grotto.carve; comp: service.carve
     - patio tops dealt piecemeal, balanced across the whole crew -> comp: assign; fn: assign
     - bar, upstairs: held by a bartender pair per level -> comp: staff.area, staff.crew; policy: service.areas.bar.carve
@@ -60,7 +61,8 @@ host service
     - standing holder of each table in the active mode -> fn: holds; ev: seated (server named)
     - server pick: hold in sectioned, weighted tally among units whose area fits in rotation -> fn: serverFor
   - awareness: main-floor servers see new seatings and act unprompted -> policy: service.areas.main.seen; fn: knows
-    - grotto, patio, bar, upstairs: servers cannot see who is seated where -> policy: service.areas.*.seen
+    - bar: the bartenders see who is seated -> policy: service.areas.bar.seen
+    - grotto, patio, upstairs: servers cannot see who is seated where -> policy: service.areas.*.seen
     - host tells the server; a server not told does not start service -> HostTask `tell`; fn: tell, knows; comp: slot.told; ev: told
   - sandbox: the sim host seats nothing until the player acts -> policy: sim.autoSeat
 - free play (no rubric, grades or expected outcomes)

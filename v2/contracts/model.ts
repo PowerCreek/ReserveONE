@@ -15,7 +15,7 @@ export interface Components {
   floor: {name: string; active: boolean}
   section: {name: string; color: string; minOccupancy?: number; minTurns?: number}
   pos: {floor: Id; x: number; y: number; w: number; h: number}
-  table: {label: string; capacity: number; min: number; shape: 'rect' | 'booth'; status: TStatus; waiter: Id | null; section: Id | null}
+  table: {label: string; capacity: number; min: number; shape: 'rect' | 'booth' | 'stool'; status: TStatus; waiter: Id | null; section: Id | null}
   link: {members: Id[]; merged?: boolean} // link group; members[0] is primary; `merged` = pushed together at seating, dissolved when the tables clear (engine.freeUp)
   adj: {with: Id[]} // table: neighbours it can be pushed together with (venue data, derived once from positions)
   party: {num: number; label: string; prefix: string; kind: PType; name: string; size: number; here?: number}
