@@ -21,3 +21,4 @@
 - Convention (pinned): a party is "led, not seated" when it has an `offer` with `status: 'accepted'` on a table and no `slot` on that table; "seated" = has the slot. Stage for requests: arrived | seated accordingly.
 - Starters: `ui/scenario.ts` `load(app,id)` loads presets or `scenarios[id]`; `choices()` lists both; `controls.ts` picker must render `choices()` (U4).
 - Match (E1): a want counts only once `said` or in `heard` (the host asks, then records); "elsewhere" = another floor or section than the best-scoring spot; `heard` events derive from the intake patch in E0 (Decision carries no events).
+- Respond (E2): `askedEvent(w,party)` builds the `asked` event; `settle(p,w,now)` is the pure tick helper returning `{patches,events}` (lapsed offers -> `answered` no, ignored requests decline, patience exhausted -> `left`). E0 must call both; U1 'place' writes an accepted offer. Decision: `refuse` is a host option on every reason (add to policy.host.options).

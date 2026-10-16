@@ -1,12 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {ask} from './ask.ts'
-import {room, tagged} from './askkit.ts'
+import {asking, room, tagged} from './askkit.ts'
 import {options} from './options.ts'
-import {apply} from './patch.ts'
 import {N, P, party} from './testkit.ts'
-import type {World} from '../contracts/index.ts'
-const asking = (w: World, reason: string) => { const r = ask(P, w, N, 'pty1', reason); return apply(w, r.ok ? r.patches : []) }
 test('options: nothing without an open request', () => assert.deepEqual(options(P, room(), N, 'pty1'), []))
 test('options: per reason, falling back to "*"; each carries label, filled host script and spot', () => {
   const os = options(P, asking(room(), 'draft'), N, 'pty1')

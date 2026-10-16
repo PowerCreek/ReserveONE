@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {ask, askedEvent, where} from './ask.ts'
 import {apply} from './patch.ts'
-import {room} from './askkit.ts'
+import {asking, room} from './askkit.ts'
 import {N, P, party, world} from './testkit.ts'
 test('ask: refused until the party was led, then writes an open request with the stage and table', () => {
   const w = room()
@@ -24,6 +24,6 @@ test('ask: unknown party or reason, and a second request while one is open, are 
   const w = room()
   assert.equal(ask(P, w, N, 'nobody', 'draft').ok, false)
   assert.deepEqual(ask(P, w, N, 'pty1', 'tea'), {ok: false, err: 'unknown reason tea'})
-  const open = apply(w, (ask(P, w, N, 'pty1', 'draft') as {patches: never[]}).patches)
+  const open = asking(w, 'draft')
   assert.deepEqual(ask(P, open, N, 'pty1', 'noise'), {ok: false, err: 'party is already waiting for an answer'})
 })

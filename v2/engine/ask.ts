@@ -13,10 +13,10 @@ const seated = (w: World, id: Id): Seat | undefined => {
 }
 const arrived = (w: World, id: Id): Seat | undefined => {
   const e: Entity | undefined = w.ents[id]
-  const table = e?.request?.table ?? (e?.offer?.status === 'accepted' ? e.offer.spot : undefined)
+  const table = e?.offer?.status === 'accepted' ? e.offer.spot : undefined
   return table ? {table, stage: 'arrived'} : undefined
 }
-/** Where a led party is: an ACTIVE slot = seated; else its last request or accepted offer = arrived at that table; else not led. */
+/** Where a led party is: an ACTIVE slot = seated; else an accepted offer on a table = arrived (led, not seated; CONTEXT convention); else not led. */
 export const where = (w: World, id: Id): Seat | undefined => seated(w, id) ?? arrived(w, id)
 interface Q {reason: string; def?: ReasonDef; known: boolean; at?: Seat; open: boolean}
 const rules: [(q: Q) => boolean, (q: Q) => string][] = [

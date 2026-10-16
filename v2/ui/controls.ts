@@ -2,8 +2,7 @@
 import type {App} from '../contracts/index.ts'
 import {step, spawn} from './sim.ts'
 import {note} from './log.ts'
-import {load} from './scenario.ts'
-import {presets} from './presets.ts'
+import {choices, load} from './scenario.ts'
 import {arg, esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {btn, on} from './tone.ts'
@@ -24,7 +23,7 @@ const draw = (app: App) => {
   const speeds = SPEEDS.map(v => b('speed', `data-v="${v}"`, `${v}x`, u.speed === v)).join('')
   const rate = `${b('rate', 'data-d="-0.5"', '-')}<span class="px-1 text-sm">${u.rate}/min</span>${b('rate', 'data-d="0.5"', '+')}`
   const spawns = [1, 5].map(n => b('spawn', `data-n="${n}"`, `+${n} guest${n > 1 ? 's' : ''}`)).join('')
-  const scen = Object.values(presets).map(p => b('scenario', `data-id="${p.id}" title="${esc(p.blurb)}"`, p.label, u.scenario === p.id)).join('')
+  const scen = choices().map(c => b('scenario', `data-id="${c.id}" title="${esc(c.blurb)}"`, c.label, u.scenario === c.id)).join('')
   return `<div class="flex flex-wrap items-center gap-2">${run}${b('step', '', 'Step 5s')}<span class="mx-1">|</span>${speeds}<span class="mx-1">|</span>${spawns}<span class="mx-1">|</span>arrivals ${rate}</div><div class="mt-2 flex flex-wrap items-center gap-2"><span class="text-xs uppercase text-slate-500">Scenario</span>${scen}</div>`
 }
 export const controlsPane = '<div data-controls="ui" class="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"></div>'
