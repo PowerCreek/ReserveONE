@@ -1,5 +1,7 @@
 // Policy = data every engine function is parameterised by (E1). Defaults are the v1 constants (SPEC §3).
 import type {Heat, PType} from './model.ts'
+import {defaultHost} from './host.ts'
+import type {Host} from './host.ts'
 export interface Policy {
   seat: {resetMin: number; quantumMin: number; cadenceMin: number; fitSlackMin: number; turnMin: [number, number]; turnDefault: number; lapsedClearMin: number; lateGraceMin: number}
   queue: {tier: Record<PType, number>} // lower = served first
@@ -10,6 +12,7 @@ export interface Policy {
   rows: {past: number; future: number} // turnover rows around the current one
   section: {minOcc: number; share: number; horizonMin: number} // underflow: min occupancy, share of tables needing a turn, turn horizon
   spawn: {names: string[]; sizes: [size: number, weight: number][]} // sim walk-in arrivals
+  host: Host // host-service registries: features, reasons, responses, ladder, clock, rubric (contracts/host.ts)
 }
 export const defaultPolicy: Policy = {
   seat: {resetMin: 5, quantumMin: 5, cadenceMin: 3, fitSlackMin: 5, turnMin: [45, 90], turnDefault: 60, lapsedClearMin: 5, lateGraceMin: 15},
@@ -24,4 +27,5 @@ export const defaultPolicy: Policy = {
     names: ['Garcia', 'Chen', 'Okafor', 'Smith', 'Kim', 'Patel', 'Nguyen', 'Silva', 'Cohen', 'Rossi', 'Tanaka', 'Moreau'],
     sizes: [[1, 6], [2, 40], [3, 12], [4, 25], [5, 6], [6, 6], [8, 3], [10, 2]],
   },
+  host: defaultHost,
 }

@@ -1,7 +1,8 @@
 // Engine public API (E1-E3): every function is pure, `(policy, world, now, ...args) => output`. Mutation is expressed as Patch[].
-import type {Ent, Heat, Id, PType, Patch, World} from './model.ts'
+import type {Ent, Heat, Id, Level, PType, Patch, Want, World} from './model.ts'
 import type {Policy} from './policy.ts'
-import type {SimOut} from './sim.ts'
+import type {HostEvent, SimOut} from './sim.ts'
+import type {Assessment, Scenario, Trace} from './scenario.ts'
 export type Decide<A extends unknown[], R> = (p: Policy, w: World, now: number, ...a: A) => R
 export interface SeqItem {size: number; spot: Id | null; tables: Id[]; label: string; waitMin: number; at: number; code: Heat; ready: boolean}
 export interface Look {depth: number; code: Heat; msg: string; at: number | null}
@@ -28,3 +29,20 @@ export interface Engine {
   tick: Decide<[dtMs: number], SimOut> // sim tick: assign tasks, advance bodies, emit events
   spawn: Decide<[seed: number], Patch[]> // sim arrivals (walk-ins + due reservations)
 }
+
+// Host service (wave 2): matching, fallback ladder, re-seat responses, assessment. Same shape as Engine; lanes implement `Coach`, the lead wires `HostEngine`.
+export interface Miss {feat: string; level: Level; why: string}
+export interface Fit {spot: Id; score: number; met: string[]; missed: Miss[]; waitMin: number; ready: boolean} // one candidate for a party, best first
+export interface Rung {step: string; spot: Id | null; gives: string[]; lacks: Miss[]; waitMin: number; say: string} // one proposal the host can voice; need-level wants are never lacks
+export interface Option {response: string; label: string; say: string; spot: Id | null} // a response the host may give to an open request
+export interface Reply {patches: Patch[]; events: HostEvent[]; move: 'swap' | 'offer' | 'stay'; mood: number; says: string}
+export interface Coach {
+  intake: Decide<[party: Id, heard: Want['feat'][]], Decision> // record the qualifiers the host asked about (`wants.heard`)
+  match: Decide<[party: Id, within?: Id[]], Fit[]> // score preference fit per spot (policy.host.score); needs are hard filters
+  ladder: Decide<[party: Id], Rung[]> // when the top match misses wants: policy.host.ladder steps in order, each a proposal
+  ask: Decide<[party: Id, reason: string], Decision> // party raises a re-seat request (policy.host.reasons) -> `request` component
+  options: Decide<[party: Id], Option[]> // responses offered for the open request (policy.host.options)
+  respond: Decide<[party: Id, response: string], Reply> // apply a response row: patches (move/offer), events, mood delta
+  assess: Decide<[trace: Trace, scn?: Scenario], Assessment> // grade a run on policy.host.rubric, plus the scenario's expectations
+}
+export type HostEngine = Engine & Coach
