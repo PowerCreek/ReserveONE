@@ -19,7 +19,7 @@ const event: Rule = (p, w, now) => having(w, 'event').flatMap(e => {
   const [level, msg] = note[eventState(p, e.event, now)] ?? []
   return msg && level ? [{kind: 'event' as const, ref: e.id, level, msg: msg(e.event.name, p)}] : []
 })
-const section: Rule = (_p, w, now) => having(w, 'section').filter(s => sectionStats(w, now, s).under).map(s => ({kind: 'section', ref: s.id, level: 'warn', msg: `Section ${s.section.name}: underflow`}))
+const section: Rule = (p, w, now) => having(w, 'section').filter(s => sectionStats(p, w, now, s).under).map(s => ({kind: 'section', ref: s.id, level: 'warn', msg: `Section ${s.section.name}: underflow`}))
 const rules: Rule[] = [late, lapsed, event, section]
 /** Everything the host should look at right now, derived from data and time (edge-triggering is the UI's job). */
 export const alerts: Engine['alerts'] = (p, w, now) => rules.flatMap(r => r(p, w, now))

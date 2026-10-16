@@ -1,9 +1,8 @@
 // Floor geometry: one canvas, a door, and where an entity (table, body, party's guest) sits on it.
-import {having} from '../contracts/index.ts'
+import {defaultPolicy, having} from '../contracts/index.ts'
 import type {Entity, Id, World} from '../contracts/index.ts'
-export const W = 800
-export const H = 520
-export const DOOR = {x: 24, y: 260}
+export const [W, H] = defaultPolicy.sim.floor
+export const DOOR = {x: defaultPolicy.sim.door[0], y: defaultPolicy.sim.door[1]}
 type Pt = {x: number; y: number}
 const mid = (e?: Entity): Pt | undefined =>
   (e?.pos && {x: e.pos.x + e.pos.w / 2, y: e.pos.y + e.pos.h / 2}) ?? (e?.body && {x: e.body.x, y: e.body.y}) ?? undefined

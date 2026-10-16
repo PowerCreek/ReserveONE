@@ -31,6 +31,7 @@ export const layout = (p: Preset, old: Id[], now: number): Patch[] => [
   ...old.map((id): Patch => ({op: 'del', id})),
   ...[
     {id: 'f1', floor: {name: 'Main', active: true}},
+    {id: 'door', pos: {floor: 'f1', x: defaultPolicy.sim.door[0], y: defaultPolicy.sim.door[1], w: 0, h: 0}}, // spawn point: engine and floor view agree via policy
     {id: 's1', section: {name: 'Window', color: '#0ea5e9'}},
     {id: 's2', section: {name: 'Patio', color: '#f59e0b'}},
     {id: 'host', body: body('host', 70, 260)},

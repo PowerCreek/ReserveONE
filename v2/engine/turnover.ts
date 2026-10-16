@@ -1,6 +1,5 @@
 import {having} from '../contracts/index.ts'
 import type {Bucket, Components, Engine, World} from '../contracts/index.ts'
-import {knobs} from './knobs.ts'
 import {MIN, midnight} from './time.ts'
 interface Ev {at: number; kind: 'in' | 'out'; covers: number; proj: boolean}
 const ev = (at: number, kind: Ev['kind'], covers: number, proj: boolean): Ev => ({at, kind, covers, proj})
@@ -25,9 +24,9 @@ const bucket = (evs: Ev[], start: number, end: number, cur: boolean): Bucket => 
   return {start, end, now: cur, proj: es.some(x => x.proj), inCovers: sum(i), inParties: i.length, outCovers: sum(o), outParties: o.length, net: sum(i) - sum(o)}
 }
 /** Rows of `iv`-minute buckets aligned to local midnight: past rows, the current one, future rows. */
-export const turnover: Engine['turnover'] = (_p, w, now, iv) => {
+export const turnover: Engine['turnover'] = (p, w, now, iv) => {
   const evs = events(w, now)
   const d0 = midnight(now)
   const cur = Math.floor((now - d0) / (iv * MIN))
-  return Array.from({length: knobs.rows.past + knobs.rows.future + 1}, (_, i) => cur - knobs.rows.past + i).map(k => bucket(evs, d0 + k * iv * MIN, d0 + (k + 1) * iv * MIN, k === cur))
+  return Array.from({length: p.rows.past + p.rows.future + 1}, (_, i) => cur - p.rows.past + i).map(k => bucket(evs, d0 + k * iv * MIN, d0 + (k + 1) * iv * MIN, k === cur))
 }

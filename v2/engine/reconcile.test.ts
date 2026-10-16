@@ -50,7 +50,7 @@ test('alerts: late reservation, lapsed table to clear, event warnings, section u
 })
 test('sectionStats: counts tables, occupancy and turns due soon', () => {
   const w = demo()
-  const s = (id: string) => sectionStats(w, N, w.ents[id] as never)
+  const s = (id: string) => sectionStats(P, w, N, w.ents[id] as never)
   assert.equal(s('sA').n, 5)
   assert.ok(s('sD').under && !s('sB').under)
 })
