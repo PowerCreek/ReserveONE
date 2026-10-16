@@ -9,7 +9,7 @@ import {venue} from './venue.ts'
 const entities = () => staffed(venue(defaultPolicy.sim.floor))
 /** Fresh load: the venue dealt into sections, tops and bartender pairs (crew.ts), a host stand and a busser. Arrivals are off until Play, but the +guest buttons and the opening party work at once. */
 export const seed = (): State => ({now: Date.now(), ui: {size: 2, pick: '', tone: '', rate: 0.5}, world: {nextParty: 1, ents: Object.fromEntries(entities().map(e => [e.id, e]))}})
-const engine: Plugin = app => app.provide('engine', Engine)
+const engine: Plugin = app => app.provide('engine', Engine).provide('policy', defaultPolicy) // the policy is a service: `ask` binds it, views read it through `policyOf`
 const opening: Plugin = app => spawn(app, 1) // one party at the door so the stand has someone to greet
 export const build = () => App.create(seed()).use(engine).use(ui).use(opening)
 export const start = (el: Element) => build().mount(el)

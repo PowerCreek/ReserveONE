@@ -43,14 +43,15 @@ test('fast seating: stepper refits, Seat now occupies the table, Undo restores i
   await settle()
   assert.equal(el.querySelectorAll('[data-fits] button').length, 8)
 })
-test('queue lists waiting parties and Seat uses the party as its own request; Add to queue enrolls with an eta quote', async () => {
+test('queue lists waiting parties in the engine door order; Seat and Add to queue go through act', async () => {
   const {el, app} = rig()
   load(app, 'lunch')
   click(el, '[data-act="join"]')
   await settle()
   const rows = el.querySelectorAll('[data-queue] li')
   assert.equal(rows.length, 4 + 1)
-  assert.match(rows[rows.length - 1].textContent!, /quote 12m/)
+  assert.match(rows[rows.length - 1].textContent!, /walk-in x2.*quote \d+m/) // joined through act: the engine mints and quotes the party
+  assert.ok(app.store.state.ui.log!.some(l => /was quoted/.test(l.msg)), app.store.state.ui.log!.map(l => l.msg).join(' | '))
   click(el, '[data-queue] [data-act="seat"]')
   assert.equal(having(app.store.state.world, 'table').filter(t => t.table.status === 'occupied').length, 1)
 })

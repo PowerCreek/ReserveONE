@@ -1,6 +1,6 @@
 // Starter runner (U1, free play): plays `scenarios[id].steps` into the sim at their minute, then the sandbox runs on. No scoring, no expectations.
 import {defaultPolicy, having} from '../contracts/index.ts'
-import type {App, Coach, Decision, Entity, Id, Patch, Plugin, PType, Step} from '../contracts/index.ts'
+import type {App, Decision, Entity, Id, Patch, Plugin, PType, Step} from '../contracts/index.ts'
 import {scenarios} from '../scenarios/index.ts'
 import {ask} from './ask.ts'
 import {locate} from './geo.ts'
@@ -51,9 +51,7 @@ const place: Doer<'place'> = (app, x, id) => {
   const {x: cx, y: cy} = locate(w, x.table)
   return stages[x.stage](app, w.ents[id], x, {...w.ents[id].body!, x: cx, y: cy, task: null, backlog: []})
 }
-const coach = (app: App, party: Id, reason: string): Decision | undefined =>
-  (app.services.engine as unknown as Partial<Coach> | undefined)?.ask?.(defaultPolicy, app.store.state.world, app.store.state.now, party, reason)
-const raise: Doer<'ask'> = (app, x, id) => complain(app, coach(app, id, x.reason))
+const raise: Doer<'ask'> = (app, x, id) => complain(app, ask(app, 'ask', id, x.reason))
 const doers: {[K in Step['do']]: Doer<K>} = {arrive, place, ask: raise}
 const who: Record<Step['do'], (app: App, x: Step) => Id> = {
   arrive: app => `p${mint(app)}`, place: (app, x) => uiOf(app).run!.keys[x.key], ask: (app, x) => uiOf(app).run!.keys[x.key],

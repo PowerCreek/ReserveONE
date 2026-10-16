@@ -64,3 +64,11 @@ Order: E3a, U5, U6, V in parallel; E3b wires `engine/index.ts` once E3a's files 
 | V venue seed | `v2/venue.ts` (`area` tag per table: main 1-24, grotto G1-6, patio P1-7, bar, upstairs) `v2/crew.ts` (new: sections, crew, `service` entity) `v2/venue.test.ts` (new): main in contiguous section chunks by table number, grotto one whole section, patio tops dealt, bar and upstairs each a bartender pair (`weight` 2, `crew` two names, `area`), floor servers `weight` 1, entity `service {override: null, carve}` | model, service | `npm run v2:check && node --test "v2/venue.test.ts"` |
 | I integration | `v2/main.ts` `v2/test/**` (not `dom.ts`) `v2/build.mjs` `v2/scenarios/**` `v2/ui/runner*.ts` `v2/ui/scenario*.ts` `v2/ui/presets.ts`: seed from `crew.ts`, update tests that relied on the sim host seating (set `autoSeat: true` there), end-to-end: stand seats a patio party, the server idles until Tell, then serves; mode flips at 11:00 | all public `index.ts` | `npm run v2:check && npm run v2:test && npm run v2:build` |
 | lead | `v2/contracts/**` `docs/v2/**` `package.json` | - | contract edits keep `v2:check` green |
+
+## WAVE 4 LANES (desk seam: `contracts/desk.ts` `Cmd` `Outcome` `StandView` `Desk {act, stand}`; landed, `HostEngine = Engine & Coach & Service & Desk`)
+Rule: every write is a `Cmd` through `engine.act` (patches + events + one log line); every panel reads engine-derived data (`stand` view model, existing Engine reads). The UI renders and dispatches; it builds no patches, events or domain rules. Seating is one step: no greet click, no led-not-seated state at the stand.
+Order: E4, then U7.
+| lane | owned paths | contracts | acceptance |
+| --- | --- | --- | --- |
+| E4 engine desk | `v2/engine/act.ts` `desk.ts` (new) + `act.test.ts` `desk.test.ts`, `v2/engine/index.ts` (export `act`, `stand`) | desk, engine, host, service, sim | `npm run v2:check && node --test "v2/engine/**/*.test.ts"` |
+| U7 ui on the desk | `v2/ui/**`, `v2/main.ts` (provide `policy`), `v2/test/**` (not `dom.ts`) | desk; engine only via `ask` | `npm run v2:check && npm run v2:test && npm run v2:build` |

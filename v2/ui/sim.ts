@@ -1,8 +1,8 @@
 // Sim stepper: the clock calls `step`; engine.tick moves units and emits events, each of which is logged and pinged on the floor.
 import type {App, SimOut} from '../contracts/index.ts'
 import {ask} from './ask.ts'
-import {explain} from './events.ts'
-import {fade, note, ping} from './log.ts'
+import {narrate} from './act.ts'
+import {fade} from './log.ts'
 import {uiOf} from './state.ts'
 const idle: SimOut = {patches: [], events: []}
 export const spawn = (app: App, n: number) =>
@@ -14,13 +14,11 @@ const arrivals = (app: App, dtMs: number) => {
   u.acc -= n
   spawn(app, n)
 }
-const report = (app: App, out: SimOut) =>
-  out.events.map(e => explain(e, app.store.state.world)).forEach(({kind, msg, x, y, floor}) => (note(app, kind, msg), ping(app, {kind, msg, x, y, floor})))
 export const step = (app: App, dtMs: number) => {
   app.store.state.now += dtMs
   fade(app)
   const out = ask(app, 'tick', dtMs) ?? idle
-  report(app, out)
+  narrate(app, out.events) // before the patches: departed parties and bodies are still in the world
   app.apply(out.patches)
   app.apply(ask(app, 'reconcile') ?? [])
   arrivals(app, dtMs)

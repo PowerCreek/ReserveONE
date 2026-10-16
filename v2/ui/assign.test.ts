@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {having} from '../contracts/index.ts'
-import type {Entity, Hold, HostEngine, Id, Patch, Service, World} from '../contracts/index.ts'
+import type {Entity, Hold, HostEngine, Id, Service, World} from '../contracts/index.ts'
 import {App} from '../kernel/index.ts'
 import {dom, settle} from '../test/dom.ts'
 import {ui} from './index.ts'
 import {click, fake, seed} from './rig.ts'
+import {Engine} from '../engine/index.ts'
 const NOON = new Date(2026, 0, 5, 12, 0).getTime()
 const MORNING = new Date(2026, 0, 5, 9, 0).getTime()
 const tbl = (id: string, label: string, over: Partial<Entity> = {}, section: Id | null = null): Entity =>
@@ -31,18 +32,15 @@ const svc: Partial<Service> = {
     const pick: [Id | null, Hold['by']] = !sectioned ? [t.table.waiter, 'rotation'] : e.assign ? [e.assign.staff, 'tops'] : pair ? [pair.id, 'level'] : [sec?.id ?? null, 'chunk']
     return {table: t.id, area: a, staff: pick[0], by: pick[1]}
   }),
-  assign: (_p, w): Patch[] => {
-    const ss = having(w, 'staff').filter(s => !s.staff.crew)
-    const dealt = ss.map(s => ({id: s.id, n: having(w, 'table', 'assign').filter(t => t.assign.staff === s.id).length}))
-    return having(w, 'table', 'area').filter(t => t.area.id === 'patio' && !w.ents[t.id].assign).map((t, i): Patch => ({op: 'set', id: t.id, parts: {assign: {staff: dealt.sort((a, b) => a.n - b.n)[i % dealt.length].id}}}))
-  },
 }
+/** Deal is the real engine's (`act` deals with engine.assign), so the button's preview reads the same function. */
+const dealt = {assign: Engine.assign}
 const mount = (now = NOON) => {
   const el = dom().getElementById('app')!
   const s = seed()
   s.now = now
   s.world.ents = Object.fromEntries(room().map((e): [string, Entity] => [e.id, e]))
-  const app = App.create(s).use(a => a.provide('engine', {...fake(), ...svc} as HostEngine)).use(ui)
+  const app = App.create(s).use(a => a.provide('engine', {...fake(), ...svc, ...dealt} as HostEngine)).use(ui)
   app.mount(el)
   return {el, app}
 }
@@ -91,11 +89,12 @@ test('piecemeal tops: assign a table to a server, balance updates, Deal fills th
   await settle()
   assert.match(bal(), /Ana 0 \| Ben 3 \| spread 3/)
   assert.match(el.querySelector('[data-tops="patio"] [data-balance]')!.className, /amber/)
-  assert.match(text(el, '[data-act="svcdeal"]'), /Deal \(1 change\)/)
+  assert.match(text(el, '[data-act="svcdeal"]'), /Deal \(\d+ changes?\)/)
   click(el, '[data-act="svcdeal"]')
-  assert.equal(app.store.state.world.ents.p4.assign!.staff, 'sv1')
+  assert.ok(app.store.state.world.ents.p4.assign?.staff)
+  assert.match(app.store.state.ui.log![0].msg, /Dealt: \d+ change/)
   await settle()
-  assert.match(bal(), /Ana 1 \| Ben 3/)
+  assert.match(bal(), /spread [01]$/)
   assert.match(text(el, '[data-act="svcdeal"]'), /balanced/)
   click(el, '[data-act="undo"]')
   assert.equal(app.store.state.world.ents.p4.assign, undefined)
@@ -109,15 +108,15 @@ test('rotation: tops note says holds are off; pairs are one weighted card per le
   assert.match(pair[0].textContent!, /Bar: Cy \+ Di.*pair x2.*covers 8 \(4\.0 per weight\)/)
   assert.equal(el.querySelectorAll('[data-units] [data-unit]').length, 3) // two servers + one pair, never one slot per bartender
 })
-test('degrades without the service: the readout never recomputes the clock (first mode) and Deal warns', async () => {
+test('degrades without the service: the readout never recomputes the clock (first mode) and Deal warns without the desk', async () => {
   const el = dom().getElementById('app')!
   const s = seed()
   s.now = NOON
   s.world.ents = Object.fromEntries(room().map((e): [string, Entity] => [e.id, e]))
-  const app = App.create(s).use(a => a.provide('engine', fake() as HostEngine)).use(ui)
+  const app = App.create(s).use(a => a.provide('engine', {...fake(), act: undefined} as unknown as HostEngine)).use(ui)
   app.mount(el)
   await settle()
   assert.equal(text(el, '[data-mode-now]'), 'Sectioned')
   click(el, '[data-act="svcdeal"]')
-  assert.match(app.store.state.ui.log![0].msg, /No assign service/)
+  assert.match(app.store.state.ui.log![0].msg, /engine\.act is not available/)
 })

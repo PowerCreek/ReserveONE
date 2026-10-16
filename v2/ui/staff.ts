@@ -1,19 +1,12 @@
 // Staff + rotation: engine.rotate order (next up first), duty toggle, skip bump, and the busser's engine.bus order.
-import {defaultPolicy, having} from '../contracts/index.ts'
-import type {App, Ent, Hold, Patch, World} from '../contracts/index.ts'
-import {commit} from '../kernel/index.ts'
-import {ask} from './ask.ts'
+import {having} from '../contracts/index.ts'
+import type {App, Ent, Hold, World} from '../contracts/index.ts'
+import {run} from './act.ts'
+import {ask, policyOf} from './ask.ts'
 import {assignPane, holdsOf} from './assign.ts'
-import {note} from './log.ts'
 import {arg, esc, panel} from './render.ts'
 import {btn, card} from './tone.ts'
-const edit: Record<string, (s: Ent<'staff'>) => Partial<Ent<'staff'>['staff']>> = {duty: s => ({active: !s.staff.active}), skip: s => ({skip: s.staff.skip + 1})}
-const change = (app: App, ev: Event) => {
-  const s = app.store.state.world.ents[arg(ev, 'id')] as Ent<'staff'>
-  const parts = {staff: {...s.staff, ...edit[arg(ev, 'to')](s)}}
-  commit(app, [{op: 'set', id: s.id, parts} as Patch])
-  note(app, 'action', `${s.staff.name}: ${arg(ev, 'to')}`)
-}
+const change = (app: App, ev: Event) => run(app, {do: 'staff', id: arg(ev, 'id'), to: arg(ev, 'to') as 'duty' | 'skip'})
 const ranked = (app: App) => {
   const staff = having(app.store.state.world, 'staff')
   return (ask(app, 'rotate') ?? staff.map(s => ({staff: s.id, score: 0}))).map(r => ({r, s: staff.find(x => x.id === r.staff)})).filter(x => x.s)
@@ -35,9 +28,9 @@ const group = (hs: Hold[]) => Object.entries(hs.reduce<Record<string, Hold[]>>((
 const line = (w: World) => ([by, hs]: [string, Hold[]]) =>
   `<p data-held="${by}" class="text-xs"><span class="text-slate-500">${LINE[by]}</span> ${esc(span(hs.map(h => lbl(w, h)).sort(nat)))}${esc(named[by] ? ` (${named[by](w, hs)})` : '')}</p>`
 const covers = (s: Ent<'staff'>) => `covers ${s.staff.tally}${(s.staff.weight ?? 1) > 1 ? ` (${(s.staff.tally / (s.staff.weight ?? 1)).toFixed(1)} per weight)` : ''}`
-const title = (s: Ent<'staff'>) => esc(s.staff.crew ? `${defaultPolicy.service.areas[s.staff.area ?? '']?.label ?? s.staff.area ?? 'Pair'}: ${s.staff.crew.join(' + ')}` : s.staff.name)
+const title = (app: App, s: Ent<'staff'>) => esc(s.staff.crew ? `${policyOf(app).service.areas[s.staff.area ?? '']?.label ?? s.staff.area ?? 'Pair'}: ${s.staff.crew.join(' + ')}` : s.staff.name)
 const unit = (app: App, hs: Hold[]) => (s: Ent<'staff'>) =>
-  `<div data-unit="${esc(s.id)}" class="rounded border border-slate-200 p-2 dark:border-slate-700"><div class="flex items-center gap-2 text-sm"><b class="grow">${title(s)}${s.staff.active ? '' : ' (off)'}</b>` +
+  `<div data-unit="${esc(s.id)}" class="rounded border border-slate-200 p-2 dark:border-slate-700"><div class="flex items-center gap-2 text-sm"><b class="grow">${title(app, s)}${s.staff.active ? '' : ' (off)'}</b>` +
   `${s.staff.crew ? `<span class="rounded bg-violet-100 px-1 text-xs dark:bg-violet-900">pair x${s.staff.weight ?? 2}</span>` : ''}<span class="text-xs text-slate-500">${covers(s)}</span></div>` +
   group(hs.filter(h => h.staff === s.id)).map(line(app.store.state.world)).join('') + '</div>'
 const units = (app: App) => {

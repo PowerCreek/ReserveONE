@@ -9,6 +9,7 @@ import {uiOf} from '../ui/state.ts'
 import {Engine} from '../engine/index.ts'
 import {dom, settle} from './dom.ts'
 import {real} from './real.ts'
+import {run} from '../ui/act.ts'
 const fresh = async () => {
   const el = dom().getElementById('app')!
   const app: AppT = build().mount(el)
@@ -29,45 +30,46 @@ const raise = (app: AppT, reason: string) => {
   uiOf(app).rev++
   return d.ok
 }
-const lead = async (el: Element) => {
-  await tap(el, '[data-act="stand-hear"][data-feat="booth"]')
-  await tap(el, '[data-act="stand-offer"]')
-  await tap(el, '[data-act="stand-answer"][data-yes="1"]')
-}
-test('fresh seed: a booth walk-in goes intake -> ladder offer -> accept -> seat, all through the stand', async () => {
+const cta = '[data-offer="top"] [data-act="stand-seat"]'
+test('fresh seed: a booth walk-in is asked about, then seated at the booth in one click on the stand', async () => {
   const {el, app} = await fresh()
-  assert.match(el.querySelector('[data-stand]')!.textContent!, /Greet/)
+  const stand = () => el.querySelector('[data-stand]')!.textContent!
+  assert.doesNotMatch(stand(), /Greet/)
   await tap(el, '[data-act="stand-hear"][data-feat="booth"]')
   assert.deepEqual(world(app).ents.pty1.wants!.heard, ['booth'])
-  await tap(el, '[data-act="stand-offer"]')
-  const offer = world(app).ents.pty1.offer!
-  assert.deepEqual([offer.status, offer.step], ['open', 'exact'])
-  assert.ok(tags(app, offer.spot).includes('booth'), 'the offer is a booth')
-  await tap(el, '[data-act="stand-answer"][data-yes="1"]')
-  assert.equal(world(app).ents.pty1.offer!.status, 'accepted')
-  assert.equal(slotOf(app), undefined, 'led is not seated')
-  await tap(el, '[data-act="stand-seatled"]')
-  assert.equal(slotOf(app)!.slot.table, offer.spot)
-  assert.equal(world(app).ents[offer.spot].table!.status, 'occupied')
-  assert.ok(log(app).some(m => /heard|wants/.test(m)) && log(app).some(m => /accepted/.test(m)) && log(app).some(m => /led .* to/.test(m)), log(app).join(' | '))
+  const spot = el.querySelector(cta)!.getAttribute('data-spot')!
+  assert.ok(tags(app, spot).includes('booth'), 'the top offer is a booth')
+  await tap(el, cta)
+  assert.equal(slotOf(app)!.slot.table, spot)
+  assert.equal(world(app).ents[spot].table!.status, 'occupied')
+  assert.ok(log(app).some(m => /strongly wants the booth/.test(m)) && log(app).some(m => /seated at/.test(m)), log(app).join(' | '))
+  assert.equal(el.querySelectorAll(`[data-stand] [role="radio"][data-id="pty1"]`).length, 0, 'a seated party leaves the door list')
 })
-test('fresh seed: a table-change request after the party arrived (then once seated) swaps tables', async () => {
+test('fresh seed: further offers are rows with Seat and No; Seat on a row seats that spot', async () => {
   const {el, app} = await fresh()
-  await lead(el)
-  const first = world(app).ents.pty1.offer!.spot
-  assert.ok(raise(app, 'noise'))
+  app.apply([{op: 'set', id: 'pty1', parts: {wants: {list: [{feat: 'banquette', level: 'strong', why: 'bench', accord: 'all'}, {feat: 'quiet', level: 'soft', why: 'nice', accord: 'one'}], heard: ['banquette', 'quiet']}}}])
+  uiOf(app).rev++
   await settle()
-  await tap(el, '[data-act="stand-reply"][data-r="swap"]')
-  const to = world(app).ents.pty1.offer!.spot
-  assert.deepEqual([world(app).ents.pty1.request!.status, to !== first, tags(app, to).includes('quiet')], ['granted', true, true])
-  await tap(el, '[data-act="stand-seatled"]')
-  assert.equal(slotOf(app)!.slot.table, to)
-  assert.ok(raise(app, 'draft'))
+  const rows = [...el.querySelectorAll<HTMLElement>('[data-stand] li[data-offer]')]
+  assert.ok(rows.length >= 1, el.querySelector('[data-stand]')!.textContent!)
+  assert.equal(rows[0].querySelectorAll('[data-act="stand-seat"], [data-act="stand-decline"]').length, 2)
+  const spot = rows[0].getAttribute('data-offer')!
+  await tap(rows[0], '[data-act="stand-seat"]')
+  assert.equal(slotOf(app)!.slot.table, spot)
+})
+test('fresh seed: a table-change request once seated (raised at the seated stage) swaps tables from the stand', async () => {
+  const {el, app} = await fresh()
+  await tap(el, '[data-act="stand-hear"][data-feat="booth"]')
+  await tap(el, cta)
+  const first = slotOf(app)!.slot.table
+  assert.ok(raise(app, 'noise'))
+  assert.equal(world(app).ents.pty1.request!.stage, 'seated')
   await settle()
   await tap(el, '[data-act="stand-reply"][data-r="swap"]')
   const now = slotOf(app)!.slot.table
-  assert.notEqual(now, to)
-  assert.deepEqual([world(app).ents[to].table!.status, world(app).ents[now].table!.status], ['available', 'occupied'])
+  assert.equal(world(app).ents.pty1.request!.status, 'granted')
+  assert.notEqual(now, first)
+  assert.deepEqual([world(app).ents[first].table!.status, world(app).ents[now].table!.status], ['available', 'occupied'])
   assert.ok(log(app).some(m => /moved from/.test(m)), log(app).join(' | '))
 })
 // Starters never stick: every one runs 120 sim minutes (10 s steps; arrivals only from the starter's own steps) with the real engine and ui.
@@ -87,14 +89,12 @@ test('starter table-change: both parties raise their request (announced as asked
 })
 const served = (evs: {ev: string}[]) => evs.filter(e => e.ev === 'served')
 const sim = (app: AppT, sec: number) => Array.from({length: sec}, () => step(app, 1000)).flat()
-// The stand seats a led party at `spot`; the ladder picks no particular area, so the offer is placed by hand on a main-floor and a patio table.
+// The ladder picks no particular area, so the seat command names the spot: a main-floor and a patio table (the same Cmd the stand dispatches).
 const ledTo = async (spot: string) => {
   const {el, app} = await fresh()
   uiOf(app).rate = 0
-  app.apply([{op: 'set', id: 'pty1', parts: {offer: {spot, step: 'exact', gives: [], lacks: [], at: app.store.state.now, status: 'accepted'}}}])
-  uiOf(app).rev++
+  assert.ok(run(app, {do: 'seat', party: 'pty1', spot}).ok)
   await settle()
-  await tap(el, '[data-act="stand-seatled"]')
   return {el, app}
 }
 test('fresh seed: a party the stand seated on the main floor is served without a Tell (the seating queued the guest for service)', async () => {

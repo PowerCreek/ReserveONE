@@ -1,6 +1,7 @@
 // Floor view (U2, U3): top-down SVG of one floor at a time (tabs pick it), with sections, tables and their feature chips, link groups, door, units, task lines and pings.
-import {defaultPolicy, having} from '../contracts/index.ts'
-import type {App, Hold, Id, World} from '../contracts/index.ts'
+import {having} from '../contracts/index.ts'
+import type {App, Hold, Id, Policy, World} from '../contracts/index.ts'
+import {policyOf} from './ask.ts'
 import {badge, chips, door, link, ping, section, table, unit} from './draw.ts'
 import {H, W, doorFloor, floorOf} from './geo.ts'
 import {holdsOf, live} from './assign.ts'
@@ -35,20 +36,20 @@ export const floorSvg = (w: World, fx: Fx[], fid?: Id, held: Holding = {holds: [
     ...fx.filter(f => fid === undefined || !f.floor || f.floor === fid).map(ping),
   ].join('') + '</svg>'
 }
-const tab = (w: World, fid?: Id) => (f: {id: Id; floor: {name: string}}) => {
-  const ts = having(w, 'table', 'pos').filter(t => t.pos.floor === f.id && !defaultPolicy.seat.selfSeat.includes(t.table.shape)) // stools are first come, first served: not the host's to count
+const tab = (w: World, p: Policy, fid?: Id) => (f: {id: Id; floor: {name: string}}) => {
+  const ts = having(w, 'table', 'pos').filter(t => t.pos.floor === f.id && !p.seat.selfSeat.includes(t.table.shape)) // stools are first come, first served: not the host's to count
   const free = ts.filter(t => t.table.status === 'available').length
   return `<button data-act="floor" data-id="${esc(f.id)}" class="${f.id === fid ? on : btn}">${esc(f.floor.name)} <span class="text-xs opacity-75">${free}/${ts.length}</span></button>`
 }
 /** Tabs only when there is a choice to make. */
-export const tabsOf = (w: World, fid?: Id) => {
+export const tabsOf = (w: World, p: Policy, fid?: Id) => {
   const fs = having(w, 'floor')
-  return fs.length > 1 ? `<nav data-floors class="mb-2 flex flex-wrap gap-1">${fs.map(tab(w, fid)).join('')}</nav>` : ''
+  return fs.length > 1 ? `<nav data-floors class="mb-2 flex flex-wrap gap-1">${fs.map(tab(w, p, fid)).join('')}</nav>` : ''
 }
 const draw = (app: App) => {
   const w = app.store.state.world
   const fid = shown(w, uiOf(app).floorId)
-  return having(w, 'table', 'pos').length ? tabsOf(w, fid) + floorSvg(w, uiOf(app).fx, fid, {holds: holdsOf(app), live: live(app)}) : empty
+  return having(w, 'table', 'pos').length ? tabsOf(w, policyOf(app), fid) + floorSvg(w, uiOf(app).fx, fid, {holds: holdsOf(app), live: live(app)}) : empty
 }
 export const floor = (app: App) => {
   app.act('floor', (a, ev) => ((uiOf(a).floorId = arg(ev, 'id')), uiOf(a).rev++))

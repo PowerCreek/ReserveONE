@@ -27,7 +27,7 @@ export interface Components {
   spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]; last?: boolean} // derived by engine.spots; last = a merge through a last-resort table
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
   wants: {list: Want[]; heard: string[]} // party qualifiers; `heard` = feat ids the host recorded at intake
-  offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'} // ladder proposal to a party
+  offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'; declined?: Id[]} // ladder proposal to a party; declined = spots the party already said no to
   request: {reason: string; stage: 'arrived' | 'seated'; table: Id; at: number; status: Ask; spot: Id | null} // re-seat request after the host led the party
   mood: {score: number} // guest sentiment, starts 0; changes are `mood` events
   area: {id: Id} // table: its area (policy.service.areas id); absent = main

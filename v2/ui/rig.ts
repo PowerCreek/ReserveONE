@@ -1,12 +1,13 @@
-// Test rig: a mounted app with a small fake engine (contract-typed) so views are tested without lane A.
+// Test rig: a mounted app with a small fake sim engine (contract-typed) plus the real desk (`act`, `stand`), so every write goes through the one seam.
 import {having} from '../contracts/index.ts'
-import type {App as AppT, Engine, SimOut, State} from '../contracts/index.ts'
+import type {App as AppT, Engine, HostEngine, SimOut, State} from '../contracts/index.ts'
 import {App} from '../kernel/index.ts'
+import {act, stand} from '../engine/index.ts'
 import {dom} from '../test/dom.ts'
 import {ui} from './index.ts'
 import {party} from './party.ts'
 const free = (w: Parameters<Engine['fit']>[1], size: number) => having(w, 'table').find(t => t.table.status === 'available' && t.table.capacity >= size)
-export const fake = (script: SimOut[] = []): Partial<Engine> => ({
+export const fake = (script: SimOut[] = []): Partial<HostEngine> => ({
   fit: (_p, w, now, sizes) => sizes.map(size => {
     const t = free(w, size)
     return {size, spot: t?.id ?? null, tables: t ? [t.id] : [], label: t?.table.label ?? '-', waitMin: 0, at: now, code: t ? 'HOT_GREEN' : 'NO_TABLE', ready: !!t}
@@ -24,6 +25,7 @@ export const fake = (script: SimOut[] = []): Partial<Engine> => ({
   rotate: (_p, w) => having(w, 'staff').map(s => ({staff: s.id, score: -s.staff.tally})),
   alerts: () => [{kind: 'late', ref: 'p1', level: 'warn', msg: 'Party late'}],
   bus: () => [], reconcile: () => [],
+  act, stand,
 })
 export const seed = (): State => ({now: 0, ui: {size: 2, pick: '', tone: ''}, world: {nextParty: 1, ents: {}}})
 export const rig = (script: SimOut[] = []) => {

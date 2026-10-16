@@ -5,7 +5,7 @@ Extension rule: a new feature, why, reason, response, step or starter is one row
 
 host service
 - greet
-  - host walks to the door, speaks first -> ev: greeted; task: HostTask `greet`
+  - picking a party at the stand is the greeting (no separate step); the sim host may still emit ev: greeted
   - party identity (num, label, kind W/P/R/V, size) -> comp: party
 - intake (party facts, qualifiers)
   - facts: size, kind, reservation or queue -> comp: party, reservation, queue
@@ -42,9 +42,10 @@ host service
     - answer deadline for an offer -> policy: host.clock.answerMin; comp: offer.status = lapsed
     - late and lapse for reservations and slots -> fn: reconcile; policy: seat.lateGraceMin, seat.lapsedClearMin
   - server pick and covers -> fn: serverFor, rotate; policy: rotation
-- escort
-  - lead the party to the table -> HostTask `lead`; ev: led (arrived, not yet seated)
-  - seat the party -> fn: seat; ev: seated; comp: slot
+- seat (one step)
+  - choose an offer and the party is seated at once: accepted offer + slot -> fn: act `seat`; ev: seated; comp: slot, offer
+  - a party says no -> fn: act `decline`; comp: offer.declined (never offered again); ev: answered no
+  - the guest unit still walks to its table on the sim canvas (display only; the seating is already data)
   - escort walk time -> policy: host.clock.escortMin, sim.walkPxPerSec
 - re-seat requests (after led: stage arrived | seated)
   - the party raises a reason: draft, noise, view, sun, size, accessibility, mood, wrong section -> fn: ask; comp: request; ev: asked; policy: host.reasons (seek, avoid, level, urgency, stages)
