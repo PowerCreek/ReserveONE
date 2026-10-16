@@ -21,8 +21,10 @@ const readyOn = (c: Ctx, w: World, busy: Id[], q: Pty): Id | undefined => {
 const heldOpen = (w: World, busy: Id[], held: Id): Id | undefined => (w.ents[held]?.table?.status === 'available' && !busy.includes(held) ? held : undefined)
 /** A reservation waits for its own table; everyone else takes the best ready spot that no other trip has claimed. */
 const spot = (c: Ctx, w: World, busy: Id[], q: Pty): Id | undefined => (q.reservation?.table ? heldOpen(w, busy, q.reservation.table) : readyOn(c, w, busy, q))
+/** A party the player is working (offer open or accepted) is not the sim host's to seat. */
+const engaged = (q: Pty) => q.offer?.status === 'open' || q.offer?.status === 'accepted'
 const offer = (c: Ctx, w: World, q: Pty): { q: Pty; table: Id }[] => {
-  const t = !q.body?.task && !seats(w).some(s => s.party === q.id) ? spot(c, w, seats(w).map(s => s.table), q) : undefined
+  const t = !engaged(q) && !q.body?.task && !seats(w).some(s => s.party === q.id) ? spot(c, w, seats(w).map(s => s.table), q) : undefined
   return t ? [{q, table: t}] : []
 }
 const hostJob: Job = (c, w) => {
@@ -40,7 +42,7 @@ const busserJob: Job = (c, w) => {
   const next = bus(c.p, w, c.now).find(b => !held.includes(b.table))
   return next ? trip(c, w, next.table, {do: 'clear', table: next.table}, c.p.sim.dwellSec.clear) : []
 }
-const guestJob: Job = (_c, w, id) => (phase(w, id) === 'gone' ? [{do: 'move', ...center(w, 'door')}] : [])
+const guestJob: Job = (c, w, id) => (phase(w, id) === 'gone' ? [{do: 'move', ...center(w, 'door', c.p)}] : [])
 const jobs: Record<Components['body']['role'], Job> = {host: hostJob, server: serverJob, busser: busserJob, guest: guestJob}
 /** An idle unit takes its role's next job (a trip: move, dwell, act), if there is one. */
 export const assign: Stage = (c, id, a) => {

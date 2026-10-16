@@ -68,6 +68,6 @@ export const defaultHost: Host = {
     explain: {label: 'Explain and care', host: 'I hear you; here is what I can do for this table.', then: {spot: keep, none: {move: 'stay', mood: 0, says: 'Thank you for being honest.'}}},
     refuse: {label: 'Say no', host: 'I am afraid that is not possible.', then: {spot: {move: 'stay', mood: -4, says: 'There was a table, and you said no.'}, none: {move: 'stay', mood: -3, says: 'That is disappointing.'}}},
   },
-  options: {'*': ['swap', 'offer', 'hold', 'explain'], accessibility: ['swap', 'offer']},
+  options: {'*': ['swap', 'offer', 'hold', 'explain', 'refuse'], accessibility: ['swap', 'offer', 'refuse']},
   reply: {stage: {arrived: 1, seated: 1.5}},
 }

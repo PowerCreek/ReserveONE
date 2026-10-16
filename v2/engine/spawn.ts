@@ -6,7 +6,7 @@ import {add, set} from './patch.ts'
 import {rand, weighted} from './rng.ts'
 /** A guest body one second of walking short of the door, heading in. */
 const arriving = (p: Policy, w: World, party: string): Components['body'] => {
-  const d = center(w, 'door')
+  const d = center(w, 'door', p)
   const task: Task = {do: 'move', x: d.x, y: d.y}
   return {role: 'guest', x: d.x - p.sim.walkPxPerSec, y: d.y, speed: p.sim.walkPxPerSec, task, backlog: [], party}
 }

@@ -1,6 +1,6 @@
 // Entity lookups shared by every engine function (C5: components decide what an entity is).
 import {having} from '../contracts/index.ts'
-import type {Ent, Entity, Id, PType, World} from '../contracts/index.ts'
+import type {Ent, Entity, Id, PType, Policy, World} from '../contracts/index.ts'
 export type Pty = Ent<'party'> & Entity
 export const isTable = (e?: Entity): e is Ent<'table'> => !!e && 'table' in e
 export const partyOf = (w: World, id?: Id): Pty | undefined => {
@@ -15,4 +15,9 @@ const newer = (a: Ent<'slot'> | undefined, s: Ent<'slot'>) => (a && a.slot.seate
 export const slotOf = (w: World, party: Id | null) => having(w, 'slot').filter(s => s.slot.party === party).reduce<Ent<'slot'> | undefined>(newer, undefined)
 /** door = no slot yet, seated = slot ACTIVE, gone = slot lapsed/completed (derived from data, E2). */
 export const phase = (w: World, party: Id | null) => { const s = slotOf(w, party); return s ? PHASE[s.slot.status] : ('door' as const) }
-export const center = (w: World, id: Id) => { const q = w.ents[id]?.pos; return {x: q ? q.x + q.w / 2 : 0, y: q ? q.y + q.h / 2 : 0} }
+/** Middle of an entity's `pos`; a world without a `door` entity puts the door at `policy.sim.door` (pass `p`). */
+export const center = (w: World, id: Id, p?: Policy) => {
+  const q = w.ents[id]?.pos
+  const [dx, dy] = (id === 'door' && !q && p?.sim.door) || [0, 0]
+  return {x: q ? q.x + q.w / 2 : dx, y: q ? q.y + q.h / 2 : dy}
+}

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {Engine, apply} from './index.ts'
+import {Engine, apply, heard} from './index.ts'
 import {N, P, mins, table, world} from './testkit.ts'
 import type {Entity, SimEvent, World} from '../contracts/index.ts'
 const unit = (id: string, role: 'host' | 'server' | 'busser', x: number, extra: Partial<Entity> = {}): Entity =>
@@ -49,7 +49,7 @@ test('sim: a spawned guest is queued, seated by the host, served, cleared by the
 })
 test('sim: the host seats by queue tier, not arrival, and never double-books a table', () => {
   const guest = (n: number, kind: 'W' | 'P', since: number): Entity => ({id: `pty${n}`, party: {num: n, label: `${kind}-${n}`, prefix: '', kind, name: `G${n}`, size: 2, here: 2}, queue: {since, quotedMin: 0, status: 'WAITING', from: null}})
-  const w = apply(room(), [{op: 'add', ent: guest(1, 'W', N - mins(30))}, {op: 'add', ent: guest(2, 'P', N - mins(1))}])
+  const w = apply(room(), [{op: 'add', ent: guest(1, 'W', N - mins(20))}, {op: 'add', ent: guest(2, 'P', N - mins(1))}])
   const r = until({w, now: N, log: []}, r => evs(r).includes('seated'))
   assert.equal((r.log.find(e => e.ev === 'seated') as {party: string}).party, 'pty2')
   const more = until(r, r => r.now > N + mins(2), undefined, 2000)
@@ -68,4 +68,44 @@ test('sim: tick is a pure function of its inputs; an empty world does nothing', 
   assert.deepEqual(Engine.tick(P, world([]), N, 500), {patches: [], events: []})
   const w = room()
   assert.deepEqual(Engine.tick(P, w, N, 500), Engine.tick(P, w, N, 500))
+})
+const waiting = (n: number, ago: number, extra: Partial<Entity> = {}): Entity =>
+  ({id: `pty${n}`, party: {num: n, label: `W-${n}`, prefix: '', kind: 'W', name: `G${n}`, size: 2, here: 2}, queue: {since: N - mins(ago), quotedMin: 0, status: 'WAITING', from: null}, ...extra})
+const bare = (...es: Entity[]): World => world([{id: 'door', pos: {floor: 'f1', x: 0, y: 0, w: 0, h: 0}}, ...es])
+test('tick+settle: a party past its patience leaves the list and says so; one inside it keeps waiting', () => {
+  const w = bare(waiting(1, 26, {body: {role: 'guest', x: 0, y: 0, speed: 80, task: null, backlog: [], party: 'pty1'}}), waiting(2, 10))
+  const out = Engine.tick(P, w, N, 500)
+  assert.deepEqual(out.events.map(e => e.ev), ['left'])
+  const w1 = apply(w, out.patches)
+  assert.deepEqual([w1.ents.pty1.queue, w1.ents.pty1.body], [undefined, undefined]) // the party stays as history, off the list and off the floor
+  assert.equal(w1.ents.pty2.queue!.status, 'WAITING')
+})
+test('tick+settle: an offer unanswered past answerMin lapses and the party answers no', () => {
+  const open = (at: number) => waiting(1, 1, {offer: {spot: 't1', step: 'exact', gives: [], lacks: [], at, status: 'open'}})
+  const fresh = Engine.tick(P, bare(open(N - mins(1))), N, 500)
+  assert.deepEqual(fresh.events, [])
+  const w = bare(open(N - mins(4)))
+  const out = Engine.tick(P, w, N, 500)
+  assert.deepEqual(out.events, [{ev: 'answered', party: 'pty1', spot: 't1', yes: false}])
+  assert.equal(apply(w, out.patches).ents.pty1.offer!.status, 'lapsed')
+})
+test('tick: a new request is announced once as asked; `heard` is derived from an intake patch', () => {
+  const w = bare({id: 'pty1', party: {num: 1, label: 'W-1', prefix: '', kind: 'W', name: 'G', size: 2}, request: {reason: 'draft', stage: 'arrived', table: 't1', at: N, status: 'open', spot: null}})
+  const kinds = (now: number) => Engine.tick(P, w, now, 500).events.map((e: {ev: string}) => e.ev)
+  assert.deepEqual([kinds(N + 100), kinds(N + 600), kinds(N + 1100)].map(k => k.includes('asked')), [true, false, false])
+  const wants = {list: [{feat: 'booth', level: 'strong' as const, why: 'bench', accord: 'all' as const}, {feat: 'quiet', level: 'soft' as const, why: 'nice', accord: 'one' as const, said: true}], heard: []}
+  const g = bare({id: 'pty1', party: w.ents.pty1.party!, wants})
+  const d = Engine.intake(P, g, N, 'pty1', ['booth', 'quiet'])
+  assert.ok(d.ok)
+  assert.deepEqual(heard(g, d.ok ? d.patches : []), [{ev: 'heard', party: 'pty1', feat: 'booth', level: 'strong'}]) // quiet was volunteered: nothing new to hear
+  assert.deepEqual(heard(apply(g, d.ok ? d.patches : []), d.ok ? d.patches : []), []) // idempotent
+})
+test('sim: a world without a door entity spawns guests at the policy door; a party with an open offer is left to the player', () => {
+  const w = world([table('t1', 10, 'available', 'sA', null, 'f1', 160), unit('host', 'host', 20)])
+  const g = apply(w, Engine.spawn(P, w, N, 7)).ents
+  const guest = Object.values(g).find(e => e.queue)!
+  assert.equal(guest.body!.y, P.sim.door[1])
+  const held = apply(room(), [{op: 'add', ent: waiting(1, 1, {offer: {spot: 't1', step: 'exact', gives: [], lacks: [], at: N, status: 'accepted'}})}])
+  const r = until({w: held, now: N, log: []}, r => r.now > N + mins(1), undefined, 1000)
+  assert.deepEqual(r.log, [])
 })

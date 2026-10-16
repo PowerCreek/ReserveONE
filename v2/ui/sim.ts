@@ -15,7 +15,7 @@ const arrivals = (app: App, dtMs: number) => {
   spawn(app, n)
 }
 const report = (app: App, out: SimOut) =>
-  out.events.map(e => explain(e, app.store.state.world)).forEach(({kind, msg, x, y}) => (note(app, kind, msg), ping(app, {kind, msg, x, y})))
+  out.events.map(e => explain(e, app.store.state.world)).forEach(({kind, msg, x, y, floor}) => (note(app, kind, msg), ping(app, {kind, msg, x, y, floor})))
 export const step = (app: App, dtMs: number) => {
   app.store.state.now += dtMs
   fade(app)
