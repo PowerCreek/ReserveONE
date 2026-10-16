@@ -3,13 +3,15 @@
 import type {Id, Patch, PType, Want} from './model.ts'
 import type {Carve} from './service.ts'
 import type {HostEvent, ServiceEvent, SimEvent} from './sim.ts'
-import type {Option, Placed, Rung} from './engine.ts'
+import type {BusItem, Bucket, Option, Placed, Quote, Rung} from './engine.ts'
 import type {Policy} from './policy.ts'
 import type {Stage} from './host.ts'
 import type {World} from './model.ts'
-/** Every host/manager write as data. `seat`: one step (the offer is recorded as accepted and the party is seated at once); no `spot` = the best ready spot; no `party` = a fresh walk-in of `size`. */
+/** Every host/manager write as data. `lease` holds a spot for a party while it is led and settles; `seat` makes a seating (no `spot` = the best ready spot; no `party` = a fresh walk-in of `size`). */
 export type Cmd =
-  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number}
+  | {do: 'lease'; party: Id; spot: Id; step: string} // one click at the stand: the spot is leased to the party (led there); it settles into a seat by itself
+  | {do: 'release'; party: Id} // hand a lease back (the party wants something else): tables free, party at the door
+  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number} // a leased party: confirm its lease now; else seat directly
   | {do: 'decline'; party: Id; spot: Id; step: string} // the party said no to this spot; it leaves the party's offers
   | {do: 'hear'; party: Id; feat: string} // the host asked about a qualifier
   | {do: 'tell'; table: Id}
@@ -31,6 +33,8 @@ export interface DoorRow {party: Id; label: string; name: string; size: number; 
 export interface Offer extends Rung {server: Id | null}
 export interface ReqRow {party: Id; table: Id; reason: string; stage: Stage; options: Option[]}
 /** A seated table and whether its server knows (area seen, told, or still pending a tell). */
+/** A leased spot: the party is led there and settles until `until`; `concern` = it raised a table-change request meanwhile (the lease waits for the host). */
+export interface LeaseRow {party: Id; spot: Id; tables: Id[]; at: number; until: number; concern: boolean}
 export interface SeatedRow {party: Id; table: Id; area: Id; server: Id | null; aware: 'seen' | 'told' | 'pending'}
 /** Everything the host stand shows, derived from the world. `focus` = the party in focus (the asked one when still at the door, else the next). */
 export interface StandView {
@@ -44,10 +48,36 @@ export interface StandView {
   mode: string
   outlook: Placed[]
   requests: ReqRow[]
+  leased: LeaseRow[]
   seated: SeatedRow[]
+}
+/** Dashboard (wave 5): one read model for reading the service at a glance. Every number is derived from the world; the UI only lays it out. */
+export interface Kpi {id: string; label: string; value: string; tone: 'ok' | 'warn' | 'crit' | 'info'; hint: string} // value preformatted ("34/120", "62%", "12m")
+/** One bar on a table's timeline: `slot` seated now (to = turn time, `over` when past it), `done` finished seating, `res` a reservation holding this table, `plan` where the temporal plan puts an unassigned reservation, `event` a private-event lock. */
+export interface Bar {kind: 'slot' | 'done' | 'res' | 'plan' | 'event'; from: number; to: number; party: Id | null; label: string; size: number; late?: boolean; over?: boolean}
+export interface Lane {table: Id; label: string; floor: Id; capacity: number; bars: Bar[]}
+export interface Tick {start: number; end: number; turns: number} // header bucket: seatings due to turn in it (v1 deluge/drought)
+export interface Gantt {from: number; to: number; now: number; lanes: Lane[]; ticks: Tick[]; unplaced: Bar[]} // lanes for tables with any bar in the window; unplaced = reservations the plan cannot place
+export type SpotState = 'open' | 'reserved' | 'leased' | 'seated' | 'lapsed' | 'blocked'
+export interface LedgerChip {spot: Id; label: string; covers?: number; at?: number} // covers seated, or the next reservation time
+export interface Move {table: Id; label: string; kind: 'in' | 'out'; covers: number}
+export interface Activity {start: number; end: number; net: number; moves: Move[]} // seat (+) and clear (-) per interval, newest first
+export interface SectionRow {section: Id; name: string; occ: number; turns: number; need: number; under: boolean}
+export interface ServerRow {staff: Id; name: string; rank: number; tally: number; seated: number; tables: number; weight: number; active: boolean; sections: SectionRow[]} // seated = covers at their tables now
+export interface BoardOpt {ivMin?: number; pastMin?: number; aheadMin?: number} // interval for turnover/activity/ticks (default 15), gantt window around now (default 60 back, 180 ahead)
+export interface Board {
+  kpis: Kpi[] // seated/occupancy, waiting + longest wait, quote accuracy, average turn, turning next interval, arriving next interval, to bus, late, no-shows, covers today
+  gantt: Gantt
+  turnover: Bucket[]
+  ledger: Record<SpotState, LedgerChip[]>
+  activity: Activity[]
+  servers: ServerRow[] // rotation order
+  bus: BusItem[]
+  quotes: Quote[] // walk-in quote per size 1-6 (what to tell a walk-in)
 }
 export type DeskFn<A extends unknown[], R> = (p: Policy, w: World, now: number, ...a: A) => R
 export interface Desk {
   act: DeskFn<[cmd: Cmd], Outcome>
   stand: DeskFn<[focus?: Id], StandView>
+  board: DeskFn<[opt?: BoardOpt], Board>
 }

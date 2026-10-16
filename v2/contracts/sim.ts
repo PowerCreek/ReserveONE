@@ -22,7 +22,8 @@ export type HostEvent =
   | {ev: 'quoted'; party: Id; min: number}
   | {ev: 'offered'; party: Id; spot: Id; step: string}
   | {ev: 'answered'; party: Id; spot: Id; yes: boolean}
-  | {ev: 'led'; party: Id; table: Id; by: Id} // arrived at the table, not yet seated
+  | {ev: 'leased'; party: Id; spot: Id; by: Id} // the host leased the spot to the party: led there, not seated yet
+  | {ev: 'released'; party: Id; spot: Id; by: Id} // a lease handed back: the tables are free, the party is at the door again
   | {ev: 'asked'; party: Id; reason: string; stage: 'arrived' | 'seated'}
   | {ev: 'replied'; party: Id; reason: string; response: string; move: 'swap' | 'offer' | 'stay'; mood: number}
   | {ev: 'moved'; party: Id; from: Id; to: Id}

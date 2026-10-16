@@ -24,7 +24,7 @@ export const defaultPolicy: Policy = {
   queue: {tier: {P: 0, V: 1, W: 2, R: 2}},
   rotation: {idleCapMin: 600, idleWeight: 0.001},
   alerts: {prepMin: 30, warnMin: 15, busBase: 30.5, busDemand: 10, busRank: 5},
-  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [24, 260], floor: [800, 520], autoSeat: false},
+  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [24, 260], floor: [960, 720], autoSeat: false},
   plan: {horizonMin: 150, slackMin: 5, anticipate: 1},
   merge: {max: 4},
   look: {probes: 40, tight: 3, sizes: [1, 2, 3, 4, 5, 6], msg: {NO_TABLE: 'No table fits', CAUTION_WAIT: 'EXHAUSTED NOW', WARM_AMBER: 'Tight Runway', HOT_GREEN: 'Clear'}},

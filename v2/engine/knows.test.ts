@@ -13,7 +13,7 @@ test('knows: a main-floor server sees every seating, told or not, and even an em
 })
 test('knows: the bar sees its seatings like the main floor; grotto, patio and upstairs know only once the active slot is told', () => {
   assert.equal(knows(world([t('x', 'bar'), seating('x')]), 'x'), true)
-  const areas = ['grotto', 'patio', 'upstairs']
+  const areas = ['grotto', 'patio', 'roof']
   assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x')]), 'x')), [false, false, false])
   assert.deepEqual(areas.map(a => knows(world([t('x', a), seating('x', {by: 'host', at: N})]), 'x')), [true, true, true])
 })

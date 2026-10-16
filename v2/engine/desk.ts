@@ -40,6 +40,6 @@ const seated = (p: Policy, w: World): SeatedRow[] => having(w, 'slot').filter(s 
 export const stand: Desk['stand'] = (p, w, now, focus) => {
   const at = door(p, w, now)
   const f = (at.find(r => r.party === focus) ?? at[0])?.party ?? null
-  const rest = {rotation: turns[String(holdsOn(p, w, now)) as 'true'](p, w, now), mode: modeAt(p, w, now), outlook: outlook(p, w, now), requests: requests(p, w, now), seated: seated(p, w)}
+  const rest = {rotation: turns[String(holdsOn(p, w, now)) as 'true'](p, w, now), mode: modeAt(p, w, now), outlook: outlook(p, w, now), requests: requests(p, w, now), leased: [], seated: seated(p, w)}
   return {door: at, focus: f, ...intakeOf(p, w.ents[f ?? '']), offers: f ? offers(p, w, now, f) : [], ...rest}
 }

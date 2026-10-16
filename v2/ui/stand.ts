@@ -26,7 +26,7 @@ const act = (name: string, attrs: string, label: string, cls: string, extra = ''
 const ul = (rows: string[]) => `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rows.join('')}</ul>`
 const feat = (c: Ctx, f: string) => c.p.host.feats[f]?.label ?? f
 const staffName = (w: World, id?: Id | null) => (id ? (w.ents[id]?.staff?.crew?.join(' + ') ?? w.ents[id]?.staff?.name ?? id) : '')
-const named = (l: string) => l.split('+').map(x => (/^\d+$/.test(x) ? `T${x}` : x)).join(' + ')
+const named = (l: string) => l.replaceAll('+', ' + ') // labels show as stored; a merge reads `T17 + T18`
 const spot = spotName
 const KIND: Record<string, string> = {W: 'Walk-in', P: 'Priority', R: 'Reservation', V: 'VIP'}
 

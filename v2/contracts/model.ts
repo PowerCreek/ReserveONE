@@ -3,7 +3,7 @@
 import type {Task} from './sim.ts'
 import type {Carve} from './service.ts'
 export type Id = string
-export type TStatus = 'available' | 'occupied' | 'lapsed' | 'blocked_private'
+export type TStatus = 'available' | 'leased' | 'occupied' | 'lapsed' | 'blocked_private' // leased = held for a party being led and settled (not seated yet): out of every offer and plan
 export type PType = 'W' | 'P' | 'R' | 'V' // walk-in, priority (late res), reservation, VIP
 export type Heat = 'HOT_GREEN' | 'CAUTION_WAIT' | 'NO_TABLE' | 'WARM_AMBER'
 export type Level = 'need' | 'strong' | 'soft' // how binding a preference is; need = never relaxed
@@ -12,7 +12,7 @@ export type Accord = 'all' | 'most' | 'one' // consensus: how much of the party 
 export interface Want {feat: string; level: Level; why: string; accord: Accord; avoid?: boolean; said?: boolean} // said = volunteered, else the host must ask
 export type Ask = 'open' | 'offered' | 'granted' | 'declined'
 export interface Components {
-  floor: {name: string; active: boolean}
+  floor: {name: string; active: boolean; level?: number} // level = storey (0 ground, 1 roof; default 0); floors on one level share one coordinate frame (stitched side by side), so `pos` places a table in its level's frame
   section: {name: string; color: string; minOccupancy?: number; minTurns?: number}
   pos: {floor: Id; x: number; y: number; w: number; h: number}
   table: {label: string; capacity: number; min: number; shape: 'rect' | 'booth' | 'stool'; status: TStatus; waiter: Id | null; section: Id | null}
@@ -26,6 +26,7 @@ export interface Components {
   event: {name: string; tables: Id[]; start: number; end: number; locked: Id[]; reclaimed: boolean}
   spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]; last?: boolean} // derived by engine.spots; last = a merge through a last-resort table
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
+  lease: {spot: Id; tables: Id[]; at: number; until: number; step: string} // party: the tables leased to it while it is led and settles; at `until` (policy.host.clock.leaseMin) it is seated unless it raised a concern
   wants: {list: Want[]; heard: string[]} // party qualifiers; `heard` = feat ids the host recorded at intake
   offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'; declined?: Id[]} // ladder proposal to a party; declined = spots the party already said no to
   request: {reason: string; stage: 'arrived' | 'seated'; table: Id; at: number; status: Ask; spot: Id | null} // re-seat request after the host led the party

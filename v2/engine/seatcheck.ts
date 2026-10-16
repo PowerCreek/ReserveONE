@@ -2,6 +2,7 @@ import type {Ent, Policy, TStatus} from '../contracts/index.ts'
 type T = Ent<'table'>
 const why: Record<TStatus, (t: T) => string | undefined> = {
   blocked_private: t => `${t.table.label} is blocked (private event)`,
+  leased: t => `${t.table.label} is leased to another party`,
   occupied: t => `${t.table.label} is occupied by another party`,
   lapsed: t => `${t.table.label} is past its turn: clear it first`,
   available: () => undefined,

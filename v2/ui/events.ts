@@ -9,14 +9,12 @@ type Describe = {[K in Ev['ev']]: (e: Extract<Ev, {ev: K}>, w: World, H: Hp) => 
 /** Ping ring per host event (literals so the build scanner sees them); log badges and sim kinds are in tone.ts. */
 export const HRING: Record<string, string> = {
   greeted: 'stroke-sky-500', heard: 'stroke-indigo-500', quoted: 'stroke-slate-500', offered: 'stroke-violet-500', answered: 'stroke-emerald-500',
-  led: 'stroke-teal-500', asked: 'stroke-orange-500', replied: 'stroke-fuchsia-500', moved: 'stroke-cyan-500', mood: 'stroke-pink-500', told: 'stroke-lime-500',
+  leased: 'stroke-teal-500', released: 'stroke-slate-500', asked: 'stroke-orange-500', replied: 'stroke-fuchsia-500', moved: 'stroke-cyan-500', mood: 'stroke-pink-500', told: 'stroke-lime-500',
 }
 const who = (w: World, id: Id) => w.ents[id]?.party && `${w.ents[id]!.party!.label} x${w.ents[id]!.party!.size}`
-/** Table label; a link group reads as its primary member, a merge as `5+6`. */
+/** Table label; a link group reads as its primary member, a merge as `T5+T6`. */
 const label = (w: World, id: Id) => w.ents[id]?.table?.label ?? id
-/** A spot as the host says it: bare table numbers read as T-numbers ("T5+T6"). */
-const said = (l: string) => (/^\d+$/.test(l) ? `T${l}` : l)
-export const spotName = (w: World, id: Id) => (isMerge(id) ? partsOf(w, id) : partsOf(w, id).slice(0, 1)).map(t => said(label(w, t))).join('+')
+export const spotName = (w: World, id: Id) => (isMerge(id) ? partsOf(w, id) : partsOf(w, id).slice(0, 1)).map(t => label(w, t)).join('+')
 const nm = (w: World, id: Id) => w.ents[id]?.staff?.name ?? id
 /** The host is "You" in the player's own log; any other teller is named. */
 const teller = (w: World, id: Id) => ({host: 'You'} as Record<string, string>)[w.ents[id]?.body?.role ?? 'host'] ?? actor(w, id)
@@ -55,7 +53,8 @@ const describe: Describe = {
   quoted: (e, w) => ({msg: `${crew(w, e.party)} was quoted ${e.min} min`, at: e.party}),
   offered: (e, w, H) => ({msg: `The host offered ${crew(w, e.party)} ${thing(w, e.party, e.spot, H)} at ${spotName(w, e.spot)} (${e.step})`, at: anchor(w, e.spot)}),
   answered: (e, w, H) => ({msg: `${crew(w, e.party)} ${e.yes ? 'accepted' : 'declined'} ${thing(w, e.party, e.spot, H)}${e.yes || listed(w, e.party) ? '' : ' and left the list'}`, at: anchor(w, e.spot)}),
-  led: (e, w) => ({msg: `${actor(w, e.by)} led ${crew(w, e.party)} to ${spotName(w, e.table)}`, at: anchor(w, e.table)}),
+  leased: (e, w) => ({msg: `${teller(w, e.by)} leased ${spotName(w, e.spot)} to ${crew(w, e.party)}`, at: anchor(w, e.spot)}),
+  released: (e, w) => ({msg: `${teller(w, e.by)} released ${spotName(w, e.spot)}: ${crew(w, e.party)} is back at the door`, at: e.party}),
   asked: (e, w, H) => ({msg: `${crew(w, e.party)} asked for another table (${reason(H, e.reason)}${e.stage === 'seated' ? ', already seated' : ''}): "${H.reasons[e.reason]?.says ?? e.reason}"`, at: e.party}),
   replied: (e, w, H) => ({msg: `The host answered the ${reason(H, e.reason)} request of ${crew(w, e.party)} with "${H.responses[e.response]?.label ?? e.response}": ${MOVE[e.move]} (mood ${sign(e.mood)})`, at: e.party}),
   moved: (e, w) => ({msg: `${crew(w, e.party)} moved from ${spotName(w, e.from)} to ${spotName(w, e.to)}`, at: anchor(w, e.to)}),

@@ -13,6 +13,7 @@ interface X {p: Policy; now: number; turn: number; t: number}
 const when: Record<TStatus, (x: X) => number> = {
   available: x => x.now,
   lapsed: x => x.now + x.p.seat.lapsedClearMin * MIN,
+  leased: x => x.now + x.turn * MIN, // a lease settles into a seating now: free after a full turn
   occupied: x => (x.t ? Math.max(x.t + x.p.seat.resetMin * MIN, x.now + x.p.seat.quantumMin * MIN) : x.now + (x.turn / 2) * MIN),
   blocked_private: x => x.now, // excluded from the pool before this is asked
 }

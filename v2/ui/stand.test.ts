@@ -125,13 +125,13 @@ test('every HostEvent has a narrated plain sentence (and the decline-and-leave e
   w.ents.p1.offer = {spot: 't2', step: 'near', gives: ['banquette'], lacks: [], at: 0, status: 'declined'}
   const all: HostEvent[] = [
     {ev: 'greeted', party: 'p1', by: 'host'}, {ev: 'heard', party: 'p1', feat: 'banquette', level: 'strong'}, {ev: 'quoted', party: 'p1', min: 12},
-    {ev: 'offered', party: 'p1', spot: 't2', step: 'near'}, {ev: 'answered', party: 'p1', spot: 't2', yes: true}, {ev: 'led', party: 'p1', table: 't2', by: 'host'},
+    {ev: 'offered', party: 'p1', spot: 't2', step: 'near'}, {ev: 'answered', party: 'p1', spot: 't2', yes: true}, {ev: 'leased', party: 'p1', spot: 't2', by: 'host'},
     {ev: 'asked', party: 'p1', reason: 'noise', stage: 'seated'}, {ev: 'replied', party: 'p1', reason: 'noise', response: 'swap', move: 'swap', mood: 3},
     {ev: 'moved', party: 'p1', from: 't1', to: 't2'}, {ev: 'mood', party: 'p1', delta: -2, why: 'noise'},
   ]
   assert.deepEqual(all.map(e => explain(e, w, defaultPolicy).msg), [
     'The host greeted Chen party at the door', 'Chen party strongly wants the banquette (the bench side suits us)', 'Chen party was quoted 12 min',
-    'The host offered Chen party the banquette at T2 (near)', 'Chen party accepted the banquette', 'The host led Chen party to T2',
+    'The host offered Chen party the banquette at T2 (near)', 'Chen party accepted the banquette', 'You leased T2 to Chen party',
     'Chen party asked for another table (noise, already seated): "It is too loud for us to talk."',
     'The host answered the noise request of Chen party with "Move them": moving them (mood +3)',
     'Chen party moved from T1 to T2', 'Chen party mood fell by 2: noise',

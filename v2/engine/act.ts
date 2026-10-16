@@ -127,7 +127,7 @@ const staffRow: Row<'staff'> = (c, cmd) => {
   const edit = duty[cmd.to]
   return s && edit ? done([set(cmd.id, {staff: {...s, ...edit(s)}})], [], `${s.name}: ${cmd.to}`) : fail(s ? `Unknown staff change ${cmd.to}` : `No staff ${cmd.id}`)
 }
-const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow}
+const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: c => fail('lease lands with lane E6'), release: c => fail('release lands with lane E6')}
 /** Run one host/manager command: patches to commit, events to narrate, one log line; unknown or invalid input -> {ok: false, err}. */
 export const act: Desk['act'] = (p, w, now, cmd) => {
   const row = rows[cmd?.do as Cmd['do']] as Row<Cmd['do']> | undefined

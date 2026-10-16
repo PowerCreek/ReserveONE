@@ -19,7 +19,7 @@ export const defaultService: ServiceCfg = {
     grotto: {label: 'Grotto', seen: false, carve: ['whole', 'tops']},
     patio: {label: 'Patio', seen: false, carve: ['tops']},
     bar: {label: 'Bar', seen: true, carve: ['level']},
-    upstairs: {label: 'Upstairs', seen: false, carve: ['level']},
+    roof: {label: 'Roof', seen: false, carve: ['level']},
   },
 }
 /** A standing holder of one table in the active mode (`by` = the carve that decided it; `rotation` = nobody until seated, then the table's waiter). */

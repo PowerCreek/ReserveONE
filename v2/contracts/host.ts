@@ -10,7 +10,7 @@ export interface WhyDef {label: string; flavour: 'function' | 'taste' | 'occasio
 /** Fallback ladder step. `kind` selects an engine rung builder (exact|wait|near|relax|elsewhere); the row is its parameters. Say-templates use {party} {spot} {gives} {lacks} {min} {tables} {cap} (merge: its tables, T-prefixed numbers, and summed seats). */
 export interface StepDef {kind: 'exact' | 'wait' | 'near' | 'relax' | 'elsewhere' | 'merge'; say: string; maxWaitMin?: Partial<Record<Level, number>>; drops?: Level[]}
 /** Temporal thresholds, minutes. Late and lapse stay in `policy.seat` (lateGraceMin, lapsedClearMin). */
-export interface Clock {quoteTolMin: number; holdMin: number; aheadMin: number; patienceMin: Record<PType, number>; escortMin: number; answerMin: number; reseatWindowMin: number}
+export interface Clock {quoteTolMin: number; holdMin: number; aheadMin: number; patienceMin: Record<PType, number>; escortMin: number; leaseMin: number; answerMin: number; reseatWindowMin: number}
 /** Re-seat reason: what the party seeks or avoids once it asks for another table; `urgency` scales the sentiment at stake. */
 export interface ReasonDef {label: string; seek: string[]; avoid: string[]; level: Level; urgency: number; stages: Stage[]; says: string}
 /** One consequence of a host response. `mood` is the base sentiment delta; engine scales it by reason urgency and stage. */
@@ -53,7 +53,7 @@ export const defaultHost: Host = {
     {kind: 'elsewhere', say: 'We can seat {party} at {spot} on another floor: shall we?'},
     {kind: 'merge', say: 'Push {tables} together: seats {cap}.'},
   ],
-  clock: {quoteTolMin: 5, holdMin: 10, aheadMin: 30, patienceMin: {W: 25, P: 15, R: 10, V: 10}, escortMin: 2, answerMin: 3, reseatWindowMin: 10},
+  clock: {quoteTolMin: 5, holdMin: 10, aheadMin: 30, patienceMin: {W: 25, P: 15, R: 10, V: 10}, escortMin: 2, leaseMin: 2, answerMin: 3, reseatWindowMin: 10},
   reasons: {
     draft: {label: 'draft', seek: [], avoid: ['door'], level: 'strong', urgency: 0.5, stages: ['arrived', 'seated'], says: 'It is drafty here.'},
     noise: {label: 'noise', seek: ['quiet'], avoid: ['loud'], level: 'strong', urgency: 0.5, stages: ['arrived', 'seated'], says: 'It is too loud for us to talk.'},

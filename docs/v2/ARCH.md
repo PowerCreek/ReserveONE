@@ -72,3 +72,20 @@ Order: E4, then U7.
 | --- | --- | --- | --- |
 | E4 engine desk | `v2/engine/act.ts` `desk.ts` (new) + `act.test.ts` `desk.test.ts`, `v2/engine/index.ts` (export `act`, `stand`) | desk, engine, host, service, sim | `npm run v2:check && node --test "v2/engine/**/*.test.ts"` |
 | U7 ui on the desk | `v2/ui/**`, `v2/main.ts` (provide `policy`), `v2/test/**` (not `dom.ts`) | desk; engine only via `ask` | `npm run v2:check && npm run v2:test && npm run v2:build` |
+
+## WAVE 5 LANES (dashboard + building geometry: `contracts/desk.ts` `Board` `BoardOpt` + `Desk.board` (optional in `HostEngine` until E5 lands); model `floor.level`; area `upstairs` renamed `roof`)
+Order: V3 and E5 in parallel; then U8a and U8b in parallel.
+| lane | owned paths | contracts | acceptance |
+| --- | --- | --- | --- |
+| V3 venue geometry | `v2/venue.ts` `v2/crew.ts` `v2/venue.test.ts`; label fallout in any `*.test.ts` and the T-prefix display shims in `ui/events.ts` `ui/stand.ts` | model (`floor.level`), service | `npm run v2:check && npm run v2:test` |
+| E5 engine board | `v2/engine/board.ts` `board.test.ts` (new), `v2/engine/index.ts` | desk (`Board`) | `npm run v2:check && node --test "v2/engine/**/*.test.ts"` |
+| U8a floor views | `v2/ui/floor.ts` `draw.ts` `geo.ts` `iso.ts` (new) + `floor.test.ts` `iso.test.ts` | model (`floor.level`, `pos`) | `npm run v2:check && node --test "v2/ui/floor*.test.ts" "v2/ui/iso*.test.ts" && npm run v2:build` |
+| U8b dashboard | `v2/ui/board.ts` (new) `board.test.ts` `shell.ts` `index.ts` `tone.ts` | desk (`Board`) via `ask` | `npm run v2:check && npm run v2:test && npm run v2:build` |
+
+## WAVE 6 LANES (lease + views; contracts landed: TStatus `leased`, party `lease`, `Cmd lease|release`, HostEvent `leased`/`released` (replaces `led`), `clock.leaseMin`, `StandView.leased` + `LeaseRow`, `SpotState 'leased'`; stubs in `engine/act.ts` rows and `desk.ts` `leased: []`)
+Order: E6, U8a, U8b in parallel (disjoint files).
+| lane | owned paths | acceptance |
+| --- | --- | --- |
+| E6 lease | `v2/engine/**` (not `board.test.ts` expectations beyond the leased state), `v2/ui/stand.ts` `stand.test.ts` `events.ts` `act.ts`, `v2/test/flow.test.ts` | `npm run v2:check && npm run v2:test` |
+| U8a floor views | `v2/ui/floor.ts` `draw.ts` `geo.ts` `iso.ts` (new) + `floor.test.ts` `iso.test.ts` | `npm run v2:check && node --test "v2/ui/floor*.test.ts" "v2/ui/iso*.test.ts" && npm run v2:build` |
+| U8b dashboard | `v2/ui/board.ts` (new) `board.test.ts` `shell.ts` `index.ts` `panels.test.ts` | `npm run v2:check && node --test "v2/ui/board*.test.ts" "v2/ui/panels.test.ts" && npm run v2:build` |
