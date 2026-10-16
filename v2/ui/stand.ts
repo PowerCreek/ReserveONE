@@ -44,7 +44,7 @@ const line = (app: App, kind: string, msg: string) => {
   HKIND[kind] && (uiOf(app).log = [{...top, cls: HKIND[kind]}, ...rest])
 }
 /** Log and ping host events as plain sentences. Call after the patches are applied (parties and tables are in their new place). */
-export const narrate = (app: App, es: HostEvent[]) => es.map(e => explain(e, world(app))).forEach(x => (line(app, x.kind, x.msg), ping(app, {kind: x.kind, msg: x.msg, x: x.x, y: x.y, floor: x.floor} as Parameters<typeof ping>[1])))
+export const narrate = (app: App, es: HostEvent[]) => es.map(e => explain(e, world(app))).forEach(x => (line(app, x.kind, x.msg), ping(app, {kind: x.kind, msg: x.msg, x: x.x, y: x.y, floor: x.floor})))
 const verdict = (app: App, d: Decision | undefined, what: string) => {
   const r = d ?? {ok: false as const, err: `engine.${what} is not available`}
   r.ok ? (commit(app, r.patches), note(app, r.tone, r.msg)) : note(app, 'warn', r.err)
@@ -58,11 +58,13 @@ const LV: Record<Level, string> = {need: 'bg-rose-600 text-white', strong: 'bg-a
 const part = (title: string, body: string) => `<section><h3 class="mb-1 text-xs font-semibold uppercase text-slate-500">${title}</h3>${body}</section>`
 const muted = (s: string) => `<p class="text-xs text-slate-500">${s}</p>`
 const act = (name: string, attrs: string, label: string, cls = btn) => `<button data-act="stand-${name}" ${attrs} class="${cls}">${esc(label)}</button>`
+const ledRows = (w: World) => parties(w).filter(e => led(w, e)).map(e =>
+  `<div class="mt-1 rounded border border-emerald-500 p-1 text-xs">${esc(crew(e))} led to ${esc(spotName(w, e.offer!.spot))}, not seated ${act('seatled', `data-id="${e.id}"`, 'Seat', on)}</div>`).join('')
 const greet = (app: App) => {
   const w = world(app), f = focus(app), at = door(w), seen = st(app).greeted
   const chips = at.map(p => act('focus', `data-id="${p.id}"`, `${p.party.label} x${p.party.size}${seen.includes(p.id) ? ' (greeted)' : ''}`, p.id === f ? on : pill)).join(' ')
   const go = seen.includes(f) ? muted(`Greeted ${esc(crew(w.ents[f]))}.`) : act('greet', '', `Greet ${crew(w.ents[f])}`, on)
-  return part('At the door', f ? `<div class="flex flex-wrap gap-1">${chips}</div><div class="mt-1">${go}</div>` : muted('Nobody at the door.'))
+  return part('At the door', (f ? `<div class="flex flex-wrap gap-1">${chips}</div><div class="mt-1">${go}</div>` : muted('Nobody at the door.')) + ledRows(w))
 }
 const recorded = (e: Entity) => (e.wants?.list ?? []).filter(x => x.said || e.wants?.heard.includes(x.feat))
 const wantChip = (x: Want) => `<span class="rounded-full px-2 py-0.5 text-xs ${LV[x.level]}" title="${esc(x.accord)} of the party">${x.avoid ? 'avoid ' : ''}${esc(feat(x.feat))} | ${x.level} | ${esc(H.whys[x.why]?.label ?? x.why)}</span>`
@@ -78,7 +80,7 @@ const rung = (r: Rung) => `<li class="py-1 text-xs"><b>${esc(r.step)}</b> ${esc(
 ${r.spot ? act('offer', `data-step="${esc(r.step)}" data-spot="${esc(r.spot)}"`, 'Offer') : ''}</li>`
 const open = (w: World, e: Entity) => e.offer?.status === 'open'
   ? `<div class="mb-1 rounded border border-violet-500 p-1 text-xs">Offered ${esc(spotName(w, e.offer.spot))} (${esc(e.offer.step)}) ${act('answer', `data-id="${e.id}" data-yes="1"`, 'Accept', on)} ${act('answer', `data-id="${e.id}" data-yes="0"`, 'Decline')}</div>`
-  : led(w, e) ? `<div class="mb-1 rounded border border-emerald-500 p-1 text-xs">Led to ${esc(spotName(w, e.offer!.spot))}, not seated ${act('seatled', `data-id="${e.id}"`, 'Seat', on)}</div>` : ''
+  : ''
 const ladder = (app: App) => {
   const w = world(app), f = focus(app), e = w.ents[f]
   const rs = ask(app, 'ladder', f)
