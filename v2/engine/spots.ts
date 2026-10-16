@@ -1,7 +1,7 @@
 import {having} from '../contracts/index.ts'
 import type {Engine, Ent, Entity, Id, TStatus, World} from '../contracts/index.ts'
 import {isTable} from './ents.ts'
-const prec: TStatus[] = ['blocked_private', 'occupied', 'lapsed', 'available']
+const prec: TStatus[] = ['blocked_private', 'occupied', 'leased', 'lapsed', 'available']
 const status = (ts: Ent<'table'>[]) => prec.find(s => ts.some(t => t.table.status === s)) ?? 'available'
 export interface Group {id: Id; ts: Ent<'table'>[]}
 const feats = (ts: Ent<'table'>[]) => [...new Set(ts.flatMap(t => (t as Entity).feat?.tags ?? []))].sort()

@@ -42,12 +42,18 @@ host service
     - answer deadline for an offer -> policy: host.clock.answerMin; comp: offer.status = lapsed
     - late and lapse for reservations and slots -> fn: reconcile; policy: seat.lateGraceMin, seat.lapsedClearMin
   - server pick and covers -> fn: serverFor, rotate; policy: rotation
-- seat (one step)
-  - choose an offer and the party is seated at once: accepted offer + slot -> fn: act `seat`; ev: seated; comp: slot, offer
-  - a party says no -> fn: act `decline`; comp: offer.declined (never offered again); ev: answered no
-  - the guest unit still walks to its table on the sim canvas (display only; the seating is already data)
+- lease (one step; the stand places a party only by leasing)
+  - choose an offer and the spot is leased to the party at once: tables `leased` (server recorded), accepted offer, the guest walks there -> fn: act `lease`; ev: leased; comp: lease {spot, tables, at, until, step}, offer
+  - a leased table is taken: out of every offer, match, ladder, merge and ready fit; plans free it after a full turn; the rotation counts its covers; the door list drops the party (stage arrived)
+  - settles into a seat by itself at `until` -> policy: host.clock.leaseMin; fn: settle (respond.ts stage, lease.ts); ev: seated; comp: slot
+  - a concern (table-change request open or offered) holds the lease for the host; an arrived-stage swap moves the lease -> fn: respond; ev: moved
+  - Seat now confirms the lease on its own tables -> fn: act `seat` on a leased party; ev: seated
+  - Release hands the spot back: tables free, the spot joins offer.declined, the party walks back to the door -> fn: act `release`; ev: released
+  - a party says no to an offer -> fn: act `decline`; comp: offer.declined (never offered again); ev: answered no
+  - the sim host (sim.autoSeat) leases as it sets off; its seat task confirms the lease
+  - queue/book quick seats (act `seat` with no lease) still seat directly
   - escort walk time -> policy: host.clock.escortMin, sim.walkPxPerSec
-- re-seat requests (after led: stage arrived | seated)
+- re-seat requests (after led: stage arrived = leased | seated)
   - the party raises a reason: draft, noise, view, sun, size, accessibility, mood, wrong section -> fn: ask; comp: request; ev: asked; policy: host.reasons (seek, avoid, level, urgency, stages)
   - host response options per reason -> fn: options; policy: host.options
   - responses: swap, offer, hold, explain, refuse -> fn: respond; policy: host.responses (host script, then.spot / then.none outcomes)

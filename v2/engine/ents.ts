@@ -13,8 +13,11 @@ export const nextNum = (w: World) => having(w, 'party').reduce((m, e) => Math.ma
 const PHASE = {ACTIVE: 'seated', LAPSED: 'gone', COMPLETED: 'gone'} as const
 const newer = (a: Ent<'slot'> | undefined, s: Ent<'slot'>) => (a && a.slot.seatedAt > s.slot.seatedAt ? a : s)
 export const slotOf = (w: World, party: Id | null) => having(w, 'slot').filter(s => s.slot.party === party).reduce<Ent<'slot'> | undefined>(newer, undefined)
-/** door = no slot yet, seated = slot ACTIVE, gone = slot lapsed/completed (derived from data, E2). */
-export const phase = (w: World, party: Id | null) => { const s = slotOf(w, party); return s ? PHASE[s.slot.status] : ('door' as const) }
+const LED = {true: 'led', false: 'door'} as const
+/** door = no slot yet, led = holding a lease (walked to its table, not seated), seated = slot ACTIVE, gone = slot lapsed/completed (derived from data, E2). */
+export const phase = (w: World, party: Id | null) => { const s = slotOf(w, party); return s ? PHASE[s.slot.status] : LED[String(!!w.ents[party ?? '']?.lease) as 'true' | 'false'] }
+/** The host unit (its body), else the plain id `host`: the teller of host events. */
+export const hostOf = (w: World) => having(w, 'body').find(b => b.body.role === 'host')?.id ?? 'host'
 /** Middle of an entity's `pos`; a world without a `door` entity puts the door at `policy.sim.door` (pass `p`). */
 export const center = (w: World, id: Id, p?: Policy) => {
   const q = w.ents[id]?.pos

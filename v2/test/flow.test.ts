@@ -14,6 +14,7 @@ const fresh = async () => {
   const el = dom().getElementById('app')!
   const app: AppT = build().mount(el)
   app.apply([{op: 'set', id: 'pty1', parts: {party: {...app.store.state.world.ents.pty1.party!, size: 2}, wants: {list: [{feat: 'booth', level: 'strong', why: 'bench', accord: 'all'}], heard: []}}}])
+  uiOf(app).rate = 0 // no walk-ins while the clock runs
   uiOf(app).rev++
   await settle()
   return {el, app}
@@ -30,8 +31,10 @@ const raise = (app: AppT, reason: string) => {
   uiOf(app).rev++
   return d.ok
 }
-const cta = '[data-offer="top"] [data-act="stand-seat"]'
-test('fresh seed: a booth walk-in is asked about, then seated at the booth in one click on the stand', async () => {
+const cta = '[data-offer="top"] [data-act="stand-lease"]'
+const LEASE = defaultPolicy.host.clock.leaseMin * 60000
+const leaseOf = (app: AppT) => world(app).ents.pty1.lease
+test('fresh seed: a booth walk-in is asked about, leased the booth in one click on the stand, and settles into it by the clock', async () => {
   const {el, app} = await fresh()
   const stand = () => el.querySelector('[data-stand]')!.textContent!
   assert.doesNotMatch(stand(), /Greet/)
@@ -40,27 +43,59 @@ test('fresh seed: a booth walk-in is asked about, then seated at the booth in on
   const spot = el.querySelector(cta)!.getAttribute('data-spot')!
   assert.ok(tags(app, spot).includes('booth'), 'the top offer is a booth')
   await tap(el, cta)
+  assert.deepEqual([leaseOf(app)?.spot, world(app).ents[spot].table!.status, slotOf(app)], [spot, 'leased', undefined])
+  assert.equal(el.querySelectorAll(`[data-stand] [role="radio"][data-id="pty1"]`).length, 0, 'a leased party leaves the door list')
+  assert.ok(el.querySelector('[data-lease="pty1"]'), 'listed under Leased')
+  step(app, LEASE)
   assert.equal(slotOf(app)!.slot.table, spot)
   assert.equal(world(app).ents[spot].table!.status, 'occupied')
-  assert.ok(log(app).some(m => /strongly wants the booth/.test(m)) && log(app).some(m => /seated at/.test(m)), log(app).join(' | '))
-  assert.equal(el.querySelectorAll(`[data-stand] [role="radio"][data-id="pty1"]`).length, 0, 'a seated party leaves the door list')
+  assert.ok(log(app).some(m => /strongly wants the booth/.test(m)) && log(app).some(m => /^You leased .* party$/.test(m)) && log(app).some(m => /party seated at .* by You/.test(m)), log(app).join(' | '))
 })
-test('fresh seed: further offers are rows with Seat and No; Seat on a row seats that spot', async () => {
+test('fresh seed: Release hands the spot back and the next offer takes the CTA; leasing that one and Seat now seats it', async () => {
+  const {el, app} = await fresh()
+  const first = el.querySelector(cta)!.getAttribute('data-spot')!
+  await tap(el, cta)
+  await tap(el, '[data-lease="pty1"] [data-act="stand-release"]')
+  assert.deepEqual([leaseOf(app), world(app).ents[first].table!.status, world(app).ents.pty1.offer?.declined], [undefined, 'available', [first]])
+  const next = el.querySelector(cta)!.getAttribute('data-spot')!
+  assert.notEqual(next, first)
+  await tap(el, cta)
+  await tap(el, '[data-lease="pty1"] [data-act="stand-confirm"]')
+  assert.equal(slotOf(app)!.slot.table, next)
+})
+test('fresh seed: a leased party raises a concern (arrived stage): the lease holds past its time, a swap moves it, then it settles', async () => {
+  const {el, app} = await fresh()
+  await tap(el, cta)
+  const first = leaseOf(app)!.spot
+  assert.ok(raise(app, 'noise'))
+  assert.equal(world(app).ents.pty1.request!.stage, 'arrived')
+  step(app, 2 * LEASE)
+  await settle()
+  assert.deepEqual([slotOf(app), leaseOf(app)?.spot], [undefined, first], 'a concern keeps the lease waiting for the host')
+  await tap(el, '[data-act="stand-reply"][data-r="swap"]')
+  const now = leaseOf(app)!.spot
+  assert.notEqual(now, first)
+  assert.deepEqual([world(app).ents[first].table!.status, world(app).ents[now].table!.status], ['available', 'leased'])
+  step(app, 1000)
+  assert.equal(slotOf(app)!.slot.table, now)
+})
+test('fresh seed: further offers are rows with Lease and No; Lease on a row leases that spot', async () => {
   const {el, app} = await fresh()
   app.apply([{op: 'set', id: 'pty1', parts: {wants: {list: [{feat: 'banquette', level: 'strong', why: 'bench', accord: 'all'}, {feat: 'quiet', level: 'soft', why: 'nice', accord: 'one'}], heard: ['banquette', 'quiet']}}}])
   uiOf(app).rev++
   await settle()
   const rows = [...el.querySelectorAll<HTMLElement>('[data-stand] li[data-offer]')]
   assert.ok(rows.length >= 1, el.querySelector('[data-stand]')!.textContent!)
-  assert.equal(rows[0].querySelectorAll('[data-act="stand-seat"], [data-act="stand-decline"]').length, 2)
+  assert.equal(rows[0].querySelectorAll('[data-act="stand-lease"], [data-act="stand-decline"]').length, 2)
   const spot = rows[0].getAttribute('data-offer')!
-  await tap(rows[0], '[data-act="stand-seat"]')
-  assert.equal(slotOf(app)!.slot.table, spot)
+  await tap(rows[0], '[data-act="stand-lease"]')
+  assert.equal(world(app).ents.pty1.lease?.spot, spot)
 })
 test('fresh seed: a table-change request once seated (raised at the seated stage) swaps tables from the stand', async () => {
   const {el, app} = await fresh()
   await tap(el, '[data-act="stand-hear"][data-feat="booth"]')
   await tap(el, cta)
+  await tap(el, '[data-lease="pty1"] [data-act="stand-confirm"]')
   const first = slotOf(app)!.slot.table
   assert.ok(raise(app, 'noise'))
   assert.equal(world(app).ents.pty1.request!.stage, 'seated')

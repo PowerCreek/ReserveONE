@@ -21,3 +21,27 @@ export const floorOf = (w: World, id: Id): Id | undefined => {
   const t = taskTable(e) ?? taskTable(guestOf(w, id)) ?? seatOf(w, e?.body?.party ?? id)
   return e?.pos?.floor ?? w.ents[t ?? '']?.pos?.floor ?? doorFloor(w)
 }
+/** Storey of a floor (0 when unset): floors on one level share its frame. */
+export const levelOf = (w: World, fid?: Id) => w.ents[fid ?? '']?.floor?.level ?? 0
+/** A level tab id (`lv:<n>`) names every floor on that storey; a floor id names itself; undefined = everything. */
+export const LV = 'lv:'
+export const floorsOf = (w: World, sel?: Id): Id[] | undefined =>
+  sel?.startsWith(LV) ? having(w, 'floor').filter(f => levelOf(w, f.id) === Number(sel.slice(LV.length))).map(f => f.id) : sel === undefined ? undefined : [sel]
+export type Box = {x: number; y: number; w: number; h: number}
+/** The box over boxes (a point is a 0x0 box); undefined when there are none. */
+export const hull = (bs: Box[]): Box | undefined => {
+  const [x0, y0, x1, y1] = [Math.min(...bs.map(b => b.x)), Math.min(...bs.map(b => b.y)), Math.max(...bs.map(b => b.x + b.w)), Math.max(...bs.map(b => b.y + b.h))]
+  return bs.length ? {x: x0, y: y0, w: x1 - x0, h: y1 - y0} : undefined
+}
+/** A viewBox over `b` plus margin `m`, grown about its centre to aspect `a` (w/h) and at least `min` wide (a small floor zooms at most W/min). */
+export const fitBox = (b: Box, m: number, a: number, min = 0) => {
+  const w = Math.max(b.w + 2 * m, (b.h + 2 * m) * a, min)
+  return [b.x + b.w / 2 - w / 2, b.y + b.h / 2 - w / a / 2, w, w / a].map(Math.round).join(' ')
+}
+/** Storeys present, ascending; a world without floors has the ground only. */
+export const levels = (w: World) => {
+  const ls = having(w, 'floor').map(f => levelOf(w, f.id))
+  return [...new Set(ls.length ? ls : [0])].sort((a, b) => a - b)
+}
+const LEVEL_NAME = ['Ground', 'Roof']
+export const levelName = (lv: number) => LEVEL_NAME[lv] ?? `Level ${lv}`

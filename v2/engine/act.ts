@@ -1,7 +1,7 @@
 // Desk writes (wave 4): every host/manager command as data, one dispatch row per `cmd.do`, each composed from existing engine functions (C3, E1).
 import {having, partsOf} from '../contracts/index.ts'
 import type {Carve, Cmd, Components, Decision, Desk, Entity, Id, Outcome, Patch, Policy, PType, Rung, SeatReq, Task, Told, World} from '../contracts/index.ts'
-import {nextNum, partyLabel, partyOf} from './ents.ts'
+import {hostOf, nextNum, partyLabel, partyOf} from './ents.ts'
 import type {Pty} from './ents.ts'
 import {seat} from './seat.ts'
 import {ladder} from './ladder.ts'
@@ -12,7 +12,10 @@ import {respond} from './respond.ts'
 import {options} from './options.ts'
 import {eta} from './eta.ts'
 import {assign} from './assign.ts'
-import {spotOf} from './ask.ts'
+import {spotOf, where} from './ask.ts'
+import {confirm, hold, tablesOf, unhold} from './lease.ts'
+import type {Leased} from './lease.ts'
+import {refuse} from './seatcheck.ts'
 import {add, set} from './patch.ts'
 import {MIN} from './time.ts'
 interface Ctx {p: Policy; w: World; now: number}
@@ -26,7 +29,6 @@ const done = (patches: Patch[], events: Told[], msg: string, says?: string): Out
 const why = (rules: [bad: boolean, err: string][]) => rules.find(([bad]) => bad)?.[1]
 /** An engine Decision as an Outcome; `ev` derives the events from its patches (heard, told). */
 const lift = (d: Decision, ev: (ps: Patch[]) => Told[] = () => []): Outcome => (d.ok ? {...d, events: ev(d.patches)} : d)
-const hostOf = (w: World) => having(w, 'body').find(b => b.body.role === 'host')?.id ?? 'host'
 
 // ---- seat / decline: the ladder rung the host voiced, recorded as the party's offer
 const rungOf = (c: Ctx, party: Id, step?: string, spot?: Id): Rung | undefined => (step ? ladder(c.p, c.w, c.now, party).find(r => r.step === step && (!spot || r.spot === spot)) : undefined)
@@ -52,12 +54,45 @@ const seated = (c: Ctx, cmd: Of<'seat'>, a: Aim, d: Decision): Outcome => {
   const s = d.ok ? slotIn(d.patches) : undefined
   return d.ok && s ? {...d, patches: [...d.patches, ...accepted(c, cmd, a, s.table), ...unclaim(c.w, s.party)], events: [{ev: 'seated', party: s.party, table: s.table, by: hostOf(c.w)}]} : lift(d)
 }
-const seatRow: Row<'seat'> = (c, cmd) => {
+const direct = (c: Ctx, cmd: Of<'seat'>): Outcome => {
   const a = aimOf(c, cmd)
   const err = seatErr(c, cmd, a)
   return err ? fail(err) : seated(c, cmd, a, seat(c.p, c.w, c.now, a.req!))
 }
+/** Seat now on a leased party: the lease is confirmed on its own tables (whatever spot the command names). */
+const confirmed = (c: Ctx, e: Leased): Outcome => {
+  const d = confirm(c.p, c.w, c.now, e)
+  return d.ok ? {...d, patches: [...d.patches, ...unclaim(c.w, e.id)], events: [{ev: 'seated', party: e.id, table: e.lease.tables[0], by: hostOf(c.w)}]} : lift(d)
+}
+/** A leased party confirms its lease; anyone else (queue and book quick seats, walk-ins) is seated directly. */
+const seatRow: Row<'seat'> = (c, cmd) => {
+  const e = partyOf(c.w, cmd.party)
+  return e?.lease ? confirmed(c, e as Leased) : direct(c, cmd)
+}
 const nameOf = (c: Ctx, spot: Id) => spotOf(c.p, c.w, spot)?.spot.label ?? spot
+
+// ---- lease / release: the one way the stand places a party (one click); a lease settles into a seat by itself
+const keep = (o?: Offer) => (o?.declined ? {declined: o.declined} : {})
+const leaseErr = (c: Ctx, cmd: Of<'lease'>, who?: Pty) =>
+  why([[!who, `No party ${cmd.party}`], [!!where(c.w, cmd.party), `${who?.party.label} is already led or seated`], [!spotOf(c.p, c.w, cmd.spot), `No spot ${cmd.spot}`]]) ?? refuse(c.p, tablesOf(c.w, cmd.spot), who!.party.size)
+const leased = (c: Ctx, cmd: Of<'lease'>, who: Pty): Outcome => {
+  const offer = {...proposal(c.now, cmd.spot, cmd.step, rungOf(c, who.id, cmd.step, cmd.spot), 'accepted'), ...keep(who.offer)}
+  const ps = [...hold(c.p, c.w, c.now, who, cmd.spot, cmd.step), set(who.id, {offer}), ...unclaim(c.w, who.id)]
+  return done(ps, [{ev: 'leased', party: who.id, spot: cmd.spot, by: hostOf(c.w)}], `${who.party.label} leased ${nameOf(c, cmd.spot)}`)
+}
+const leaseRow: Row<'lease'> = (c, cmd) => {
+  const who = partyOf(c.w, cmd.party)
+  const err = leaseErr(c, cmd, who)
+  return err ? fail(err) : leased(c, cmd, who!)
+}
+/** The spot handed back joins the party's declined spots: the ladder never proposes it again. */
+const handBack = (c: Ctx, e: Leased): Offer => ({...proposal(c.now, e.lease.spot, e.lease.step, undefined, 'declined'), ...e.offer, status: 'declined', declined: [...(e.offer?.declined ?? []), e.lease.spot]})
+const released = (c: Ctx, e: Leased): Outcome =>
+  done([...unhold(c.p, c.w, e, {offer: handBack(c, e)}), ...unclaim(c.w, e.id)], [{ev: 'released', party: e.id, spot: e.lease.spot, by: hostOf(c.w)}], `${e.party.label} released ${nameOf(c, e.lease.spot)}`)
+const releaseRow: Row<'release'> = (c, cmd) => {
+  const e = partyOf(c.w, cmd.party)
+  return e?.lease ? released(c, e as Leased) : fail(e ? `${e.party.label} holds no lease` : `No party ${cmd.party}`)
+}
 const declineRow: Row<'decline'> = (c, cmd) => {
   const who = partyOf(c.w, cmd.party)
   const offer = {...proposal(c.now, cmd.spot, cmd.step, rungOf(c, cmd.party, cmd.step, cmd.spot), 'declined'), declined: [...(who?.offer?.declined ?? []), cmd.spot]}
@@ -127,7 +162,7 @@ const staffRow: Row<'staff'> = (c, cmd) => {
   const edit = duty[cmd.to]
   return s && edit ? done([set(cmd.id, {staff: {...s, ...edit(s)}})], [], `${s.name}: ${cmd.to}`) : fail(s ? `Unknown staff change ${cmd.to}` : `No staff ${cmd.id}`)
 }
-const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: c => fail('lease lands with lane E6'), release: c => fail('release lands with lane E6')}
+const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow}
 /** Run one host/manager command: patches to commit, events to narrate, one log line; unknown or invalid input -> {ok: false, err}. */
 export const act: Desk['act'] = (p, w, now, cmd) => {
   const row = rows[cmd?.do as Cmd['do']] as Row<Cmd['do']> | undefined

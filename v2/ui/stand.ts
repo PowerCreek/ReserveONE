@@ -1,12 +1,13 @@
 // Host stand (U4, wave 4): renders the engine's StandView only (`ask(app, 'stand', focus)`) and dispatches Cmds through `run`.
-// Pick a party at the door, optionally ask about a qualifier, then one click seats it at an offer. Free play: no scoring.
-import type {App, DoorRow, Id, Offer, Placed, Policy, ReqRow, SeatedRow, StandView, Want, World} from '../contracts/index.ts'
+// Pick a party at the door, optionally ask about a qualifier, then one click leases it an offer: the party is led there and settles into a seat by itself
+// (or Seat now), unless it raises a concern; Release hands the spot back. Free play: no scoring.
+import type {App, DoorRow, Id, LeaseRow, Offer, Placed, Policy, ReqRow, SeatedRow, StandView, Want, World} from '../contracts/index.ts'
 import {run} from './act.ts'
 import {ask, policyOf} from './ask.ts'
 import {crew, spotName} from './events.ts'
 import {arg, esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
-import {card, choice, cta, ctaSm, ghost} from './tone.ts'
+import {card, choice, cta, ctaSm, ghost, ok} from './tone.ts'
 /** `party` = the party the host picked at the door (the view falls back to the next one once it is seated or gone). */
 export interface Stand {party: Id}
 declare module '../contracts/kernel.ts' {
@@ -14,7 +15,7 @@ declare module '../contracts/kernel.ts' {
 }
 const st = (app: App) => uiOf(app).stand!
 const world = (app: App) => app.store.state.world
-interface Ctx {w: World; p: Policy; v: StandView}
+interface Ctx {w: World; p: Policy; v: StandView; now: number}
 
 // ---- pieces
 const pill = 'rounded-full bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700'
@@ -44,14 +45,14 @@ const asks = (c: Ctx) => c.v.unasked.map(f => act('hear', `data-feat="${esc(f)}"
 const intake = (c: Ctx) => (c.v.wants.length || c.v.denied.length ? `<div class="mb-2 flex flex-wrap items-center gap-1">${known(c)}</div>` : '')
 const asking = (c: Ctx) => (c.v.unasked.length ? `<div class="mt-2 flex flex-wrap items-center gap-1"><span class="text-xs text-slate-500">Ask about</span>${asks(c)}</div>` : '')
 
-// ---- offers: the top one is the CTA, each further one a row; one click seats, `No` drops that spot
+// ---- offers: the top one is the CTA, each further one a row; one click leases, `No` drops that spot
 const chips = (c: Ctx, o: Offer) => [...o.gives.map(g => `<span class="${pill}">+${esc(feat(c, g))}</span>`), ...o.lacks.map(m => `<span class="${pill}">-${esc(feat(c, m.feat))} (${m.level})</span>`)].join(' ')
 const squeeze = (c: Ctx, o: Offer) => (o.squeezes?.length ? `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">squeezes ${esc(o.squeezes.map(id => crew(c.w, id)).join(', '))}</span>` : '')
 const about = (c: Ctx, o: Offer) => `<p class="text-xs">${esc(o.say)} ${chips(c, o)} <span class="text-slate-500">server ${esc(staffName(c.w, o.server) || 'none yet')}</span> ${squeeze(c, o)}</p>`
 const at = (o: Offer) => `data-spot="${esc(o.spot)}" data-step="${esc(o.step)}"`
 const no = (o: Offer) => act('decline', at(o), 'No', ghost, ` aria-label="No to ${esc(o.step)}"`)
-const top = (c: Ctx, o: Offer) => `<div data-offer="top" class="space-y-1 rounded-lg border border-sky-600 p-2">${about(c, o)}<div class="flex gap-2">${act('seat', at(o), `Seat ${crew(c.w, c.v.focus!)} at ${spot(c.w, o.spot!)}`, cta)}${no(o)}</div></div>`
-const row = (c: Ctx) => (o: Offer) => `<li data-offer="${esc(o.spot)}" class="flex flex-wrap items-center gap-2 py-1"><b class="text-xs">${esc(spot(c.w, o.spot!))}</b><div class="grow">${about(c, o)}</div>${act('seat', at(o), 'Seat', ctaSm)}${no(o)}</li>`
+const top = (c: Ctx, o: Offer) => `<div data-offer="top" class="space-y-1 rounded-lg border border-sky-600 p-2">${about(c, o)}<div class="flex gap-2">${act('lease', at(o), `Lease ${spot(c.w, o.spot!)} to ${crew(c.w, c.v.focus!)}`, cta)}${no(o)}</div></div>`
+const row = (c: Ctx) => (o: Offer) => `<li data-offer="${esc(o.spot)}" class="flex flex-wrap items-center gap-2 py-1"><b class="text-xs">${esc(spot(c.w, o.spot!))}</b><div class="grow">${about(c, o)}</div>${act('lease', at(o), 'Lease', ctaSm)}${no(o)}</li>`
 const wait = (o: Offer) => `<li class="py-1 text-xs text-slate-500">${esc(o.say)}</li>`
 const turns = (c: Ctx) => (c.v.rotation.length ? `<p class="mb-1 text-xs"><span class="text-slate-500">Rotation order, all servers and bartenders</span> <b>${esc(staffName(c.w, c.v.rotation[0]))}</b>${c.v.rotation.length > 1 ? `, then ${esc(c.v.rotation.slice(1, 5).map(id => staffName(c.w, id)).join(', '))}` : ''}</p>` : '')
 const offers = (c: Ctx) => {
@@ -60,7 +61,19 @@ const offers = (c: Ctx) => {
   const body = first ? top(c, first) + (more.length || waits.length ? ul([...more.map(row(c)), ...waits.map(wait)]) : '') : waits.length ? ul(waits.map(wait)) : muted('No table fits right now.')
   return turns(c) + body
 }
-const focus = (c: Ctx) => (c.v.focus ? part(`Seat ${esc(crew(c.w, c.v.focus))}`, intake(c) + offers(c) + asking(c)) : '')
+const focus = (c: Ctx) => (c.v.focus ? part(`Lease a table to ${esc(crew(c.w, c.v.focus))}`, intake(c) + offers(c) + asking(c)) : '')
+
+// ---- leased: led, settling into a seat on the clock; a concern holds it for the host (answer it under the requests)
+const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
+const due = (c: Ctx, r: LeaseRow) => (r.until > c.now ? `settles in ${mmss(r.until - c.now)}` : 'settling now')
+const worry = (c: Ctx, r: LeaseRow) => {
+  const why = c.p.host.reasons[c.w.ents[r.party]?.request?.reason ?? '']
+  return `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">concern: ${esc(why?.label ?? 'request')}</span> <span class="text-slate-500">"${esc(why?.says ?? '')}" waits for you</span>`
+}
+const clockOf = (c: Ctx, r: LeaseRow) => (r.concern ? worry(c, r) : `<span class="text-slate-500">${due(c, r)}</span>`)
+const lease = (c: Ctx) => (r: LeaseRow) =>
+  `<li data-lease="${esc(r.party)}" class="flex flex-wrap items-center gap-1 py-1 text-xs"><b>${esc(crew(c.w, r.party))}</b> at ${esc(spot(c.w, r.spot))} ${clockOf(c, r)}<span class="grow"></span>${act('confirm', `data-id="${esc(r.party)}"`, 'Seat now', ok)}${act('release', `data-id="${esc(r.party)}"`, 'Release', ghost)}</li>`
+const leased = (c: Ctx) => (c.v.leased.length ? part('Leased', ul(c.v.leased.map(lease(c)))) : '')
 
 // ---- coming up, requests, seated (tell)
 const clock = (t: number) => new Date(t).toTimeString().slice(0, 5)
@@ -82,8 +95,8 @@ const sat = (c: Ctx) => (r: SeatedRow) =>
 const seated = (c: Ctx) => part('Seated: tell the server', c.v.seated.length ? `<div class="max-h-48 overflow-y-auto">${ul(c.v.seated.map(sat(c)))}</div>` : muted('Nobody seated.'))
 const draw = (app: App) => {
   const v = ask(app, 'stand', st(app).party)
-  const c = v && {w: world(app), p: policyOf(app), v}
-  return c ? [door, focus, coming, requests, seated].map(f => f(c)).join('') : muted('Engine host service not available.')
+  const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now}
+  return c ? [door, focus, leased, coming, requests, seated].map(f => f(c)).join('') : muted('Engine host service not available.')
 }
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`
 
@@ -92,7 +105,9 @@ const focused = (app: App) => ask(app, 'stand', st(app).party)?.focus ?? ''
 const acts: Record<string, (app: App, ev: Event) => unknown> = {
   'stand-focus': (a, ev) => (st(a).party = arg(ev, 'id')),
   'stand-hear': (a, ev) => run(a, {do: 'hear', party: focused(a), feat: arg(ev, 'feat')}),
-  'stand-seat': (a, ev) => run(a, {do: 'seat', party: focused(a), spot: arg(ev, 'spot'), step: arg(ev, 'step')}),
+  'stand-lease': (a, ev) => run(a, {do: 'lease', party: focused(a), spot: arg(ev, 'spot'), step: arg(ev, 'step')}),
+  'stand-confirm': (a, ev) => run(a, {do: 'seat', party: arg(ev, 'id')}),
+  'stand-release': (a, ev) => run(a, {do: 'release', party: arg(ev, 'id')}),
   'stand-decline': (a, ev) => run(a, {do: 'decline', party: focused(a), spot: arg(ev, 'spot'), step: arg(ev, 'step')}),
   'stand-reply': (a, ev) => run(a, {do: 'reply', party: arg(ev, 'id'), response: arg(ev, 'r')}),
   'stand-tell': (a, ev) => run(a, {do: 'tell', table: arg(ev, 'table')}),

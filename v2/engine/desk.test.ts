@@ -9,8 +9,8 @@ const q = (since: number) => ({queue: {since: N - mins(since), quotedMin: 10, st
 const door = () => world([
   party(1, 'W', 2, 'Walk', q(10)), party(2, 'P', 2, 'Late', q(2)),
   party(3, 'R', 4, 'Booked', {reservation: {at: N - mins(20), durationMin: 60, table: null, status: 'ARRIVED', phone: '', notes: ''}}),
-  party(4, 'W', 2, 'Led', {...q(30), offer: {spot: 'a', step: 'exact', gives: [], lacks: [], at: N, status: 'accepted'}}),
-  tbl('a', 4, ['booth'], 'f1', 'sA'), staff('w1', 0, 5, {sections: ['sA']}),
+  party(4, 'W', 2, 'Led', {...q(30), lease: {spot: 'b', tables: ['b'], at: N, until: N + mins(2), step: 'exact'}}),
+  tbl('a', 4, ['booth'], 'f1', 'sA'), {...tbl('b', 4), table: {...tbl('b', 4).table!, status: 'leased'}}, staff('w1', 0, 5, {sections: ['sA']}),
 ])
 test('stand door: tier first, then longest waiting; a party the host already placed is gone from the door', () => {
   const v = stand(P, door(), N)

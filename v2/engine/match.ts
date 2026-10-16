@@ -1,4 +1,4 @@
-import type {Coach, Ent, Entity, Fit, Id, Miss, Policy, Want, World} from '../contracts/index.ts'
+import type {Coach, Ent, Entity, Fit, Id, Miss, Policy, TStatus, Want, World} from '../contracts/index.ts'
 import {spots} from './spots.ts'
 import {merges} from './merge.ts'
 import {holds} from './holds.ts'
@@ -11,6 +11,8 @@ import type {Pty} from './ents.ts'
 import {set} from './patch.ts'
 import {MIN} from './time.ts'
 type Spot = Ent<'spot'>
+/** Never a candidate: blocked for an event, or leased to a party being led there. */
+const OUT: TStatus[] = ['blocked_private', 'leased']
 /** Everything match and ladder read: the party, what the host knows it wants, the spots and their fits (best first). */
 export interface Env {p: Policy; w: World; now: number; party: Pty; wants: Want[]; by: Record<Id, Spot>; fits: Fit[]; merges: Fit[]; holds: Hold[]; free: (s: Spot) => number; turn: number; keep: (taken: Id[]) => Id[]}
 /** The host only knows what was volunteered (`said`) or asked and recorded (`heard`). */
@@ -39,7 +41,7 @@ export const env = (p: Policy, w: World, now: number, id: Id, within?: Id[]): En
   const e = party && base(p, w, now, party)
   const [all, pairs] = [spots(w), merges(p, w)]
   const size = party?.party.size ?? 0
-  const can = (s: Spot) => s.spot.status !== 'blocked_private' && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)) && s.spot.capacity >= size && (within ?? [s.id]).includes(s.id)
+  const can = (s: Spot) => !OUT.includes(s.spot.status) && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)) && s.spot.capacity >= size && (within ?? [s.id]).includes(s.id)
   const ok = (s: Spot) => !!e && e.wants.every(x => x.level !== 'need' || meets(s, x))
   const by = Object.fromEntries([...all, ...pairs].map(s => [s.id, s]))
   const rank = (ss: Spot[]) => (e ? ss.filter(s => can(s) && ok(s)).map(fitOf({...e, by})).sort(best({...e, by})) : [])

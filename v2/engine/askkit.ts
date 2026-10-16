@@ -5,10 +5,12 @@ import {apply} from './patch.ts'
 import {N, P, party, table, world} from './testkit.ts'
 /** A tagged table. */
 export const tagged = (id: string, cap: number, tags: string[], status: TStatus = 'available'): Entity => ({...table(id, cap, status), feat: {tags}})
-/** Room: d1 by the door (draft), q1 quiet, a1 accessible, l1 loud; Garcia (pty1, 2) already led to d1. */
+/** Garcia led to d1 and not seated yet: d1 leased to it for policy.host.clock.leaseMin. */
+const led = {offer: {spot: 'd1', step: 'exact', gives: [], lacks: [], at: N, status: 'accepted' as const}, lease: {spot: 'd1', tables: ['d1'], at: N, until: N + P.host.clock.leaseMin * 60000, step: 'exact'}}
+/** Room: d1 by the door (draft), q1 quiet, a1 accessible, l1 loud; Garcia (pty1, 2) already led to d1 (arrived = leased, seated = a slot). */
 export const room = (stage: 'arrived' | 'seated' = 'arrived') => world([
-  tagged('d1', 2, ['door']), tagged('q1', 2, ['quiet', 'window']), tagged('a1', 2, ['accessible']), tagged('l1', 4, ['loud']),
-  party(1, 'W', 2, 'Garcia', stage === 'arrived' ? {offer: {spot: 'd1', step: 'exact', gives: [], lacks: [], at: N, status: 'accepted'}} : {}),
+  tagged('d1', 2, ['door'], stage === 'arrived' ? 'leased' : 'available'), tagged('q1', 2, ['quiet', 'window']), tagged('a1', 2, ['accessible']), tagged('l1', 4, ['loud']),
+  party(1, 'W', 2, 'Garcia', stage === 'arrived' ? led : {}),
   ...(stage === 'seated' ? [{id: 's1', slot: {table: 'd1', party: 'pty1', seatedAt: N, turnAt: N + 3600000, status: 'ACTIVE' as const}}] : []),
 ].map(e => (stage === 'seated' && e.id === 'd1' ? {...e, table: {...e.table!, status: 'occupied' as const, waiter: 'w1'}} : e)))
 /** Party pty1 raises `reason`; the world after the request lands. */

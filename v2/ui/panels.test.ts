@@ -14,6 +14,11 @@ test('tabs show one pane at a time through data-show', async () => {
   await settle()
   assert.deepEqual(shown(), ['ui.on.staff'])
   assert.equal(app.store.state.ui.tab, 'staff')
+  assert.deepEqual([...el.querySelectorAll('[data-act="tab"]')].slice(0, 2).map(b => b.textContent), ['Sim', 'Dashboard'])
+  click(el, '[data-act="tab"][data-id="board"]')
+  await settle()
+  assert.deepEqual(shown(), ['ui.on.board'])
+  assert.match(text(el, '[data-bturn]'), /needs engine\.board/) // the fake engine has no board: the dashboard degrades, never throws
 })
 test('controls: play/pause, speed, spawn and scenario buttons write ui state and the log', async () => {
   const {el, app} = rig()

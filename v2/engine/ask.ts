@@ -1,24 +1,32 @@
 // Host service: a led party raises a re-seat reason (DOMAIN: re-seat requests). Pure, policy-driven (E1).
-import type {Coach, Entity, HostEvent, Id, Policy, Stage, World} from '../contracts/index.ts'
+import type {Coach, Ent, Entity, HostEvent, Id, Policy, Stage, World} from '../contracts/index.ts'
 import type {ReasonDef} from '../contracts/index.ts'
 import {partyOf, slotOf} from './ents.ts'
-import {spots} from './spots.ts'
+import {isMerge, partsOf} from '../contracts/index.ts'
+import {spot, spots} from './spots.ts'
 import {merges} from './merge.ts'
 import {set} from './patch.ts'
 export interface Seat {table: Id; stage: Stage}
 /** A party's current spot as a spot entity: `id` may name a table, a link group or a free merge. */
-export const spotOf = (p: Policy, w: World, id: Id) => spots(w).find(s => s.id === id || s.spot.tables.includes(id)) ?? merges(p, w).find(s => s.id === id)
+/** A merge id no longer free (its tables leased or seated) still names its tables. */
+const pushed = (w: World, id: Id) => (isMerge(id) && partsOf(w, id).every(t => w.ents[t]?.table) ? spot({id, ts: partsOf(w, id).map(t => w.ents[t] as Ent<'table'>)}) : undefined)
+export const spotOf = (p: Policy, w: World, id: Id) => spots(w).find(s => s.id === id || s.spot.tables.includes(id)) ?? merges(p, w).find(s => s.id === id) ?? pushed(w, id)
 const seated = (w: World, id: Id): Seat | undefined => {
   const s = slotOf(w, id)
   return s?.slot.status === 'ACTIVE' ? {table: s.slot.table, stage: 'seated'} : undefined
 }
-const arrived = (w: World, id: Id): Seat | undefined => {
+const leased = (w: World, id: Id): Seat | undefined => {
+  const l = w.ents[id]?.lease
+  return l ? {table: l.spot, stage: 'arrived'} : undefined
+}
+/** Legacy (ui/runner `place arrived` still writes it): an accepted offer with no slot and no lease = led there. Drop once the runner leases. */
+const accepted = (w: World, id: Id): Seat | undefined => {
   const e: Entity | undefined = w.ents[id]
-  const table = e?.offer?.status === 'accepted' ? e.offer.spot : undefined
+  const table = e?.offer?.status === 'accepted' && !slotOf(w, id) ? e.offer.spot : undefined
   return table ? {table, stage: 'arrived'} : undefined
 }
-/** Where a led party is: an ACTIVE slot = seated; else an accepted offer on a table = arrived (led, not seated; CONTEXT convention); else not led. */
-export const where = (w: World, id: Id): Seat | undefined => seated(w, id) ?? arrived(w, id)
+/** Where a led party is: an ACTIVE slot = seated; else a lease = arrived (led, not seated); else not led. */
+export const where = (w: World, id: Id): Seat | undefined => seated(w, id) ?? leased(w, id) ?? accepted(w, id)
 interface Q {reason: string; def?: ReasonDef; known: boolean; at?: Seat; open: boolean}
 const rules: [(q: Q) => boolean, (q: Q) => string][] = [
   [q => !q.known, () => 'no such party'],

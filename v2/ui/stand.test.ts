@@ -1,4 +1,4 @@
-// Host stand on the real desk (engine.stand + engine.act): one click seats, `No` drops a spot, requests and tells go through the same seam.
+// Host stand on the real desk (engine.stand + engine.act): one click leases, `No` drops a spot; a lease settles by the clock or Seat now, Release hands it back; requests and tells go through the same seam.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {defaultPolicy, having} from '../contracts/index.ts'
@@ -8,7 +8,7 @@ import {App} from '../kernel/index.ts'
 import {dom, settle} from '../test/dom.ts'
 import {run} from './act.ts'
 import {explain} from './events.ts'
-import {ui} from './index.ts'
+import {step, ui} from './index.ts'
 import {click, seed} from './rig.ts'
 import {party} from './party.ts'
 import {uiOf} from './state.ts'
@@ -19,7 +19,9 @@ const chen = () => party(1, 'W', 4, 'Chen', {...queued(NOW - 10 * 60000), wants:
 const ortiz = () => party(2, 'W', 2, 'Ortiz', queued(NOW - 5 * 60000))
 const tbl = (id: string, label: string, cap: number, tags: string[] = [], over: Partial<Entity> = {}): Entity =>
   ({id, pos: {floor: 'f1', x: 100, y: 60, w: 70, h: 70}, feat: {tags}, table: {label, capacity: cap, min: 1, shape: 'rect', status: 'available', waiter: null, section: null}, ...over})
-const room = () => [chen(), ortiz(), tbl('t1', 'T1', 4), tbl('t2', 'T2', 4, ['banquette']), tbl('t3', 'T3', 6)]
+const ana: Entity = {id: 'ana', staff: {name: 'Ana', active: true, sections: [], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 40}}
+const room = () => [chen(), ortiz(), ana, tbl('t1', 'T1', 4), tbl('t2', 'T2', 4, ['banquette']), tbl('t3', 'T3', 6)]
+const LEASE = defaultPolicy.host.clock.leaseMin * 60000
 const host: Entity = {id: 'host', body: {role: 'host', x: 0, y: 0, speed: 80, task: null, backlog: [], party: null}}
 const mount = (ents: Entity[], engine: Partial<HostEngine> = Engine) => {
   const el = dom().getElementById('app')!
@@ -27,11 +29,13 @@ const mount = (ents: Entity[], engine: Partial<HostEngine> = Engine) => {
   s.world.ents = Object.fromEntries([{id: 'f1', floor: {name: 'Main', active: true}}, host, ...ents].map((e): [string, Entity] => [e.id, e]))
   const app = App.create(s).use(a => a.provide('engine', engine as HostEngine).provide('policy', defaultPolicy)).use(ui)
   app.mount(el)
+  uiOf(app).rate = 0 // no walk-ins while the clock runs
   return {el, app}
 }
 const log = (app: ReturnType<typeof mount>['app']) => uiOf(app).log.map(l => l.msg)
 const text = (el: Element, sel: string) => el.querySelector(sel)?.textContent ?? ''
-const cta = '[data-offer="top"] [data-act="stand-seat"]'
+const cta = '[data-offer="top"] [data-act="stand-lease"]'
+const tables = (app: ReturnType<typeof mount>['app'], ...ids: string[]) => ids.map(id => app.store.state.world.ents[id].table!.status)
 const door = (el: Element) => [...el.querySelectorAll('[data-stand] [role="radio"]')].map(b => [b.getAttribute('data-id'), b.getAttribute('aria-checked')])
 const slotOf = (app: ReturnType<typeof mount>['app'], id: string) => having(app.store.state.world, 'slot').find(s => s.slot.party === id && s.slot.status === 'ACTIVE')
 test('door: party cards are the radiogroup; picking one focuses it, with no greet or accept step', async () => {
@@ -39,24 +43,44 @@ test('door: party cards are the radiogroup; picking one focuses it, with no gree
   await settle()
   assert.deepEqual(door(el), [['p1', 'true'], ['p2', 'false']])
   assert.equal(el.querySelectorAll('[data-act="stand-greet"], [data-act="stand-answer"], [data-act="stand-offer"]').length, 0)
-  assert.equal(text(el, cta), 'Seat Chen party at T1')
+  assert.equal(text(el, cta), 'Lease T1 to Chen party')
   click(el, '[data-act="stand-focus"][data-id="p2"]')
   await settle()
   assert.deepEqual(door(el), [['p1', 'false'], ['p2', 'true']])
-  assert.match(text(el, cta), /^Seat Ortiz party at T/)
+  assert.match(text(el, cta), /^Lease T\d to Ortiz party$/)
 })
-test('one click seats the focus party at the top offer: slot, occupied table, log line; the door list drops it', async () => {
+test('one click leases the top offer: the table is leased, the door drops the party, Leased counts down; the clock settles it into a seat', async () => {
   const {el, app} = mount(room())
   await settle()
   click(el, cta)
-  const slot = slotOf(app, 'p1')
-  assert.equal(slot?.slot.table, 't1')
-  assert.equal(app.store.state.world.ents.t1.table!.status, 'occupied')
-  assert.equal(app.store.state.world.ents.p1.offer?.status, 'accepted')
-  assert.ok(log(app).some(m => /^W1 x4 seated at T1 by You/.test(m)), log(app).join(' | '))
+  assert.deepEqual([tables(app, 't1'), app.store.state.world.ents.p1.lease?.spot, app.store.state.world.ents.p1.offer?.status, slotOf(app, 'p1')], [['leased'], 't1', 'accepted', undefined])
+  assert.equal(log(app)[0], 'You leased T1 to Chen party')
   await settle()
-  assert.deepEqual(door(el), [['p2', 'true']]) // a seated party never shows at the door; focus moves on
-  assert.match(text(el, '[data-stand]'), /Chen party at T1/)
+  assert.deepEqual(door(el), [['p2', 'true']]) // a leased party never shows at the door; focus moves on
+  assert.match(text(el, '[data-lease="p1"]'), /^Chen party at T1 settles in 2:00\s*Seat nowRelease$/)
+  step(app, LEASE)
+  assert.equal(slotOf(app, 'p1')?.slot.table, 't1')
+  assert.deepEqual(tables(app, 't1'), ['occupied'])
+  assert.ok(log(app).includes('Chen party seated at T1 by You, server Ana'), log(app).join(' | '))
+  await settle()
+  assert.equal(el.querySelectorAll('[data-lease]').length, 0)
+  assert.match(text(el, '[data-stand]'), /Chen party at T1 \(Main floor\)/)
+})
+test('Seat now confirms a lease at once; Release frees the table, drops that spot and the next offer takes the CTA', async () => {
+  const {el, app} = mount(room())
+  await settle()
+  click(el, cta)
+  await settle()
+  click(el, '[data-lease="p1"] [data-act="stand-release"]')
+  assert.deepEqual([tables(app, 't1'), app.store.state.world.ents.p1.lease, app.store.state.world.ents.p1.offer?.declined], [['available'], undefined, ['t1']])
+  assert.equal(log(app)[0], 'You released T1: Chen party is back at the door')
+  await settle()
+  assert.equal(text(el, cta), 'Lease T2 to Chen party')
+  click(el, cta)
+  await settle()
+  click(el, '[data-lease="p1"] [data-act="stand-confirm"]')
+  assert.deepEqual([slotOf(app, 'p1')?.slot.table, tables(app, 't2')], ['t2', ['occupied']])
+  assert.equal(log(app)[0], 'Chen party seated at T2 by You, server Ana')
 })
 test('No drops that spot and the next offer takes the CTA; asking records a want and re-ranks the offers', async () => {
   const {el, app} = mount(room())
@@ -65,7 +89,7 @@ test('No drops that spot and the next offer takes the CTA; asking records a want
   assert.deepEqual(app.store.state.world.ents.p1.offer?.declined, ['t1'])
   assert.equal(log(app)[0], 'Chen party declined T1')
   await settle()
-  assert.equal(text(el, cta), 'Seat Chen party at T2')
+  assert.equal(text(el, cta), 'Lease T2 to Chen party')
   click(el, '[data-act="stand-hear"][data-feat="banquette"]')
   assert.deepEqual(app.store.state.world.ents.p1.wants!.heard, ['banquette'])
   assert.equal(log(app)[0], 'Chen party strongly wants the banquette (the bench side suits us)')
@@ -77,10 +101,33 @@ test('No drops that spot and the next offer takes the CTA; asking records a want
   await settle()
   assert.match(text(el, '[data-stand]'), /asked: no booth/)
 })
+const raise = (app: ReturnType<typeof mount>['app'], reason: string) => {
+  const d = Engine.ask(defaultPolicy, app.store.state.world, app.store.state.now, 'p1', reason)
+  assert.ok(d.ok, d.ok ? '' : d.err)
+  app.apply(d.ok ? d.patches : [])
+}
+test('a concern on a leased party (arrived stage) holds the lease past its time; a swap moves the lease and it settles there', async () => {
+  const {el, app} = mount([chen(), tbl('t1', 'T1', 4, ['loud']), tbl('t2', 'T2', 4, ['quiet'])])
+  await settle()
+  click(el, cta)
+  raise(app, 'noise')
+  await settle()
+  assert.match(text(el, '[data-lease="p1"]'), /concern: noise "It is too loud for us to talk\." waits for you/)
+  assert.match(text(el, '[data-stand]'), /noise, arrived\)/)
+  step(app, 3 * LEASE)
+  assert.deepEqual([slotOf(app, 'p1'), tables(app, 't1')], [undefined, ['leased']]) // the lease waits for the host
+  await settle()
+  click(el, '[data-act="stand-reply"][data-r="swap"]')
+  assert.deepEqual([app.store.state.world.ents.p1.lease?.spot, ...tables(app, 't1', 't2')], ['t2', 'available', 'leased'])
+  step(app, 1000)
+  assert.equal(slotOf(app, 'p1')?.slot.table, 't2')
+})
 test('requests arise once seated: the stand lists the options from the view and a reply moves the party', async () => {
   const {el, app} = mount([chen(), tbl('t1', 'T1', 4, ['loud']), tbl('t2', 'T2', 4, ['quiet'])])
   await settle()
   click(el, cta)
+  await settle()
+  click(el, '[data-lease="p1"] [data-act="stand-confirm"]')
   const d = Engine.ask(defaultPolicy, app.store.state.world, app.store.state.now, 'p1', 'noise')
   assert.ok(d.ok, d.ok ? '' : d.err)
   app.apply(d.ok ? d.patches : [])
@@ -125,13 +172,13 @@ test('every HostEvent has a narrated plain sentence (and the decline-and-leave e
   w.ents.p1.offer = {spot: 't2', step: 'near', gives: ['banquette'], lacks: [], at: 0, status: 'declined'}
   const all: HostEvent[] = [
     {ev: 'greeted', party: 'p1', by: 'host'}, {ev: 'heard', party: 'p1', feat: 'banquette', level: 'strong'}, {ev: 'quoted', party: 'p1', min: 12},
-    {ev: 'offered', party: 'p1', spot: 't2', step: 'near'}, {ev: 'answered', party: 'p1', spot: 't2', yes: true}, {ev: 'leased', party: 'p1', spot: 't2', by: 'host'},
+    {ev: 'offered', party: 'p1', spot: 't2', step: 'near'}, {ev: 'answered', party: 'p1', spot: 't2', yes: true}, {ev: 'leased', party: 'p1', spot: 't2', by: 'host'}, {ev: 'released', party: 'p1', spot: 't2', by: 'host'},
     {ev: 'asked', party: 'p1', reason: 'noise', stage: 'seated'}, {ev: 'replied', party: 'p1', reason: 'noise', response: 'swap', move: 'swap', mood: 3},
     {ev: 'moved', party: 'p1', from: 't1', to: 't2'}, {ev: 'mood', party: 'p1', delta: -2, why: 'noise'},
   ]
   assert.deepEqual(all.map(e => explain(e, w, defaultPolicy).msg), [
     'The host greeted Chen party at the door', 'Chen party strongly wants the banquette (the bench side suits us)', 'Chen party was quoted 12 min',
-    'The host offered Chen party the banquette at T2 (near)', 'Chen party accepted the banquette', 'You leased T2 to Chen party',
+    'The host offered Chen party the banquette at T2 (near)', 'Chen party accepted the banquette', 'You leased T2 to Chen party', 'You released T2: Chen party is back at the door',
     'Chen party asked for another table (noise, already seated): "It is too loud for us to talk."',
     'The host answered the noise request of Chen party with "Move them": moving them (mood +3)',
     'Chen party moved from T1 to T2', 'Chen party mood fell by 2: noise',

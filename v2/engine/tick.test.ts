@@ -32,17 +32,17 @@ test('spawn: a walk-in is queued at once and walks in from just outside the door
   const w2 = apply(w, Engine.spawn(P, {...w, ents: {...w.ents, pty3: r}}, N, 1))
   assert.deepEqual([w2.ents.pty3.reservation!.status, w2.ents.pty3.body!.role], ['ARRIVED', 'guest'])
 })
-test('sim: a spawned guest is queued, seated by the host, served, cleared by the busser, and leaves', () => {
+test('sim: a spawned guest is queued, leased and seated by the host, served, cleared by the busser, and leaves', () => {
   const start: Run = {w: apply(room(), Engine.spawn(P, room(), N, 7)), now: N, log: []}
   const served = until(start, r => evs(r).includes('served'))
-  assert.deepEqual(evs(served).filter(e => e !== 'stuck'), ['arrived', 'seated', 'served'])
+  assert.deepEqual(evs(served).filter(e => e !== 'stuck'), ['arrived', 'leased', 'seated', 'served'])
   const t = served.w.ents.t1.table!
   assert.deepEqual([t.status, t.waiter], ['occupied', 'srv'])
   assert.equal(served.w.ents.srv.staff!.tally, Object.values(served.w.ents).find(e => e.queue)!.party!.size)
   const gone = until(served, r => evs(r).includes('left') && evs(r).includes('cleared'), r => (r.now === served.now ? {...r, now: r.now + mins(61)} : r))
   const order = evs(gone).filter(e => e !== 'stuck')
-  assert.deepEqual([order[0], order[1], order[2]], ['arrived', 'seated', 'served'])
-  assert.deepEqual([...order].slice(3).sort(), ['cleared', 'left'])
+  assert.deepEqual(order.slice(0, 4), ['arrived', 'leased', 'seated', 'served'])
+  assert.deepEqual([...order].slice(4).sort(), ['cleared', 'left'])
   const guest = Object.values(gone.w.ents).find(e => e.queue)!
   assert.deepEqual([gone.w.ents.t1.table!.status, gone.w.ents.t1.table!.waiter, guest.queue!.status, 'body' in guest], ['available', null, 'SEATED', false])
   assert.deepEqual(Object.values(gone.w.ents).filter(e => e.slot).map(e => e.slot!.status), ['COMPLETED'])
@@ -63,7 +63,7 @@ test('sim: a unit whose job can no longer be done reports stuck instead of faili
   const mid = until({w, now: N, log: []}, r => (r.w.ents.host.body!.backlog.length === 0 && r.w.ents.host.body!.task?.do === 'seat'))
   const taken = apply(mid.w, [{op: 'set', id: 't1', parts: {table: {...mid.w.ents.t1.table!, status: 'occupied', waiter: null}}}])
   const after = step({...mid, w: taken})
-  assert.deepEqual(after.log.map(e => e.ev), ['stuck'])
+  assert.deepEqual(after.log.map(e => e.ev), ['leased', 'stuck']) // leased as the host set off; the seat then finds the table taken
 })
 test('sim: tick is a pure function of its inputs; an empty world does nothing', () => {
   assert.deepEqual(Engine.tick(P, world([]), N, 500), {patches: [], events: []})

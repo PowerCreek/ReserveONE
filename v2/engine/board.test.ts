@@ -34,7 +34,7 @@ test('board composes the engine reads: turnover, bus, quotes per policy size', (
 test('board ledger: blocked, seated with covers, lapsed, reserved with its time, else open; self-seat stays out', () => {
   assert.deepEqual(B.ledger, {
     open: [{spot: 't3', label: 'T3'}, {spot: 't4', label: 'T4'}],
-    reserved: [{spot: 't9', label: 'T9', at: N - mins(20)}, {spot: 't10', label: 'T10', at: N + mins(10)}],
+    reserved: [{spot: 't9', label: 'T9', at: N - mins(20)}, {spot: 't10', label: 'T10', at: N + mins(10)}], leased: [],
     seated: [{spot: 't1', label: 'T1', covers: 3}], lapsed: [{spot: 't2', label: 'T2'}], blocked: [{spot: 'p1', label: 'P1'}],
   })
 })

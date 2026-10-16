@@ -31,7 +31,7 @@ test('the built page boots in jsdom without errors, shows the selected floor, th
   }, Promise.resolve([]))
   assert.deepEqual(shown, per.map(([, n]) => n))
   assert.equal(shown.reduce((a, b) => a + b, 0), 65) // B22 (the managers' desk) is never offered
-  assert.match(doc.querySelector('[data-stand]')!.textContent!, /At the door[\s\S]*Seat .+ party at /)
+  assert.match(doc.querySelector('[data-stand]')!.textContent!, /At the door[\s\S]*Lease .+ to .+ party/)
   win.close()
 })
 test('seed: 4 floors, 66 held and featured tables inside the policy floor, a host, 4 servers, 2 bartender pairs and a busser, ids equal keys, plus the door and the service entity', () => {

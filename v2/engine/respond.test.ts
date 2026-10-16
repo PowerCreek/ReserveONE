@@ -18,6 +18,7 @@ test('respond: draft at arrival, swap moves the party and lifts mood by base x u
   ])
   const after = apply(w, r.patches)
   assert.deepEqual([after.ents.pty1.request?.status, after.ents.pty1.request?.table, after.ents.pty1.offer?.spot, after.ents.pty1.mood], ['granted', 'a1', 'a1', {score: 1.5}])
+  assert.deepEqual([after.ents.pty1.lease, after.ents.d1.table?.status, after.ents.a1.table?.status], [{...w.ents.pty1.lease, spot: 'a1', tables: ['a1']}, 'available', 'leased']) // the lease moves with the party
 })
 test('respond: seated swap moves the slot, frees the old table and occupies the new one with the same server', () => {
   const r = say(room('seated'), 'draft', 'swap')
@@ -82,7 +83,7 @@ test('settle: a request ignored past the reseat window is declined with a mood h
   const w = asking(room(), 'draft')
   assert.deepEqual(settle(P, w, N + mins(9)).events, [])
   const late = settle(P, w, N + mins(10))
-  assert.deepEqual(late.events, [{ev: 'mood', party: 'pty1', delta: -1.5, why: 'draft'}])
+  assert.deepEqual(late.events, [{ev: 'mood', party: 'pty1', delta: -1.5, why: 'draft'}, {ev: 'seated', party: 'pty1', table: 'd1', by: 'host'}]) // the concern closed: the lease, past its time, settles
   assert.equal(apply(w, late.patches).ents.pty1.request?.status, 'declined')
   const off = apply(w, respond(P, w, N, 'pty1', 'offer').patches)
   const took = settle(P, off, N + mins(1))
@@ -94,5 +95,5 @@ test('settle: an offered spot that was taken is refused; a need-level reason ref
   const off = apply(w, respond(P, w, N, 'pty1', 'offer').patches)
   const gone = {...off, ents: {...off.ents, q1: tagged('q1', 2, ['quiet'], 'occupied')}}
   assert.deepEqual(settle(P, gone, N).events, []) // still inside the window: keep waiting
-  assert.deepEqual(settle(P, gone, N + mins(10)).events, [{ev: 'answered', party: 'pty1', spot: 'q1', yes: false}])
+  assert.deepEqual(settle(P, gone, N + mins(10)).events, [{ev: 'answered', party: 'pty1', spot: 'q1', yes: false}, {ev: 'seated', party: 'pty1', table: 'd1', by: 'host'}])
 })

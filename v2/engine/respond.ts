@@ -7,6 +7,8 @@ import type {Pty} from './ents.ts'
 import {spotOf} from './ask.ts'
 import {caseOf, likes, options, pick} from './options.ts'
 import type {Case} from './options.ts'
+import {settleLeases, shift} from './lease.ts'
+import type {Leased} from './lease.ts'
 import {MIN} from './time.ts'
 type Spot = Ent<'spot'>
 type Move = 'swap' | 'offer' | 'stay'
@@ -16,19 +18,23 @@ const age = (now: number, at: number) => (now - at) / MIN
 const scale = (p: Policy, c: Case, base: number) => round(base * c.def.urgency * p.host.reply.stage[c.req.stage])
 const score = (w: World, c: Case, delta: number): Patch => set(c.party, {mood: {score: round((w.ents[c.party]?.mood?.score ?? 0) + delta)}})
 const table = (w: World, id: Id, over: Partial<Components['table']>): Patch[] => (w.ents[id]?.table ? [set(id, {table: {...w.ents[id].table!, ...over}})] : [])
-const hop = (w: World, c: Case, to: Spot): Patch[] => {
+const seatHop = (w: World, c: Case, to: Spot): Patch[] => {
   const slot = slotOf(w, c.party)
   const from = c.cur?.spot.tables ?? []
   const waiter = w.ents[from[0] ?? '']?.table?.waiter ?? null
   return slot?.slot.status !== 'ACTIVE' ? [] : [...from.flatMap(t => table(w, t, {status: 'available', waiter: null})), ...to.spot.tables.flatMap(t => table(w, t, {status: 'occupied', waiter})), set(slot.id, {slot: {...slot.slot, table: to.spot.tables[0]}})]
 }
+/** Arrived (led, not seated): the lease moves with the party; a legacy placement without a lease moves only its offer. */
+const leaseHop = (w: World, c: Case, to: Spot): Patch[] => (w.ents[c.party]?.lease ? shift(w, w.ents[c.party] as Leased, to) : [])
+const hops: Record<Components['request']['stage'], (w: World, c: Case, to: Spot) => Patch[]> = {seated: seatHop, arrived: leaseHop}
+const hop = (w: World, c: Case, to: Spot): Patch[] => hops[c.req.stage](w, c, to)
 const moveOffer = (w: World, c: Case, to: Spot): Partial<Components> => {
   const o = w.ents[c.party]?.offer
   return o?.status === 'accepted' ? {offer: {...o, spot: to.id}} : {}
 }
 const status: Record<Move, Ask> = {swap: 'granted', offer: 'offered', stay: 'declined'}
 const request = (c: Case, move: Move, to?: Spot): Components['request'] => ({...c.req, status: status[move], table: move === 'swap' ? to?.id ?? c.req.table : c.req.table, spot: move === 'stay' ? null : to?.id ?? null})
-/** Patches per outcome: a swap moves the slot and tables (seated) or the placement (arrived); an offer only records the proposal; a stay closes the request. */
+/** Patches per outcome: a swap moves the slot and tables (seated) or the lease (arrived); an offer only records the proposal; a stay closes the request. */
 const outcome: Record<Move, (w: World, c: Case, to?: Spot) => Patch[]> = {
   swap: (w, c, to) => (to ? [...hop(w, c, to), set(c.party, {request: request(c, 'swap', to), ...moveOffer(w, c, to)})] : []),
   offer: (_w, c, to) => [set(c.party, {request: request(c, 'offer', to)})],
@@ -83,7 +89,7 @@ const requests: Stage = (p, w, now) => join(having(w, 'request').flatMap(e => {
   const c = caseOf(p, w, e.id)
   return [o ? offered(p, w, now, o) : c && age(now, c.req.at) >= p.host.clock.reseatWindowMin ? ignore(p, w, c) : nil]
 }))
-const waiting = (e: Pty) => (e.queue?.status === 'WAITING' || e.reservation?.status === 'ARRIVED') && !e.request && e.offer?.status !== 'accepted'
+const waiting = (e: Pty) => (e.queue?.status === 'WAITING' || e.reservation?.status === 'ARRIVED') && !e.request && !e.lease && e.offer?.status !== 'accepted'
 const since = (e: Pty) => e.queue?.since ?? e.reservation?.at ?? 0
 const declined = (e: Pty) => (e.offer?.status === 'lapsed' || e.offer?.status === 'declined' ? 1 : 0)
 /** Patience: wait past clock.patienceMin[kind] and the party leaves; a party that declined an offer has one answer window less (it cannot sit through another). */
@@ -91,7 +97,9 @@ const spent = (p: Policy, e: Pty, now: number) => age(now, since(e)) + declined(
 const gone = (e: Pty) => Object.fromEntries(Object.entries(e).flatMap(([k, v]) => (k === 'body' || k === 'queue' ? [] : [[k, k === 'reservation' ? {...e.reservation, status: 'NO_SHOW'} : k === 'offer' && e.offer?.status === 'open' ? {...e.offer, status: 'declined'} : v]])))
 const leave = (e: Pty): Settled => ({patches: [del(e.id), add(gone(e) as Pty)], events: [...(e.offer?.status === 'open' ? [no(e.id, e.offer.spot)] : []), {ev: 'left', party: e.id}]})
 const patience: Stage = (p, w, now) => join((having(w, 'party') as Pty[]).filter(e => waiting(e) && spent(p, e, now)).map(leave))
-const stages: Stage[] = [lapse, requests, patience]
+/** Leases past their settle time become seatings (lease.ts); a concern open keeps the lease waiting for the host. */
+const leases: Stage = settleLeases
+const stages: Stage[] = [lapse, requests, patience, leases]
 interface Acc {w: World; out: Settled}
-/** Decide what guests do by themselves at `now`: lapsed offers are answered no, requests settle, parties past patience leave the list. Each stage sees the earlier stages' patches. */
+/** Decide what guests do by themselves at `now`: lapsed offers are answered no, requests settle, parties past patience leave the list, settled leases are seated. Each stage sees the earlier stages' patches. */
 export const settle: Decide<[], Settled> = (p, w, now) => stages.reduce<Acc>((a, s) => { const r = s(p, a.w, now); return {w: apply(a.w, r.patches), out: join([a.out, r])} }, {w, out: nil}).out

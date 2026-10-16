@@ -39,7 +39,7 @@ const labeler = (w: World) => {
 
 // ---- ledger: every host-seated spot in one state
 const STATE: Record<TStatus, SpotState> = {leased: 'leased', blocked_private: 'blocked', occupied: 'seated', lapsed: 'lapsed', available: 'open'}
-const STATES: SpotState[] = ['open', 'reserved', 'seated', 'lapsed', 'blocked']
+const STATES: SpotState[] = ['open', 'reserved', 'leased', 'seated', 'lapsed', 'blocked']
 /** The next live reservation holding any of these tables later today. */
 const heldBy = (c: Ctx, ts: Id[]) => c.res
   .filter(r => LIVE[r.reservation.status] && !!r.reservation.table && partsOf(c.w, r.reservation.table).some(t => ts.includes(t)) && r.reservation.at < c.d1 && r.reservation.at + r.reservation.durationMin * MIN > c.now)

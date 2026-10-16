@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
-import {floorSvg} from './floor.ts'
+import {ZOOM, floorSvg, tabList} from './floor.ts'
+import {defaultPolicy, having} from '../contracts/index.ts'
+import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
 import type {Entity} from '../contracts/index.ts'
 import {floorOf} from './geo.ts'
@@ -41,8 +43,8 @@ test('floor tabs filter tables, links, units and pings by floor; chips mark feat
   ])
   await settle()
   const f = () => el.querySelector('[data-floor]')!
-  assert.equal(f().querySelectorAll('[data-floors] button').length, 2)
-  assert.match(f().textContent!, /Main 1\/1.*Patio 2\/2/)
+  assert.deepEqual([...f().querySelectorAll('[data-floors] button')].map(b => b.textContent), ['Ground: all 3/3', 'Main 1/1', 'Patio 2/2']) // one level stitches both floors
+  assert.equal(f().querySelector('[data-floors] [aria-checked="true"]')!.getAttribute('data-id'), 'f1') // the first floor is on show
   assert.equal(f().querySelectorAll('svg rect[class*="stroke-"]:not([rx="4"]):not([rx="5"])').length, 1) // A1 only
   assert.deepEqual([...f().querySelectorAll('[data-feat]')].map(c => c.getAttribute('data-feat')), ['booth']) // seating chips only; quiet stays in the tooltip
   assert.equal(f().querySelectorAll('svg circle').length, 1) // g1 at the door's floor; g2 is headed to b1 (Patio)
@@ -68,4 +70,23 @@ test('floor paints the holder on each table, and fades section tints when the mo
   const off = floorSvg(w, [], undefined, {holds: [], live: false})
   assert.doesNotMatch(off, /data-hold/)
   assert.match(off, /fill-opacity="\.05"/)
+})
+
+const real = () => ({nextParty: 1, ents: Object.fromEntries([...venue(defaultPolicy.sim.floor), {id: 'door', pos: {floor: 'rf1', x: 24, y: 260, w: 0, h: 0}}].map(e => [e.id, e]))}) // door as main.ts seeds it
+const vb = (svg: string) => svg.match(/viewBox="([^"]+)"/)![1]!.split(' ').map(Number)
+const inside = ([x, y, w, h]: number[], t: {pos: {x: number; y: number; w: number; h: number}}) => t.pos.x >= x! && t.pos.y >= y! && t.pos.x + t.pos.w <= x! + w! && t.pos.y + t.pos.h <= y! + h!
+test('2D viewBox fits the shown floor, or the whole stitched level, at the frame aspect', () => {
+  const w = real()
+  const [W, H] = defaultPolicy.sim.floor
+  const tabs = tabList(w)
+  assert.deepEqual(tabs.map(t => t.name), ['Ground: all', 'Main Dining Room', 'Bar', 'Patio', 'Roof'])
+  const box = Object.fromEntries(tabs.map(t => [t.id, vb(floorSvg(w, [], t.id))]))
+  tabs.forEach(t => having(w, 'table', 'pos').filter(x => t.ids.includes(x.pos.floor)).forEach(x => assert.ok(inside(box[t.id]!, x), `${x.id} in ${t.id}`)))
+  Object.values(box).forEach(b => assert.ok(Math.abs(b[2]! / b[3]! - W / H) < 0.01))
+  ;['rf1', 'rf2', 'rf3', 'rf4'].forEach(id => assert.ok(box[id]![2]! < box['lv:0']![2]! || id === 'rf4', `${id} zooms in past the level`))
+  assert.ok(box.rf2![2]! < W && box.rf3![2]! < W) // bar and patio fill the panel
+  const span = (ids: string[], a: 'x' | 'y', d: 'w' | 'h') => ((ps = having(w, 'table', 'pos').filter(x => ids.includes(x.pos.floor)).map(x => x.pos)) => Math.max(...ps.map(p => p[a] + p[d])) - Math.min(...ps.map(p => p[a])))()
+  tabs.forEach(t => assert.ok([Math.abs(box[t.id]![2]! - span(t.ids, 'x', 'w') - 88), Math.abs(box[t.id]![3]! - span(t.ids, 'y', 'h') - 88), Math.abs(box[t.id]![2]! - W / ZOOM)].some(d => d <= 1), `${t.id} is tight on one side (or at the zoom cap)`))
+  const fit = vb(floorSvg(w, [{x: 2000, y: 2000, kind: 'seated', msg: '', ttl: 3, floor: 'rf2'}], 'rf2'))
+  assert.ok(fit[0]! + fit[2]! >= 2000 && fit[1]! + fit[3]! >= 2000) // a ping on the floor stays in view
 })

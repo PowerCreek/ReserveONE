@@ -43,7 +43,7 @@ const heard = (e: Extract<HostEvent, {ev: 'heard'}>, w: World, H: Hp): Line => {
 const waiter = (w: World, table: Id) => ((n?: string) => (n ? `, server ${n}` : ''))(w.ents[w.ents[table]?.table?.waiter ?? '']?.staff?.name)
 const describe: Describe = {
   arrived: (e, w) => ({msg: `${who(w, e.party) ?? e.party} arrived at the door`, at: e.party}),
-  seated: (e, w) => ({msg: `${who(w, e.party) ?? e.party} seated at ${spotName(w, e.table)} by ${teller(w, e.by)}${waiter(w, e.table)}`, at: e.table}),
+  seated: (e, w) => ({msg: `${crew(w, e.party)} seated at ${spotName(w, e.table)} by ${teller(w, e.by)}${waiter(w, e.table)}`, at: e.table}),
   served: (e, w) => ({msg: `${nm(w, e.by)} served ${spotName(w, e.table)}`, at: e.table}),
   cleared: (e, w) => ({msg: `${nm(w, e.by)} cleared ${spotName(w, e.table)}`, at: e.table}),
   left: (e, w, H) => ({msg: `${who(w, e.party) ?? e.party} left${w.ents[e.party]?.offer?.status === 'declined' ? ` the list after declining ${thing(w, e.party, w.ents[e.party]!.offer!.spot, H)}` : ''}`, at: e.party}),

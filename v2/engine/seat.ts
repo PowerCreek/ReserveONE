@@ -27,6 +27,6 @@ export const seat: Engine['seat'] = (p, w, now, req) => {
   const who = partyOf(w, req.party ?? req.queue ?? req.reservation)
   const to = aim(p, w, now, req, who)
   const ts = 'ids' in to ? to.ids.map(i => w.ents[i]).filter(isTable) : []
-  const err = 'err' in to ? to.err : refuse(p, ts, req.size)
+  const err = 'err' in to ? to.err : refuse(p, ts, req.size, who?.lease?.tables)
   return err ? {ok: false, err} : book(p, w, now, req, who, ts)
 }

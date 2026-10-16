@@ -31,11 +31,16 @@ export const chips = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => 
     txt(xs[i] + ws[i] / 2, t.pos.y + t.pos.h + 13.5, 'fill-slate-700 text-[9px] font-medium dark:fill-slate-200', c.s) + '</g>').join('')
 }
 const tip = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => (t.feat?.tags.length ? ` | ${t.feat.tags.map(f => feats[f]?.label ?? f).join(', ')}` : '')
-export const table = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
-  `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
-  (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
-    txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
-    txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
+/** Who serves a table now: its standing holder, else the waiter recorded at seating. */
+export const serverOf = (w: World, hs: Hold[]) => (t: Ent<'table'>) => w.ents[hs.find(h => h.table === t.id && h.staff)?.staff ?? t.table.waiter ?? '']
+/** The hover line every view shows for a table: label, capacity, status, server, features. */
+export const titleOf = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
+  esc(`${t.table.label} cap ${t.table.capacity} ${t.table.status}, server ${serverOf(w, hs)(t)?.staff?.name ?? '-'}${tip(t)}`)
+export const table = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
+  `<g><title>${titleOf(w, hs)(t)}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
+    (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
+      txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
+      txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
 /** `live` = the active mode has standing holds; otherwise the chunk tints fade (nobody holds them). */
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
   const lead = [...ts].sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x)[0]
@@ -59,7 +64,7 @@ export const ping = (f: Fx) =>
   `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? HRING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
 export const door = `<g><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
-const STAFF = ['fill-sky-600', 'fill-emerald-600', 'fill-amber-600', 'fill-rose-600', 'fill-violet-600', 'fill-teal-600', 'fill-orange-600', 'fill-pink-600']
+export const STAFF = ['fill-sky-600', 'fill-emerald-600', 'fill-amber-600', 'fill-rose-600', 'fill-violet-600', 'fill-teal-600', 'fill-orange-600', 'fill-pink-600']
 /** A coloured initial on the table corner for whoever holds it now (colour = the holder's place in the crew). */
 export const badge = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'>) => {
   const h = hs.find(x => x.table === t.id && x.staff)
