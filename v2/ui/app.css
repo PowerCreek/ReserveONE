@@ -1,0 +1,4 @@
+@import "tailwindcss" source("../");
+@theme {
+  --color-ink: #0f172a;
+}

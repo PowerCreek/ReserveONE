@@ -26,3 +26,29 @@
 - W3 Verify by command (`tsc`, tests) with silent success; batch edits per call.
 - W4 Gap notes: whenever progress needed context you lacked or a step order you found late, log one line `need: <context> | would-have: <step/protocol> | place: <file>` in your report (≤3 lines). The lead folds them into CONTEXT.md.
 - W5 Report ≤ 12 lines: files, commands run + result, gap notes.
+
+## R — Reference shapes (real code from the skeleton; imitate, do not copy blindly)
+R1 Engine decide: data stages first, then a one-line fold (`v2/engine/index.ts`; C1 C2 C3 E1).
+```ts
+const open = (w: World, size: number) => having(w, 'table').filter(t => t.table.status === 'available' && t.table.capacity >= size)
+const tightest = (ts: Ent<'table'>[]) => ts.reduce<Ent<'table'> | undefined>((b, t) => (b && b.table.capacity <= t.table.capacity ? b : t), undefined)
+const item = (size: number, now: number, t?: Ent<'table'>): SeqItem =>
+  ({size, spot: t?.id ?? null, tables: t ? [t.id] : [], label: t?.table.label ?? '-', waitMin: 0, at: now, code: t ? 'HOT_GREEN' : 'NO_TABLE', ready: !!t})
+export const fit: Engine['fit'] = (_p, w, now, sizes) => sizes.map(size => item(size, now, tightest(open(w, size))))
+```
+R2 Fluent wiring: each `use` registers, nothing edits the core (`v2/main.ts`, `v2/ui/index.ts`; C7 C8).
+```ts
+export const build = () => App.create(seed()).use(app => app.provide('engine', {fit})).use(ui)
+export const ui: Plugin = app => {
+  app.act('more', a => a.store.state.ui.size++).view(el => (el.innerHTML = html))
+  app.store.watch('ui.size', () => refit(app), true) // engine call lives in a named step, not in the handler
+}
+```
+R3 Declarative binders: one table, one factory, the observer attaches them (`v2/kernel/index.ts`; C3 C6 C8).
+```ts
+const builtin: Binder[] = [
+  {attr: 'data-text', apply: (el, v) => (el.textContent = String(v ?? ''))},
+  {attr: 'data-class', apply: (el, v) => (el.className = `${base(el as HTMLElement)} ${v ?? ''}`)},
+]
+const bind = (el: Element) => live.set(el, binders.filter(b => el.hasAttribute(b.attr)).map(b => store.watch(el.getAttribute(b.attr)!, v => b.apply(el, v), true)))
+```
