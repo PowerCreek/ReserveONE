@@ -7,3 +7,4 @@
 - Node 24 runs `.ts` directly: use `.ts` import extensions, `import type`, no enums/namespaces.
 - Commands: `npm run v2:check|v2:test|v2:build`; lane tests `node --test "v2/<lane>/**/*.test.ts"`.
 - Lanes do not commit; the lead commits after review. Tailwind `--watch` is untested; one-shot build is the loop.
+- Kernel binders (lane B, done): `data-text`, `data-class`, `data-attr="path" data-as="attr"`, `data-show`, `data-each="path"` with a child `<template>` (`$`/`$.x` = row path; `data-has="table,pos"` filters by components), `data-on="input:act change:act2"`/`data-act`, `keyOf(ev)` = row key. Undo/redo: `record`, `commit`, acts `undo`/`redo`, state in `state.ui.history`. `persist(key?)` plugin. Kernel exports also: `runRules`, `matches`, `make`.
