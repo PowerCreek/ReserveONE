@@ -7,8 +7,8 @@ export type Reg<T> = Record<string, T>
 export interface FeatDef {label: string; group: 'seat' | 'zone' | 'air' | 'access'; near: string[]}
 /** Why a party wants a feature: `mult` scales the want's score; `flavour` tells the host how negotiable it is. */
 export interface WhyDef {label: string; flavour: 'function' | 'taste' | 'occasion'; mult: number}
-/** Fallback ladder step. `kind` selects an engine rung builder (exact|wait|near|relax|elsewhere); the row is its parameters. Say-templates use {party} {spot} {gives} {lacks} {min}. */
-export interface StepDef {kind: 'exact' | 'wait' | 'near' | 'relax' | 'elsewhere'; say: string; maxWaitMin?: Partial<Record<Level, number>>; drops?: Level[]}
+/** Fallback ladder step. `kind` selects an engine rung builder (exact|wait|near|relax|elsewhere); the row is its parameters. Say-templates use {party} {spot} {gives} {lacks} {min} {tables} {cap} (merge: its tables, T-prefixed numbers, and summed seats). */
+export interface StepDef {kind: 'exact' | 'wait' | 'near' | 'relax' | 'elsewhere' | 'merge'; say: string; maxWaitMin?: Partial<Record<Level, number>>; drops?: Level[]}
 /** Temporal thresholds, minutes. Late and lapse stay in `policy.seat` (lateGraceMin, lapsedClearMin). */
 export interface Clock {quoteTolMin: number; holdMin: number; aheadMin: number; patienceMin: Record<PType, number>; escortMin: number; answerMin: number; reseatWindowMin: number}
 /** Re-seat reason: what the party seeks or avoids once it asks for another table; `urgency` scales the sentiment at stake. */
@@ -49,6 +49,7 @@ export const defaultHost: Host = {
     {kind: 'near', say: '{spot} has {gives}, though not {lacks}: would that suit {party}?'},
     {kind: 'relax', drops: ['soft'], say: '{spot} is ready now, without {lacks}: would that suit {party}?'},
     {kind: 'elsewhere', say: 'We can seat {party} at {spot} on another floor: shall we?'},
+    {kind: 'merge', say: 'Push {tables} together: seats {cap}.'},
   ],
   clock: {quoteTolMin: 5, holdMin: 10, aheadMin: 30, patienceMin: {W: 25, P: 15, R: 10, V: 10}, escortMin: 2, answerMin: 3, reseatWindowMin: 10},
   reasons: {

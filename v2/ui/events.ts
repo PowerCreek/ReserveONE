@@ -1,5 +1,5 @@
 // Every SimEvent and HostEvent becomes a narrated line (kind, msg) and a floor ping (where). A table of describers keyed by event name (C3).
-import {defaultPolicy} from '../contracts/index.ts'
+import {defaultPolicy, isMerge, partsOf} from '../contracts/index.ts'
 import type {HostEvent, Id, Level, ServiceEvent, SimEvent, World} from '../contracts/index.ts'
 import {floorOf, locate} from './geo.ts'
 type Ev = SimEvent | HostEvent | ServiceEvent
@@ -16,8 +16,9 @@ export const HRING: Record<string, string> = {
   led: 'stroke-teal-500', asked: 'stroke-orange-500', replied: 'stroke-fuchsia-500', moved: 'stroke-cyan-500', mood: 'stroke-pink-500', told: 'stroke-lime-500',
 }
 const who = (w: World, id: Id) => w.ents[id]?.party && `${w.ents[id]!.party!.label} x${w.ents[id]!.party!.size}`
-/** Table label; a link group reads as its primary member. */
-export const spotName = (w: World, id: Id) => w.ents[w.ents[id]?.link?.members[0] ?? id]?.table?.label ?? id
+/** Table label; a link group reads as its primary member, a merge as `5+6`. */
+const label = (w: World, id: Id) => w.ents[id]?.table?.label ?? id
+export const spotName = (w: World, id: Id) => (isMerge(id) ? partsOf(w, id).map(t => label(w, t)).join('+') : label(w, partsOf(w, id)[0]))
 const nm = (w: World, id: Id) => w.ents[id]?.staff?.name ?? id
 /** The host is "You" in the player's own log; any other teller is named. */
 const teller = (w: World, id: Id) => ({host: 'You'} as Record<string, string>)[w.ents[id]?.body?.role ?? 'host'] ?? actor(w, id)
@@ -35,7 +36,7 @@ const listed = (w: World, id: Id) => w.ents[id]?.queue?.status === 'WAITING' || 
 const WANT: Record<Level, string> = {need: 'needs', strong: 'strongly wants', soft: 'would like'}
 const MOVE = {swap: 'moving them', offer: 'offering a table', stay: 'staying put'}
 const sign = (n: number) => (n > 0 ? `+${n}` : String(n))
-const anchor = (w: World, spot: Id) => w.ents[spot]?.link?.members[0] ?? spot
+const anchor = (w: World, spot: Id) => partsOf(w, spot)[0]
 const reason = (r: string) => H.reasons[r]?.label ?? r
 const heard = (e: Extract<HostEvent, {ev: 'heard'}>, w: World): Line => {
   const want = w.ents[e.party]?.wants?.list.find(x => x.feat === e.feat)
@@ -54,7 +55,7 @@ const describe: Describe = {
   quoted: (e, w) => ({msg: `${crew(w, e.party)} was quoted ${e.min} min`, at: e.party}),
   offered: (e, w) => ({msg: `The host offered ${crew(w, e.party)} ${thing(w, e.party, e.spot)} at ${spotName(w, e.spot)} (${e.step})`, at: anchor(w, e.spot)}),
   answered: (e, w) => ({msg: `${crew(w, e.party)} ${e.yes ? 'accepted' : 'declined'} ${thing(w, e.party, e.spot)}${e.yes || listed(w, e.party) ? '' : ' and left the list'}`, at: anchor(w, e.spot)}),
-  led: (e, w) => ({msg: `${actor(w, e.by)} led ${crew(w, e.party)} to ${spotName(w, e.table)}`, at: e.table}),
+  led: (e, w) => ({msg: `${actor(w, e.by)} led ${crew(w, e.party)} to ${spotName(w, e.table)}`, at: anchor(w, e.table)}),
   asked: (e, w) => ({msg: `${crew(w, e.party)} asked for another table (${reason(e.reason)}${e.stage === 'seated' ? ', already seated' : ''}): "${H.reasons[e.reason]?.says ?? e.reason}"`, at: e.party}),
   replied: (e, w) => ({msg: `The host answered the ${reason(e.reason)} request of ${crew(w, e.party)} with "${H.responses[e.response]?.label ?? e.response}": ${MOVE[e.move]} (mood ${sign(e.mood)})`, at: e.party}),
   moved: (e, w) => ({msg: `${crew(w, e.party)} moved from ${spotName(w, e.from)} to ${spotName(w, e.to)}`, at: anchor(w, e.to)}),

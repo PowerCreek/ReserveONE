@@ -21,12 +21,16 @@ const wait: Build = a => { const now = a.pool.find(x => x.ready)?.score ?? -Infi
 const near: Build = ({e, pool}) => { const f = pool.find(x => x.ready && x.missed.length > 0 && x.missed.every(m => standin(e, x, m))); return f && found(f, f.missed.map(m => standin(e, f, m) as string)) }
 const relax: Build = ({d, pool}) => { const f = pool.find(x => x.ready && x.missed.length > 0 && x.missed.every(m => m.level !== 'need' && d.drops?.includes(m.level))); return f && found(f) }
 const elsewhere: Build = ({e, pool}) => { const f = pool.find(x => x.ready && apart(e, x)); return f && found(f) }
-const table: Record<StepDef['kind'], Build> = {exact, wait, near, relax, elsewhere}
+/** The smallest-fitting free adjacent pair, offered only when no single spot is ready (env.merges is empty otherwise). */
+const merge: Build = ({e}) => { const f = e.merges[0]; return f && found(f) }
+const table: Record<StepDef['kind'], Build> = {exact, wait, near, relax, elsewhere, merge}
 const label = (e: Env, id: string) => e.p.host.feats[id]?.label ?? id
 const lack = (e: Env, m: Miss) => `${e.wants.find(x => x.feat === m.feat)?.avoid ? 'no ' : ''}${label(e, m.feat)}`
 const fill = (tpl: string, v: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? '')
+const tname = (l: string) => (/^\d+$/.test(l) ? `T${l}` : l)
+const joined = (e: Env, id: Id) => e.by[id].spot.label.split('+').map(tname).join(' and ')
 const say = (e: Env, d: StepDef, f: Found) =>
-  fill(d.say, {party: `${e.party.party.name} party`, spot: e.by[f.spot ?? ''].spot.label, gives: f.gives.map(g => label(e, g)).join(' and '), lacks: f.lacks.map(m => lack(e, m)).join(' and '), min: String(Math.ceil(f.waitMin))})
+  fill(d.say, {party: `${e.party.party.name} party`, spot: e.by[f.spot ?? ''].spot.label, tables: joined(e, f.spot ?? ''), cap: String(e.by[f.spot ?? ''].spot.capacity), gives: f.gives.map(g => label(e, g)).join(' and '), lacks: f.lacks.map(m => lack(e, m)).join(' and '), min: String(Math.ceil(f.waitMin))})
 /** The rung for one ladder row, or nothing when the row has no spot to offer. `taken` = spots earlier rungs already claimed. */
 export const build = (e: Env, taken: Id[], d: StepDef): Rung | undefined => {
   const f = table[d.kind]({e, d, pool: e.fits.filter(x => !taken.includes(x.spot))})

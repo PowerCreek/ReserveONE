@@ -16,7 +16,8 @@ export interface Components {
   section: {name: string; color: string; minOccupancy?: number; minTurns?: number}
   pos: {floor: Id; x: number; y: number; w: number; h: number}
   table: {label: string; capacity: number; min: number; shape: 'rect' | 'booth'; status: TStatus; waiter: Id | null; section: Id | null}
-  link: {members: Id[]} // link group; members[0] is primary
+  link: {members: Id[]; merged?: boolean} // link group; members[0] is primary; `merged` = pushed together at seating, dissolved when the tables clear (engine.freeUp)
+  adj: {with: Id[]} // table: neighbours it can be pushed together with (venue data, derived once from positions)
   party: {num: number; label: string; prefix: string; kind: PType; name: string; size: number; here?: number}
   reservation: {at: number; durationMin: number; table: Id | null; status: 'BOOKED' | 'ARRIVED' | 'SEATED' | 'NO_SHOW' | 'QUEUED'; phone: string; notes: string}
   queue: {since: number; quotedMin: number; status: 'WAITING' | 'SEATED'; from: Id | null}
@@ -39,4 +40,9 @@ export type Ent<K extends keyof Components> = {id: Id} & {[P in K]: Components[P
 export interface World {ents: Record<Id, Entity>; nextParty: number}
 export const having = <K extends keyof Components>(w: World, ...ks: K[]): Ent<K>[] =>
   Object.values(w.ents).filter((e): e is Ent<K> => ks.every(k => k in e))
+/** A merge candidate is a spot with no entity yet: its id names its tables (`m:a+b`). A link entity, once seated, names the same tables in `members`. */
+export const mergeId = (tables: Id[]): Id => `m:${[...tables].sort().join('+')}`
+export const isMerge = (id: Id) => id.startsWith('m:')
+/** The tables a spot id stands for: a link's members, a merge id's parts, else the table itself. */
+export const partsOf = (w: World, id: Id): Id[] => w.ents[id]?.link?.members ?? (isMerge(id) ? id.slice(2).split('+') : [id])
 export type Patch = {op: 'set'; id: Id; parts: Partial<Components>} | {op: 'add'; ent: Entity} | {op: 'del'; id: Id}

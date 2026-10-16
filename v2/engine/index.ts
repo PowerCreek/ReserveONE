@@ -1,6 +1,7 @@
 // Engine public surface (E3: no DOM). Every function is `(policy, world, now, ...args) => output` (E1, E2).
 import type {HostEngine} from '../contracts/index.ts'
 import {spots} from './spots.ts'
+import {merges} from './merge.ts'
 import {fit} from './fit.ts'
 import {lookahead} from './lookahead.ts'
 import {seat} from './seat.ts'
@@ -22,7 +23,7 @@ import {standing as holds} from './holds.ts'
 import {assign} from './assign.ts'
 import {knows} from './knows.ts'
 import {tell} from './tell.ts'
-export {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
+export {spots, merges, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
 export {apply} from './patch.ts'
 export {queueOrder, line} from './queue.ts'
 export {freeUp} from './free.ts'

@@ -16,7 +16,7 @@ const inflight = (w: World): Task[] => having(w, 'body').filter(e => e.body.role
 const trip = (c: Ctx, w: World, table: Id, then: Task, sec: number): Task[] => [{do: 'move', ...center(w, table)}, {do: 'wait', sec}, then]
 const seats = (w: World) => inflight(w).filter((t): t is Of<'seat'> => t.do === 'seat')
 const readyOn = (c: Ctx, w: World, busy: Id[], q: Pty): Id | undefined => {
-  const it = plan(c.p, w, c.now, [q.party.size], {busy, skip: q.id})[0]
+  const it = plan(c.p, w, c.now, [q.party.size], {busy, skip: q.id, merge: false})[0]
   return it.ready ? it.tables[0] : undefined
 }
 const heldOpen = (w: World, busy: Id[], held: Id): Id | undefined => (w.ents[held]?.table?.status === 'available' && !busy.includes(held) ? held : undefined)

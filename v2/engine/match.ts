@@ -1,5 +1,6 @@
 import type {Coach, Ent, Entity, Fit, Id, Miss, Policy, Want, World} from '../contracts/index.ts'
 import {spots} from './spots.ts'
+import {merges} from './merge.ts'
 import {holds} from './holds.ts'
 import type {Hold} from './holds.ts'
 import {avgTurn, freeAt} from './avail.ts'
@@ -9,7 +10,7 @@ import {set} from './patch.ts'
 import {MIN} from './time.ts'
 type Spot = Ent<'spot'>
 /** Everything match and ladder read: the party, what the host knows it wants, the spots and their fits (best first). */
-export interface Env {p: Policy; w: World; now: number; party: Pty; wants: Want[]; by: Record<Id, Spot>; fits: Fit[]; holds: Hold[]; free: (s: Spot) => number; turn: number}
+export interface Env {p: Policy; w: World; now: number; party: Pty; wants: Want[]; by: Record<Id, Spot>; fits: Fit[]; merges: Fit[]; holds: Hold[]; free: (s: Spot) => number; turn: number}
 /** The host only knows what was volunteered (`said`) or asked and recorded (`heard`). */
 export const known = (e: Entity): Want[] => (e.wants?.list ?? []).filter(x => x.said || e.wants?.heard.includes(x.feat))
 const has = (s: Spot, x: Want) => (s.spot.feats ?? []).includes(x.feat)
@@ -28,18 +29,22 @@ const fitOf = (e: Env) => (s: Spot): Fit => {
 }
 const best = (e: Env) => (a: Fit, b: Fit) => b.score - a.score || a.waitMin - b.waitMin || e.by[a.spot].spot.capacity - e.by[b.spot].spot.capacity || a.spot.localeCompare(b.spot)
 const base = (p: Policy, w: World, now: number, party: Pty): Env =>
-  ({p, w, now, party, wants: known(party), by: {}, fits: [], holds: holds(p, w, now, party.id), free: freeAt(p, w, now), turn: (avgTurn(p, w) + p.seat.resetMin) * MIN})
-/** Fits for one party: needs are hard filters (a spot without a needed feature, or with an avoided one, is not a candidate). */
+  ({p, w, now, party, wants: known(party), by: {}, fits: [], merges: [], holds: holds(p, w, now, party.id), free: freeAt(p, w, now), turn: (avgTurn(p, w) + p.seat.resetMin) * MIN})
+/** Fits for one party: needs are hard filters (a spot without a needed feature, or with an avoided one, is not a candidate). Merges (adjacent free pairs) are scored too, but only offered when no single spot is ready. */
 export const env = (p: Policy, w: World, now: number, id: Id, within?: Id[]): Env | undefined => {
   const party = partyOf(w, id)
   const e = party && base(p, w, now, party)
-  const all = spots(w)
-  const pool = all.filter(s => s.spot.status !== 'blocked_private' && s.spot.capacity >= (party?.party.size ?? 0) && (within ?? [s.id]).includes(s.id))
+  const [all, pairs] = [spots(w), merges(w)]
+  const size = party?.party.size ?? 0
+  const can = (s: Spot) => s.spot.status !== 'blocked_private' && s.spot.capacity >= size && (within ?? [s.id]).includes(s.id)
   const ok = (s: Spot) => !!e && e.wants.every(x => x.level !== 'need' || meets(s, x))
-  const by = Object.fromEntries(all.map(s => [s.id, s]))
-  return e && {...e, by, fits: pool.filter(ok).map(fitOf({...e, by})).sort(best({...e, by}))}
+  const by = Object.fromEntries([...all, ...pairs].map(s => [s.id, s]))
+  const rank = (ss: Spot[]) => (e ? ss.filter(s => can(s) && ok(s)).map(fitOf({...e, by})).sort(best({...e, by})) : [])
+  const fits = rank(all)
+  return e && {...e, by, fits, merges: fits.some(f => f.ready) ? [] : rank(pairs).filter(f => f.ready)}
 }
-export const match: Coach['match'] = (p, w, now, id, within) => env(p, w, now, id, within)?.fits ?? []
+const both = (e?: Env): Fit[] => [...(e?.fits ?? []), ...(e?.merges ?? [])]
+export const match: Coach['match'] = (p, w, now, id, within) => both(env(p, w, now, id, within))
 const refuse = (p: Policy, w: World, id: Id, heard: string[]) =>
   [[!partyOf(w, id), `No party ${id}`], [heard.some(f => !(f in p.host.feats)), `Unknown feature in ${heard.join(', ')}`]].find(([bad]) => bad)?.[1] as string | undefined
 const note = (e: Entity, heard: string[]) => known({...e, wants: {list: e.wants?.list ?? [], heard}}).filter(x => heard.includes(x.feat)).map(x => `${x.feat} (${x.level})`)

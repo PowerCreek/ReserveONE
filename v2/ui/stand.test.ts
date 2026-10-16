@@ -180,3 +180,21 @@ test('told describer names the teller (You for the host, a name otherwise) and t
   assert.equal(explain({ev: 'told', party: 'p1', table: 't4', server: 'dana', by: 'host'}, w).msg, 'You told Dana the Chen party is at P4')
   assert.equal(explain({ev: 'told', party: 'p1', table: 't4', server: 'dana', by: 'dana'}, w).msg, 'Dana told Dana the Chen party is at P4')
 })
+test('merge offer: Accept leads the party to the merged tables, Seat books both tables', async () => {
+  const seen: string[][] = []
+  const rung = {step: 'merge', spot: 'm:t1+t2', gives: [], lacks: [], waitMin: 0, say: 'Push T1 and T2 together: seats 8.'}
+  const engine = {...fake(), ...coach, ladder: () => [rung], seat: (_p, _w, _n, req) => (seen.push(req.tables ?? []), {ok: true, msg: 'Seated', tone: 'ok', patches: []})} as Partial<HostEngine>
+  const {el, app} = mount([chen(), tbl('t1', 'T1', 4), tbl('t2', 'T2', 4)], engine)
+  await settle()
+  click(el, '[data-act="stand-offer"]')
+  assert.equal(app.store.state.world.ents.p1.offer!.spot, 'm:t1+t2')
+  assert.match(log(app).join('|'), /The host offered Chen party T1\+T2 at T1\+T2 \(merge\)/)
+  await settle()
+  click(el, '[data-act="stand-answer"][data-yes="1"]')
+  assert.equal(app.store.state.world.ents.p1.offer!.status, 'accepted')
+  assert.equal(log(app)[0], 'The host led Chen party to T1+T2')
+  await settle()
+  assert.match(text(el, '[data-stand]'), /led to T1\+T2, not seated/)
+  click(el, '[data-act="stand-seatled"]')
+  assert.deepEqual(seen, [['t1', 't2']])
+})

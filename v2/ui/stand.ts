@@ -1,6 +1,6 @@
 // Host stand (U4): greet the next party, record intake chips, voice ladder offers, seat a led party, reply to table-change requests. Free play: no scoring.
 // Engine calls go through `ask` (optional: a missing function degrades to a note); writes go through the undoable `commit`.
-import {defaultPolicy, having} from '../contracts/index.ts'
+import {defaultPolicy, having, partsOf} from '../contracts/index.ts'
 import type {App, Components, Decision, Ent, Entity, HostEvent, Id, Level, Patch, Rung, ServiceEvent, Want, World} from '../contracts/index.ts'
 import {commit} from '../kernel/index.ts'
 import {ask} from './ask.ts'
@@ -23,9 +23,8 @@ const fresh = (): Stand => ({party: '', greeted: []})
 const st = (app: App) => uiOf(app).stand
 const world = (app: App) => app.store.state.world
 const parties = (w: World) => having(w, 'party') as P[]
-const tablesOf = (w: World, spot: Id) => w.ents[spot]?.link?.members ?? [spot]
 /** Led, not seated (pinned convention): an accepted offer on a table with no slot there. */
-const led = (w: World, e: Entity) => e.offer?.status === 'accepted' && !having(w, 'slot').some(s => s.slot.party === e.id && tablesOf(w, e.offer!.spot).includes(s.slot.table))
+const led = (w: World, e: Entity) => e.offer?.status === 'accepted' && !having(w, 'slot').some(s => s.slot.party === e.id && partsOf(w, e.offer!.spot).includes(s.slot.table))
 const since = (p: P) => p.queue?.since ?? p.reservation?.at ?? 0
 /** Parties at the door, next first (policy.queue.tier, then arrival). */
 const door = (w: World) => parties(w).filter(p => (p.queue?.status === 'WAITING' || p.reservation?.status === 'ARRIVED') && !led(w, p))
@@ -143,7 +142,7 @@ const offer = (app: App, ev: Event) => {
 const mark = (id: Id, o: Components['offer'], status: Components['offer']['status']): Patch => ({op: 'set', id, parts: {offer: {...o, status}}})
 /** Yes: the party is led to the table (accepted, no slot yet: `led` event). No: the offer is declined. */
 const answers: Record<'1' | '0', (app: App, id: Id, o: Components['offer']) => HostEvent[]> = {
-  1: (app, id, o) => (commit(app, [mark(id, o, 'accepted')]), [{ev: 'answered', party: id, spot: o.spot, yes: true}, {ev: 'led', party: id, table: tablesOf(world(app), o.spot)[0], by: hostOf(world(app))}]),
+  1: (app, id, o) => (commit(app, [mark(id, o, 'accepted')]), [{ev: 'answered', party: id, spot: o.spot, yes: true}, {ev: 'led', party: id, table: o.spot, by: hostOf(world(app))}]),
   0: (app, id, o) => (commit(app, [mark(id, o, 'declined')]), [{ev: 'answered', party: id, spot: o.spot, yes: false}]),
 }
 const answer = (app: App, ev: Event) => {
@@ -152,7 +151,7 @@ const answer = (app: App, ev: Event) => {
 }
 const seatled = (app: App, ev: Event) => {
   const e = world(app).ents[arg(ev, 'id')]
-  e?.party && e.offer && seatNow(app, {...reqOf(e as P), tables: tablesOf(world(app), e.offer.spot)})
+  e?.party && e.offer && seatNow(app, {...reqOf(e as P), tables: partsOf(world(app), e.offer.spot)})
 }
 const reply = (app: App, ev: Event) => {
   const id = arg(ev, 'id'), r = ask(app, 'respond', id, arg(ev, 'r'))

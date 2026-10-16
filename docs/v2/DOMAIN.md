@@ -19,6 +19,7 @@ host service
   - match: score every spot for the party; needs are hard filters -> fn: match -> Fit[] (met, missed, waitMin)
     - capacity and tightest-fit baseline -> fn: fit, spots (existing); policy: seat
     - queue order and tiers -> fn: queueOrder (existing); policy: queue.tier
+  - merge: adjacent free tables combine capacities when no single spot fits -> fn: merges; policy: host.ladder[merge], merge; comp: adj, link.merged
   - fallback ladder when the preferred feature has run out -> fn: ladder -> Rung[]; policy: host.ladder
     - exact: the ready match -> ladder step kind exact
     - wait: a matching spot frees within the tolerance for the level -> kind wait; policy: host.ladder[].maxWaitMin
