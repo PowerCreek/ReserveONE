@@ -18,7 +18,7 @@
 
 ## U — UI / sim
 - U1 Tailwind for all styling; no hand-written CSS beyond `@theme` tokens.
-- U2 Sim mode: 2D top-down restaurant; staff and guests are units that take tasks (move, seat, serve, clear); the player asserts the app's flows make sense for a scenario.
+- U2 Sim mode: 2D top-down restaurant; staff and guests are units that take tasks (move, seat, serve, clear); the player runs the host stand freely and guests react.
 
 ## W — Workflow (token frugality)
 - W1 Start: read `docs/v2/CONTEXT.md`, then only the files your lane owns plus contracts it names.

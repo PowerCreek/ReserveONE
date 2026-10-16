@@ -1,4 +1,5 @@
 # v2 accumulated context (read first; the lead amends in place)
+- Direction: the sim is a free-play host sandbox; guests react naturally (mood, patience, leaving, accepting or declining offers) and the event log shows what happened; no rubric, grades, scoring or expected outcomes; a scenario is only a starter setup.
 - Domain truth: `docs/SPEC.md` (§ refs), v1 code in `src/` (read-only reference), v1 decisions in `docs/HANDOFF.md`.
 - v2 lives in `v2/`; branch `v2/engine-sim`; v1 stays untouched until parity.
 - Build target: one self-contained `dist/index.html`; tests run with node (no browser).

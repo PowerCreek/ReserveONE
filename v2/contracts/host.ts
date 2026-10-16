@@ -1,7 +1,6 @@
-// Host-service registries (C3, C5): every qualifier, feature, reason, response, ladder step and rubric metric is a row of data.
+// Host-service registries (C3, C5): every qualifier, feature, reason, response, ladder step is a row of data.
 // Extend by spreading new rows into `policy.host.<registry>`; engine functions look rows up by id and never branch on them.
 import type {Level, PType} from './model.ts'
-export type Grade = 'good' | 'ok' | 'poor'
 export type Stage = 'arrived' | 'seated' // after the host led the party: at the table, not yet / already seated
 export type Reg<T> = Record<string, T>
 /** Feature a spot can carry. `near` = acceptable stand-ins, best first (the substitution rung of the ladder). */
@@ -18,8 +17,6 @@ export interface ReasonDef {label: string; seek: string[]; avoid: string[]; leve
 export interface Out {move: 'swap' | 'offer' | 'stay'; mood: number; says: string}
 /** Host response: `then.spot` applies when a spot satisfying the reason is free, `then.none` otherwise. */
 export interface ResponseDef {label: string; host: string; then: {spot: Out; none: Out}}
-/** Rubric metric: engine computes `value` (unit in `unit`); thresholds grade it; `say` is the feedback sentence per grade with {tokens}. */
-export interface MetricDef {label: string; unit: string; weight: number; dir: 'low' | 'high'; good: number; ok: number; say: Record<Grade, string>}
 export interface Host {
   feats: Reg<FeatDef>
   whys: Reg<WhyDef>
@@ -30,8 +27,6 @@ export interface Host {
   responses: Reg<ResponseDef>
   options: Reg<string[]> // reason id (or '*') -> response ids offered to the host
   reply: {stage: Record<Stage, number>} // sentiment multiplier per stage
-  rubric: Reg<MetricDef>
-  pass: number // total score (0-100) that grades 'good'
 }
 const keep: Out = {move: 'stay', mood: -2, says: 'I understand, thanks for explaining.'}
 const swap: Out = {move: 'swap', mood: 3, says: 'Wonderful, thank you for moving us.'}
@@ -75,16 +70,4 @@ export const defaultHost: Host = {
   },
   options: {'*': ['swap', 'offer', 'hold', 'explain'], accessibility: ['swap', 'offer']},
   reply: {stage: {arrived: 1, seated: 1.5}},
-  rubric: {
-    quote: {label: 'Quote vs actual', unit: 'min off', weight: 2, dir: 'low', good: 5, ok: 10, say: {good: 'You quoted {quoted} min and seated {party} at {actual}: an honest quote.', ok: 'Your quote of {quoted} min was {delta} min off for {party}: pad it when {why}.', poor: 'A quote {delta} min off for {party} is a plan they cannot trust: re-quote as the line moves.'}},
-    wait: {label: 'Wait vs patience', unit: '% of tolerance', weight: 2, dir: 'low', good: 70, ok: 100, say: {good: '{party} waited {actual} min, well inside their tolerance.', ok: '{party} waited {actual} min, at the edge of their tolerance: check in with them sooner.', poor: '{party} waited {actual} min, past their tolerance: offer the ladder before patience runs out.'}},
-    need: {label: 'Needs met', unit: '% met', weight: 4, dir: 'high', good: 100, ok: 100, say: {good: 'Every need was met first, as {party} deserved.', ok: 'Every need was met.', poor: '{party} needed {feat} and was seated without it: needs outrank every tier.'}},
-    pref: {label: 'Preference fit', unit: '% of weight', weight: 3, dir: 'high', good: 80, ok: 50, say: {good: '{party} got {met}: a well-matched table.', ok: '{party} got {met} but not {lacks}: name what was missing when you offer.', poor: '{party} missed {lacks}: offer the ladder before seating.'}},
-    fair: {label: 'Fairness', unit: 'inversions', weight: 2, dir: 'low', good: 0, ok: 1, say: {good: 'Parties were routed in tier and arrival order, with needs first.', ok: '{party} was routed before an earlier arrival: say why in your quote.', poor: 'Later arrivals jumped the line {delta} times: guests notice the order.'}},
-    load: {label: 'Server balance', unit: 'cover spread', weight: 1, dir: 'low', good: 4, ok: 8, say: {good: 'Covers stayed within {delta} between servers.', ok: 'Covers drifted {delta} apart: rotate the next party to {server}.', poor: '{server} carried {delta} more covers: rotate before the rush.'}},
-    mood: {label: 'Guest sentiment', unit: 'avg mood', weight: 3, dir: 'high', good: 1, ok: 0, say: {good: 'Guests left happier than they arrived.', ok: 'Guests left neutral: one warm word at the table lifts it.', poor: '{party} left unhappy: acknowledge the reason before offering the fix.'}},
-    recover: {label: 'Recovery', unit: 'avg mood', weight: 2, dir: 'high', good: 1, ok: 0, say: {good: 'You met {party} request for {reason} with {response}: well recovered.', ok: 'You answered {party} on {reason}: {response} held the line.', poor: 'For {reason}, {response} cost {party} goodwill: try {better}.'}},
-    heard: {label: 'Asked and heard', unit: '% heard', weight: 1, dir: 'high', good: 100, ok: 50, say: {good: 'You asked about every preference before routing.', ok: 'You heard some preferences: ask once more before you quote.', poor: 'You routed before asking: greet, then ask about seating.'}},
-  },
-  pass: 70,
 }

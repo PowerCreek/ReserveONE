@@ -1,7 +1,7 @@
-// A VIP and an accessibility need arrive together and want the same table: need outranks tier, and the VIP is still cared for.
+// Starter: a VIP and an accessibility need arrive together and want the same table.
 import type {Scenario} from '../contracts/index.ts'
 export const vipAccess: Scenario = {
-  id: 'vip-access', title: 'VIP and access', learn: 'Needs come before tiers; the party that yields hears why and gets the next best table.',
+  id: 'vip-access', title: 'VIP and access',
   brief: 'Rossi (VIP) wants the window. Nguyen needs an accessible table. Only A1 is both.',
   seed: {
     tables: [
@@ -16,9 +16,5 @@ export const vipAccess: Scenario = {
   steps: [
     {at: 0, do: 'arrive', key: 'rossi', name: 'Rossi', size: 4, kind: 'V', wants: [{feat: 'window', level: 'strong', why: 'occasion', accord: 'all', said: true}]},
     {at: 0, do: 'arrive', key: 'nguyen', name: 'Nguyen', size: 3, kind: 'W', wants: [{feat: 'accessible', level: 'need', why: 'mobility', accord: 'all'}]},
-  ],
-  expect: [
-    {id: 'need-first', key: 'nguyen', spot: ['a1'], feats: ['accessible'], waitMaxMin: 5, why: 'A need is met before any tier: seat the accessibility party at once.'},
-    {id: 'vip-window', key: 'rossi', spot: ['w2'], feats: ['window'], waitMaxMin: 5, moodMin: 0, why: 'The VIP keeps the window at W2; tell them why A1 was held.'},
   ],
 }

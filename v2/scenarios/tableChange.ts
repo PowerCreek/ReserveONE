@@ -1,7 +1,7 @@
-// Parties ask to change table after being led. One has a free answer, one does not: the response, not the table, carries the care.
+// Starter: parties ask to change table after being led; one has a free answer, one does not.
 import type {Scenario} from '../contracts/index.ts'
 export const tableChange: Scenario = {
-  id: 'table-change', title: 'Can we move?', learn: 'Hear the reason, move when a table fits it, and offer the best honest alternative when none does.',
+  id: 'table-change', title: 'Can we move?',
   brief: 'Garcia was led to a table by the door and feels the draft. Tanaka, already seated, finds the room too loud.',
   seed: {
     tables: [
@@ -20,9 +20,5 @@ export const tableChange: Scenario = {
     {at: 0, do: 'arrive', key: 'tanaka', name: 'Tanaka', size: 2, kind: 'W', wants: []},
     {at: 0, do: 'place', key: 'tanaka', table: 'l1', stage: 'seated'},
     {at: 12, do: 'ask', key: 'tanaka', reason: 'noise', stage: 'seated'},
-  ],
-  expect: [
-    {id: 'draft-swap', key: 'garcia', reply: ['swap'], spot: ['q1'], moodMin: 1, why: 'A free table that answers the reason is the best reply: move them and thank them.'},
-    {id: 'noise-care', key: 'tanaka', reply: ['offer', 'hold', 'explain'], moodMin: -1, why: 'When no table fits, an honest alternative or a wait keeps goodwill; saying no costs the most.'},
   ],
 }

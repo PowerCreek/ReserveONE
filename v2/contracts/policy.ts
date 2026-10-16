@@ -12,7 +12,7 @@ export interface Policy {
   rows: {past: number; future: number} // turnover rows around the current one
   section: {minOcc: number; share: number; horizonMin: number} // underflow: min occupancy, share of tables needing a turn, turn horizon
   spawn: {names: string[]; sizes: [size: number, weight: number][]} // sim walk-in arrivals
-  host: Host // host-service registries: features, reasons, responses, ladder, clock, rubric (contracts/host.ts)
+  host: Host // host-service registries: features, reasons, responses, ladder, clock (contracts/host.ts)
 }
 export const defaultPolicy: Policy = {
   seat: {resetMin: 5, quantumMin: 5, cadenceMin: 3, fitSlackMin: 5, turnMin: [45, 90], turnDefault: 60, lapsedClearMin: 5, lateGraceMin: 15},

@@ -1,7 +1,7 @@
-// Two parties want a booth; one booth is free. The bench-side need goes first; the other party is offered the ladder.
+// Starter: two parties want a booth and one booth is free; play it any way you like.
 import type {Scenario} from '../contracts/index.ts'
 export const boothOut: Scenario = {
-  id: 'booth-out', title: 'The last booth', learn: 'Ask why a party wants a booth, give it to the functional reason, and offer the other party a warm alternative.',
+  id: 'booth-out', title: 'The last booth',
   brief: 'Friday 6 pm. Three booths, two already seated. Okafor and Chen both ask for a booth.',
   seed: {
     tables: [
@@ -17,10 +17,5 @@ export const boothOut: Scenario = {
   steps: [
     {at: 0, do: 'arrive', key: 'okafor', name: 'Okafor', size: 4, kind: 'W', wants: [{feat: 'booth', level: 'strong', why: 'bench', accord: 'all'}]},
     {at: 1, do: 'arrive', key: 'chen', name: 'Chen', size: 4, kind: 'W', wants: [{feat: 'booth', level: 'soft', why: 'nice', accord: 'one', said: true}]},
-  ],
-  expect: [
-    {id: 'bench-first', key: 'okafor', spot: ['b3'], why: 'A functional, shared reason outranks taste: ask why before you pick.'},
-    {id: 'chen-offered', key: 'chen', feats: ['banquette', 'window'], waitMaxMin: 15, why: 'A soft want is met by the nearest stand-in or a short wait, offered in the host\'s words.'},
-    {id: 'chen-happy', key: 'chen', moodMin: 0, why: 'Naming what is gained and what is missing keeps the party warm.'},
   ],
 }
