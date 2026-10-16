@@ -14,4 +14,3 @@ export const panel = (app: App, attr: string, draw: (app: App) => string): Binde
   }
   return {attr, apply: el => wait.has(el) || (wait.add(el), queueMicrotask(() => paint(el)))}
 }
-export const show: Binder = {attr: 'data-show', apply: (el, v) => el.classList.toggle('hidden', v !== el.getAttribute('data-pane'))}

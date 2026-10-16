@@ -1,7 +1,6 @@
-// The only doors to the engine and the world: `ask` calls an engine function with policy/world/now bound; `commit` applies patches and bumps rev.
+// The only door to the engine: `ask` calls an engine function with policy/world/now bound.
 import {defaultPolicy} from '../contracts/index.ts'
-import type {App, Engine, Patch} from '../contracts/index.ts'
-import {ui} from './state.ts'
+import type {App, Engine} from '../contracts/index.ts'
 type Key = Exclude<keyof Engine, 'spots'>
 type Rest<F> = F extends (p: never, w: never, n: never, ...a: infer A) => unknown ? A : never
 type Out<F> = F extends (...a: never[]) => infer R ? R : never
@@ -11,4 +10,3 @@ export const ask = <K extends Key>(app: App, k: K, ...a: Rest<Engine[K]>): Out<E
   const {world, now} = app.store.state
   return (app.services.engine as unknown as Fns | undefined)?.[k]?.(defaultPolicy, world, now, ...a) as Out<Engine[K]> | undefined
 }
-export const commit = (app: App, ps: Patch[]) => (app.apply(ps), ui(app).rev++)
