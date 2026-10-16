@@ -26,19 +26,21 @@ const ctx = (p: Policy, w: World, now: number, rs: Res[]): Ctx => {
   const usable = (t: Ent<'table'>) => t.table.status !== 'blocked_private' && !standing.has(t.id) && !selfSeated(p, t) && at(t) <= last + p.plan.slackMin * MIN
   const merged = rs.length ? mergesOf(p, w, usable) : []
   const singles = spots(w).filter(s => s.spot.status !== 'blocked_private' && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)))
-  const free = (id: Id) => (w.ents[id]?.table ? at(w.ents[id] as Ent<'table'>) : Infinity)
-  return {p, w, now, pool: [...singles, ...merged], free, reach: reaches(merged), hs: holds(p, w, now)}
+  const fa = new Map(having(w, 'table').map(t => [t.id, at(t)])) // each table's free time, read once per reservation and spot
+  const reach = reaches(merged)
+  return {p, w, now, pool: [...singles, ...merged].sort(tight(reach)), free: (id: Id) => fa.get(id) ?? Infinity, reach, hs: holds(p, w, now)}
 }
 const ready = (c: Ctx, busy: Acc['busy'], r: Res) => (s: Spot) => {
   const from = Math.max(...s.spot.tables.map(t => Math.max(c.free(t), busy[t] ?? 0)))
   return clear(c.hs, s.spot.tables, from, r.reservation.durationMin * MIN, c.p.seat.resetMin * MIN)
 }
-const tight = (c: Ctx) => (a: Spot, b: Spot) =>
+/** Tightest first (static per planner, so the pool is sorted once and each reservation takes the first spot free in time). */
+const tight = (reach: Ctx['reach']) => (a: Spot, b: Spot) =>
   +!!a.spot.last - +!!b.spot.last || a.spot.capacity - b.spot.capacity || a.spot.tables.length - b.spot.tables.length ||
-  a.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0) - b.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0) || (a.id < b.id ? -1 : 1)
+  a.spot.tables.reduce((n, t) => n + (reach[t] ?? 0), 0) - b.spot.tables.reduce((n, t) => n + (reach[t] ?? 0), 0) || (a.id < b.id ? -1 : 1)
 const place = (c: Ctx) => (a: Acc, r: Res): Acc => {
   const free = ready(c, a.busy, r)
-  const pick = c.pool.filter(s => s.spot.capacity >= r.party.size && free(s) <= r.reservation.at + c.p.plan.slackMin * MIN).sort(tight(c))[0]
+  const pick = c.pool.find(s => s.spot.capacity >= r.party.size && free(s) <= r.reservation.at + c.p.plan.slackMin * MIN)
   const item = (s?: Spot): Placed => ({party: r.id, size: r.party.size, at: r.reservation.at, spot: s?.id ?? null, tables: s?.spot.tables ?? [], label: s?.spot.label ?? '-', free: s ? free(s) : Infinity, merge: (s?.spot.tables.length ?? 0) > 1})
   const gone = r.reservation.at + r.reservation.durationMin * MIN
   return {busy: {...a.busy, ...Object.fromEntries((pick?.spot.tables ?? []).map(t => [t, gone]))}, out: [...a.out, item(pick)]}

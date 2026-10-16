@@ -15,8 +15,8 @@ type Fore = {ss: Staff[]; add: Record<Id, number>}
 /** Does the active mode rotate every unit over every area? */
 const anywhere = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number) => !holdsOn(p, w, now) && !!p.service.modes[modeAt(p, w, now)]?.anywhere
 /** Who takes each planned reservation, in time order: the section holder when the mode holds tables, else the next in the rotation after the planned covers so far. */
-const forecast = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, ss: Staff[], skip?: Id): Record<Id, number> =>
-  planned(p, w, now, skip).filter(x => x.spot).reduce<Fore>((a, x) => {
+const forecast = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, ss: Staff[], skip?: Id, until = Infinity): Record<Id, number> =>
+  planned(p, w, now, skip).filter(x => x.spot && x.at <= until).reduce<Fore>((a, x) => {
     const rk = rankStaff(p, a.ss, now)
     const open = rk.find(q => anywhere(p, w, now) || x.tables.every(t => fits(areaOf(w.ents[t]))(a.ss.find(s => s.id === q.staff)!)))
     const who = holdsOn(p, w, now) ? pickIn(a.ss, rk, secsOf(w, x.tables)).staff : open?.staff ?? null
@@ -25,6 +25,8 @@ const forecast = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, ss
 /** Covers leased to each unit (led, not seated yet) count like seated covers, so the next lease goes round. */
 const leasedTo = (w: Parameters<Engine['rotate']>[1]) => having(w, 'party', 'lease').reduce<Record<Id, number>>((m, e) => ((s?: Id | null) => (s ? {...m, [s]: (m[s] ?? 0) + e.party.size} : m))(w.ents[e.lease.tables[0] ?? '']?.table?.waiter), {})
 const counted = (w: Parameters<Engine['rotate']>[1]): Staff[] => { const led = leasedTo(w); return having(w, 'staff').map(s => (led[s.id] ? {...s, staff: {...s.staff, tally: s.staff.tally + led[s.id]}} : s)) }
+/** Covers each unit is planned to take from reservations due by `until` (the rotation's forecast, leased covers counted). */
+export const ahead = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, until: number) => forecast(p, w, now, counted(w), undefined, until)
 export const rotate: Engine['rotate'] = (p, w, now, skip) => { const ss = counted(w); return rankStaff(p, ss, now, forecast(p, w, now, ss, skip)) }
 /** Best-ranked server covering any of the sections, else the top server overall (fallback). */
 export const pickIn = (ss: Staff[], rank: Ranked[], secs: Id[]): Pick => {

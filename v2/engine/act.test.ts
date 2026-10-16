@@ -153,3 +153,32 @@ test('act mode / carve / top / deal: service entity patches and the deal', () =>
 test('act: an unknown command is refused with a plain reason', () => {
   assert.equal(err(world([]), {do: 'dance'} as unknown as Cmd), 'Unknown command dance')
 })
+
+// ---- extend / clear / reassign: camper, force clear, server transfer (plain log lines, no events)
+const sat = (): World => world([table('a', 2, 'occupied', null, 'w1'), table('b', 2, 'occupied', null, 'w1'), {id: 'lk', link: {members: ['a', 'b'], merged: true}}, party(1, 'W', 4),
+  {id: 's1', slot: {table: 'a', party: 'pty1', seatedAt: N - mins(30), turnAt: N + mins(30), status: 'ACTIVE'}}, table('c', 2), staff('w1', 10, 5, {name: 'Ana'}), staff('w2', 3, 5, {name: 'Ben'}), staff('w3', 0, 5, {name: 'Cy', active: false})])
+test('act extend: the seated party\'s turn time moves out by min (any table of its group); refuses nobody seated, unknown table, a bad min', () => {
+  const o = ok(run(sat(), {do: 'extend', table: 'b', min: 15}))
+  assert.deepEqual([o.events, o.msg, apply(sat(), o.patches).ents.s1.slot?.turnAt], [[], 'B extended 15m', N + mins(45)])
+  assert.equal(err(sat(), {do: 'extend', table: 'c', min: 15}), 'Nobody is seated at C')
+  assert.equal(err(sat(), {do: 'extend', table: 'zz', min: 15}), 'No table zz')
+  assert.match(err(sat(), {do: 'extend', table: 'a', min: 0}), /positive number/)
+})
+test('act clear: force clear completes the slot now, frees every table of the group, dissolves the merge; refuses an empty or leased table', () => {
+  const o = ok(run(sat(), {do: 'clear', table: 'a'}))
+  const w1 = apply(sat(), o.patches)
+  assert.deepEqual([o.events, o.msg, w1.ents.s1.slot?.status, w1.ents.s1.slot?.endedAt], [[], 'A force cleared', 'COMPLETED', N])
+  assert.deepEqual([w1.ents.a.table?.status, w1.ents.b.table?.status, w1.ents.a.table?.waiter, w1.ents.lk], ['available', 'available', null, undefined])
+  assert.equal(err(sat(), {do: 'clear', table: 'c'}), 'Nothing to clear at C')
+  assert.equal(err(world([table('d', 2, 'leased')]), {do: 'clear', table: 'd'}), 'D is leased: release it instead')
+})
+test('act reassign: the group\'s waiter and the covers move to the new server; refuses unknown or off-duty staff, the same server, nobody seated', () => {
+  const o = ok(run(sat(), {do: 'reassign', table: 'a', staff: 'w2'}))
+  const w1 = apply(sat(), o.patches)
+  assert.deepEqual([o.events, o.msg], [[], 'A moved to Ben'])
+  assert.deepEqual([w1.ents.a.table?.waiter, w1.ents.b.table?.waiter, w1.ents.w1.staff?.tally, w1.ents.w2.staff?.tally], ['w2', 'w2', 6, 7])
+  assert.equal(err(sat(), {do: 'reassign', table: 'a', staff: 'zz'}), 'No staff zz')
+  assert.equal(err(sat(), {do: 'reassign', table: 'a', staff: 'w3'}), 'Cy is off duty')
+  assert.equal(err(sat(), {do: 'reassign', table: 'a', staff: 'w1'}), 'Ana already serves A')
+  assert.equal(err(sat(), {do: 'reassign', table: 'c', staff: 'w2'}), 'Nobody is seated at C')
+})

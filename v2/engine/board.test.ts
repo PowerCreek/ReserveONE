@@ -92,10 +92,17 @@ test('board kpis: values and tones derived from the world', () => {
     ['turning', '1', 'ok'], ['arriving', '1', 'info'], ['bus', '1', 'warn'], ['late', '1', 'warn'], ['noshow', '1', 'warn'], ['today', '11', 'info'],
   ])
   assert.deepEqual(B.kpis.map(k => k.hint).slice(0, 3), ['covers / seats', '2/6 tables in use', '2 covers'])
-  assert.deepEqual(B.kpis.find(k => k.id === 'arriving'), {id: 'arriving', label: 'Arriving next 15m', value: '1', tone: 'info', hint: '5 covers'})
+  assert.deepEqual(B.kpis.find(k => k.id === 'arriving'), {id: 'arriving', label: 'Arriving 15m', value: '1', tone: 'info', hint: '5 covers'})
 })
 test('board on an empty world: no lanes, empty ledger, neutral kpis', () => {
   const b = board(P, world([]), N)
   assert.deepEqual([b.gantt.lanes, b.activity, b.servers, b.ledger.open], [[], [], [], []])
   assert.deepEqual(b.kpis.filter(k => ['seated', 'quote', 'turn'].includes(k.id)).map(k => k.value), ['0/0', '-', '-'])
+})
+test('board kpis: labels short enough for a narrow card, the interval follows ivMin', () => {
+  assert.deepEqual(board(P, room(), N, {ivMin: 30}).kpis.map(k => k.label), ['Seated', 'Occupancy', 'Waiting', 'Longest wait', 'Quote ±', 'Avg turn', 'Turning 30m', 'Arriving 30m', 'To bus', 'Late', 'No-shows', 'Covers today'])
+})
+test('board kpi tones read policy.board.limits', () => {
+  const p = {...P, board: {...P.board, limits: {...P.board.limits, bus: {warn: 5, crit: 9}, today: {warn: 1, crit: 5}}}}
+  assert.deepEqual(board(p, room(), N).kpis.filter(k => ['bus', 'today'].includes(k.id)).map(k => k.tone), ['ok', 'crit'])
 })

@@ -17,6 +17,8 @@ import {confirm, hold, tablesOf, unhold} from './lease.ts'
 import type {Leased} from './lease.ts'
 import {refuse} from './seatcheck.ts'
 import {add, set} from './patch.ts'
+import {expand} from './spots.ts'
+import {freeUp} from './free.ts'
 import {MIN} from './time.ts'
 interface Ctx {p: Policy; w: World; now: number}
 type Of<K extends Cmd['do']> = Extract<Cmd, {do: K}>
@@ -155,6 +157,34 @@ const dealRow: Row<'deal'> = c => {
   return done(ps, [], ps.length ? `Dealt: ${ps.length} change(s)` : 'Already dealt')
 }
 
+// ---- extend / clear / reassign: a seated table's turn time (camper), a force clear, a server transfer
+const tableName = (w: World, t: Id) => w.ents[t]?.table?.label ?? t
+const slotAt = (w: World, t: Id, ok: (st: string) => boolean) => having(w, 'slot').find(s => ok(s.slot.status) && expand(w, [t]).includes(s.slot.table))
+const seatedAt = (w: World, t: Id) => slotAt(w, t, st => st === 'ACTIVE')
+const tableErr = (c: Ctx, t: Id) => why([[!c.w.ents[t]?.table, `No table ${t}`], [!seatedAt(c.w, t), `Nobody is seated at ${tableName(c.w, t)}`]])
+const extendRow: Row<'extend'> = (c, cmd) => {
+  const err = tableErr(c, cmd.table) ?? why([[!(Number.isFinite(cmd.min) && cmd.min > 0), `Extend by a positive number of minutes (got ${cmd.min})`]])
+  const s = seatedAt(c.w, cmd.table)!
+  return err ? fail(err) : done([set(s.id, {slot: {...s.slot, turnAt: s.slot.turnAt + cmd.min * MIN}})], [], `${tableName(c.w, cmd.table)} extended ${cmd.min}m`)
+}
+const clearErr = (c: Ctx, t: Id) => why([
+  [!c.w.ents[t]?.table, `No table ${t}`], [c.w.ents[t]?.table?.status === 'leased', `${tableName(c.w, t)} is leased: release it instead`],
+  [!slotAt(c.w, t, st => st !== 'COMPLETED'), `Nothing to clear at ${tableName(c.w, t)}`],
+])
+const clearRow: Row<'clear'> = (c, cmd) => { const err = clearErr(c, cmd.table); return err ? fail(err) : done(freeUp(c.w, [cmd.table], c.now), [], `${tableName(c.w, cmd.table)} force cleared`) }
+type StaffE = Components['staff']
+const tallied = (w: World, id: Id | null | undefined, n: number): Patch[] => ((s?: StaffE) => (s ? [set(id!, {staff: {...s, tally: s.tally + n}})] : []))(w.ents[id ?? '']?.staff)
+const moved = (c: Ctx, cmd: Of<'reassign'>): Patch[] => {
+  const n = c.w.ents[seatedAt(c.w, cmd.table)!.slot.party]?.party?.size ?? 0
+  const ts = expand(c.w, [cmd.table]).filter(t => c.w.ents[t]?.table)
+  return [...ts.map(t => set(t, {table: {...c.w.ents[t].table!, waiter: cmd.staff}})), ...tallied(c.w, c.w.ents[cmd.table].table!.waiter, -n), ...tallied(c.w, cmd.staff, n)]
+}
+const reassignRow: Row<'reassign'> = (c, cmd) => {
+  const s = c.w.ents[cmd.staff]?.staff
+  const err = tableErr(c, cmd.table) ?? why([[!s, `No staff ${cmd.staff}`], [!s?.active, `${s?.name} is off duty`], [c.w.ents[cmd.table].table!.waiter === cmd.staff, `${s?.name} already serves ${tableName(c.w, cmd.table)}`]])
+  return err ? fail(err) : done(moved(c, cmd), [], `${tableName(c.w, cmd.table)} moved to ${s!.name}`)
+}
+
 type StaffC = Components['staff']
 const duty: Record<Of<'staff'>['to'], (s: StaffC) => Partial<StaffC>> = {duty: s => ({active: !s.active}), skip: s => ({skip: s.skip + 1})}
 const staffRow: Row<'staff'> = (c, cmd) => {
@@ -162,7 +192,7 @@ const staffRow: Row<'staff'> = (c, cmd) => {
   const edit = duty[cmd.to]
   return s && edit ? done([set(cmd.id, {staff: {...s, ...edit(s)}})], [], `${s.name}: ${cmd.to}`) : fail(s ? `Unknown staff change ${cmd.to}` : `No staff ${cmd.id}`)
 }
-const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow}
+const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow, extend: extendRow, clear: clearRow, reassign: reassignRow}
 /** Run one host/manager command: patches to commit, events to narrate, one log line; unknown or invalid input -> {ok: false, err}. */
 export const act: Desk['act'] = (p, w, now, cmd) => {
   const row = rows[cmd?.do as Cmd['do']] as Row<Cmd['do']> | undefined

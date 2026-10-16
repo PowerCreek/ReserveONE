@@ -23,6 +23,9 @@ export type Cmd =
   | {do: 'carve'; area: Id; to: Carve}
   | {do: 'top'; table: Id; staff: Id}
   | {do: 'deal'}
+  | {do: 'extend'; table: Id; min: number} // camper: push the seated party's turn time out
+  | {do: 'clear'; table: Id} // force clear: the party left; slot completed, tables free (merged links dissolve)
+  | {do: 'reassign'; table: Id; staff: Id} // move a seated table to another server (tallies follow the covers)
   | {do: 'staff'; id: Id; to: 'duty' | 'skip'} // toggle on duty, or skip one turn of the rotation
 export type Told = SimEvent | HostEvent | ServiceEvent
 /** A command's result: patches to commit, events to narrate, one line for the log (`says` = the guest's words, when they answer). */
@@ -64,6 +67,8 @@ export interface Move {table: Id; label: string; kind: 'in' | 'out'; covers: num
 export interface Activity {start: number; end: number; net: number; moves: Move[]} // seat (+) and clear (-) per interval, newest first
 export interface SectionRow {section: Id; name: string; occ: number; turns: number; need: number; under: boolean}
 export interface ServerRow {staff: Id; name: string; rank: number; tally: number; seated: number; tables: number; weight: number; active: boolean; sections: SectionRow[]} // seated = covers at their tables now
+/** One predictive read (Gemini-era overlays): brick = a merge or lease strands a due reservation; pressure = a turn deluge or drought ahead; imbalance = servers' projected covers diverge; punctual = late grace shrinks at peak load; reclaim = joined tables could split to seat waiting parties. */
+export interface Insight {id: 'brick' | 'pressure' | 'imbalance' | 'punctual' | 'reclaim'; level: 'info' | 'warn' | 'crit'; msg: string; tables: Id[]; staff: Id[]; at?: number}
 export interface BoardOpt {ivMin?: number; pastMin?: number; aheadMin?: number} // interval for turnover/activity/ticks (default 15), gantt window around now (default 60 back, 180 ahead)
 export interface Board {
   kpis: Kpi[] // seated/occupancy, waiting + longest wait, quote accuracy, average turn, turning next interval, arriving next interval, to bus, late, no-shows, covers today
@@ -74,6 +79,8 @@ export interface Board {
   servers: ServerRow[] // rotation order
   bus: BusItem[]
   quotes: Quote[] // walk-in quote per size 1-6 (what to tell a walk-in)
+  insights: Insight[] // worst first
+  next: string // task readout: the one thing to do now, as the host would say it ("WALK-IN (4) -> T12 -> Ana")
 }
 export type DeskFn<A extends unknown[], R> = (p: Policy, w: World, now: number, ...a: A) => R
 export interface Desk {

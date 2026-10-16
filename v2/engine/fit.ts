@@ -32,8 +32,7 @@ const lead = (c: Ctx, run: Run, rk: Ranked[]) => (s: Spot) => {
 }
 const timed = (c: Ctx, run: Run, rk: Ranked[]) => {
   const pos = lead(c, run, rk)
-  const taken = run.out.flatMap(i => i.tables)
-  return (s: Spot): Cand => ({s, at: Math.max(c.now, shift(c, s, run.free[s.id])), pos: pos(s), sq: c.keep([...taken, ...s.spot.tables]).length, reach: s.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0)})
+  return (s: Spot): Cand => ({s, at: Math.max(c.now, shift(c, s, run.free[s.id])), pos: pos(s), sq: 0, reach: s.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0)})
 }
 /** A single table is preferred: merges (smallest first) only join when no single fit is ready now; waiting merges (tables still turning over) only when no merge is ready either, so a quote can name them. */
 const cands = (c: Ctx, run: Run, rk: Ranked[], size: number): Cand[] => {
@@ -45,8 +44,10 @@ const cands = (c: Ctx, run: Run, rk: Ranked[], size: number): Cand[] => {
   return [...one, ...(ready.length ? (plain.length ? plain : ready) : two)]
 }
 const order = (byPos: boolean) => (a: Cand, b: Cand) => (byPos ? a.sq - b.sq : 0) || a.s.spot.capacity - b.s.spot.capacity || a.s.spot.tables.length - b.s.spot.tables.length || (byPos ? a.pos - b.pos || a.reach - b.reach : 0) || a.at - b.at
-const choose = (c: Ctx, cs: Cand[]) => {
-  const free = cs.filter(x => x.at <= c.now)
+/** Squeezes (reservations a seating strands) only rank spots free now, so only those pay for a plan run. */
+const squeezed = (c: Ctx, run: Run) => (x: Cand): Cand => ({...x, sq: c.keep([...run.out.flatMap(i => i.tables), ...x.s.spot.tables]).length})
+const choose = (c: Ctx, run: Run, cs: Cand[]) => {
+  const free = cs.filter(x => x.at <= c.now).map(squeezed(c, run))
   const near = cs.filter(x => x.at <= Math.min(...cs.map(y => y.at)) + c.p.seat.fitSlackMin * MIN)
   return [...(free.length ? free : near)].sort(order(free.length > 0))[0]
 }
@@ -68,7 +69,7 @@ const place = (c: Ctx, run: Run, size: number, x: Cand): Run => {
 const step = (c: Ctx) => (run: Run, size: number): Run => {
   const rk = rankStaff(c.p, run.ss, c.now)
   const cs = cands(c, run, rk, size)
-  return cs.length ? place(c, run, size, choose(c, cs)) : {...run, out: [...run.out, miss(size, c.now)]}
+  return cs.length ? place(c, run, size, choose(c, run, cs)) : {...run, out: [...run.out, miss(size, c.now)]}
 }
 /** Progressive sequence (SPEC §3): tightest fit, ties broken by the next-up server, waits cascade through claimed spots. */
 export const plan = (p: Policy, w: World, now: number, sizes: number[], o: Opt = {}): SeqItem[] => {

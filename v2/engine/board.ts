@@ -12,6 +12,9 @@ import {line} from './queue.ts'
 import {slotOf} from './ents.ts'
 import {selfSeated} from './seatcheck.ts'
 import {MIN, midnight} from './time.ts'
+import {stand} from './desk.ts'
+import {insights} from './insight.ts'
+import {readout} from './readout.ts'
 type Slot = Ent<'slot'>
 type Res = Ent<'party' | 'reservation'>
 type Opt = Required<BoardOpt>
@@ -122,13 +125,12 @@ const servers = (c: Ctx): ServerRow[] => {
 
 // ---- kpis: [id, label, measure, value, hint]; tone from the measure against one threshold table
 type Raw = [id: string, label: string, n: number, value: string, hint: string]
-type Parts = Omit<Board, 'kpis'>
-/** Tone thresholds per kpi measure (>= crit, else >= warn, else ok); a kpi without a row is info. */
-const LIMITS: Record<string, {warn: number; crit: number}> = {
-  seated: {warn: 0.9, crit: 1}, occ: {warn: 0.9, crit: 1}, wait: {warn: 20, crit: 40}, quote: {warn: 5, crit: 10}, turn: {warn: 1.15, crit: 1.3},
-  turning: {warn: 3, crit: 6}, bus: {warn: 1, crit: 3}, late: {warn: 1, crit: 3}, noshow: {warn: 1, crit: 3},
+type Parts = Omit<Board, 'kpis' | 'insights' | 'next'>
+/** Tone from policy.board.limits by kpi id (>= crit, else >= warn, else ok); a kpi without a row is info. */
+const tone = (c: Ctx, id: string, n: number): Kpi['tone'] => {
+  const l = c.p.board.limits[id]
+  return l ? ((['crit', 'warn'] as const).find(k => n >= l[k]) ?? 'ok') : 'info'
 }
-const tone = (id: string, n: number): Kpi['tone'] => (LIMITS[id] ? ((['crit', 'warn'] as const).find(k => n >= LIMITS[id][k]) ?? 'ok') : 'info')
 const mins = (x: number, pre = '') => (Number.isFinite(x) ? `${pre}${Math.round(x)}m` : '-')
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 const floor = (c: Ctx) => having(c.w, 'table').filter(t => !selfSeated(c.p, t) && t.table.status !== 'blocked_private')
@@ -158,20 +160,21 @@ const RULES: ((c: Ctx, b: Parts) => Raw)[] = [
   seated, occ,
   c => ['waiting', 'Waiting', waiting(c).length, `${waiting(c).length}`, `${waiting(c).reduce((n, e) => n + e.party.size, 0)} covers`],
   c => ['wait', 'Longest wait', longest(c), mins(Math.floor(longest(c))), 'at the door'],
-  c => ['quote', 'Quote accuracy', mean(misses(c)), mins(mean(misses(c)), '±'), `${misses(c).length} seated from the list`],
-  c => ['turn', 'Average turn', mean(turnsDone(c)) / c.p.seat.turnDefault, mins(mean(turnsDone(c))), `target ${c.p.seat.turnDefault}m`],
-  c => ['turning', `Turning next ${c.o.ivMin}m`, turningNext(c).length, `${turningNext(c).length}`, `${covers(c, turningNext(c))} covers`],
-  c => ['arriving', `Arriving next ${c.o.ivMin}m`, arrivingNext(c).length, `${arrivingNext(c).length}`, `${arrivingNext(c).reduce((n, r) => n + r.party.size, 0)} covers`],
+  c => ['quote', 'Quote ±', mean(misses(c)), mins(mean(misses(c)), '±'), `${misses(c).length} seated from the list`],
+  c => ['turn', 'Avg turn', mean(turnsDone(c)) / c.p.seat.turnDefault, mins(mean(turnsDone(c))), `target ${c.p.seat.turnDefault}m`],
+  c => ['turning', `Turning ${c.o.ivMin}m`, turningNext(c).length, `${turningNext(c).length}`, `${covers(c, turningNext(c))} covers`],
+  c => ['arriving', `Arriving ${c.o.ivMin}m`, arrivingNext(c).length, `${arrivingNext(c).length}`, `${arrivingNext(c).reduce((n, r) => n + r.party.size, 0)} covers`],
   (_c, b) => ['bus', 'To bus', b.bus.length, `${b.bus.length}`, 'lapsed tables to clear'],
   c => ['late', 'Late', c.res.filter(late(c)).length, `${c.res.filter(late(c)).length}`, `reservations past ${c.p.seat.lateGraceMin}m grace`],
   c => ['noshow', 'No-shows', noShows(c).length, `${noShows(c).length}`, 'today'],
   c => ['today', 'Covers today', covers(c, today(c)), `${covers(c, today(c))}`, `${today(c).length} parties`],
 ]
-const kpis = (c: Ctx, b: Parts): Kpi[] => RULES.map(f => f(c, b)).map(([id, label, n, value, hint]) => ({id, label, value, tone: tone(id, n), hint}))
+const kpis = (c: Ctx, b: Parts): Kpi[] => RULES.map(f => f(c, b)).map(([id, label, n, value, hint]) => ({id, label, value, tone: tone(c, id, n), hint}))
 
 /** The dashboard: every panel's numbers in one read (`opt`: interval and gantt window, BoardOpt defaults). */
 export const board: Desk['board'] = (p, w, now, opt) => {
   const c = ctx(p, w, now, opt)
   const b: Parts = {gantt: gantt(c), turnover: turnover(p, w, now, c.o.ivMin), ledger: ledger(c), activity: activity(c), servers: servers(c), bus: bus(p, w, now), quotes: p.look.sizes.map(n => eta(p, w, now, n))}
-  return {kpis: kpis(c, b), ...b}
+  const [view, name] = [stand(p, w, now), labeler(w)]
+  return {kpis: kpis(c, b), ...b, insights: insights({p, w, now, ticks: b.gantt.ticks, view, servers: b.servers, name}), next: readout({p, w, view, bus: b.bus, name})}
 }
