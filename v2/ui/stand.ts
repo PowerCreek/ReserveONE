@@ -1,7 +1,7 @@
 // Host stand (U4): greet the next party, record intake chips, voice ladder offers, seat a led party, reply to table-change requests. Free play: no scoring.
 // Engine calls go through `ask` (optional: a missing function degrades to a note); writes go through the undoable `commit`.
 import {defaultPolicy, having} from '../contracts/index.ts'
-import type {App, Components, Decision, Ent, Entity, HostEvent, Id, Level, Patch, Rung, Want, World} from '../contracts/index.ts'
+import type {App, Components, Decision, Ent, Entity, HostEvent, Id, Level, Patch, Rung, ServiceEvent, Want, World} from '../contracts/index.ts'
 import {commit} from '../kernel/index.ts'
 import {ask} from './ask.ts'
 import {HKIND, explain, spotName} from './events.ts'
@@ -12,6 +12,7 @@ import {uiOf} from './state.ts'
 import {card, on} from './tone.ts'
 const H = defaultPolicy.host
 const tier = defaultPolicy.queue.tier
+const areas = defaultPolicy.service.areas
 /** `party` = the party in focus at the stand; `greeted` = parties the host has greeted this session. */
 export interface Stand {party: Id; greeted: Id[]}
 declare module '../contracts/kernel.ts' {
@@ -44,7 +45,7 @@ const line = (app: App, kind: string, msg: string) => {
   HKIND[kind] && (uiOf(app).log = [{...top, cls: HKIND[kind]}, ...rest])
 }
 /** Log and ping host events as plain sentences. Call after the patches are applied (parties and tables are in their new place). */
-export const narrate = (app: App, es: HostEvent[]) => es.map(e => explain(e, world(app))).forEach(x => (line(app, x.kind, x.msg), ping(app, {kind: x.kind, msg: x.msg, x: x.x, y: x.y, floor: x.floor})))
+export const narrate = (app: App, es: (HostEvent | ServiceEvent)[]) => es.map(e => explain(e, world(app))).forEach(x => (line(app, x.kind, x.msg), ping(app, {kind: x.kind, msg: x.msg, x: x.x, y: x.y, floor: x.floor})))
 const verdict = (app: App, d: Decision | undefined, what: string) => {
   const r = d ?? {ok: false as const, err: `engine.${what} is not available`}
   r.ok ? (commit(app, r.patches), note(app, r.tone, r.msg)) : note(app, 'warn', r.err)
@@ -95,7 +96,37 @@ const requests = (app: App) => {
   const rs = parties(world(app)).filter(e => e.request?.status === 'open')
   return part('Table-change requests', rs.length ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rs.map(options(app)).join('')}</ul>` : muted('No open requests.'))
 }
-const draw = (app: App) => [greet, intake, ladder, requests].map(f => f(app)).join('')
+
+// ---- awareness: main-floor servers see a seating; elsewhere the host tells the table's server (engine.tell sets `slot.told`)
+type Row = {slot: Ent<'slot'>; seen: boolean; server: string}
+const areaOf = (w: World, table: Id) => w.ents[table]?.area?.id ?? 'main'
+const serverOf = (app: App, table: Id) => ask(app, 'serverFor', [table])?.staff
+const rowOf = (app: App) => (slot: Ent<'slot'>): Row => ({slot, seen: areas[areaOf(world(app), slot.slot.table)]?.seen ?? false, server: world(app).ents[serverOf(app, slot.slot.table) ?? '']?.staff?.name ?? ''})
+const state = (r: Row) => (r.seen ? 'seen' : r.slot.slot.told ? 'told' : 'pending')
+const chips: Record<string, (r: Row) => string> = {
+  seen: () => '<span class="rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">server sees it</span>',
+  told: r => `<span class="rounded-full bg-sky-600 px-2 py-0.5 text-xs text-white">Told ${esc(r.server || 'server')}</span>`,
+  pending: r => `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">Not told yet</span> ${act('tell', `data-table="${r.slot.slot.table}"`, `Tell ${r.server || 'server'}`, on)}`,
+}
+const ORDER: Record<string, number> = {pending: 0, told: 1, seen: 2}
+const seatedRow = (w: World) => (r: Row) =>
+  `<li class="flex flex-wrap items-center gap-1 py-1 text-xs"><b>${esc(crew(w.ents[r.slot.slot.party]))}</b> at ${esc(spotName(w, r.slot.slot.table))} (${esc(areas[areaOf(w, r.slot.slot.table)]?.label ?? areaOf(w, r.slot.slot.table))}) ${chips[state(r)](r)}</li>`
+const seated = (app: App) => {
+  const w = world(app)
+  const rows = having(w, 'slot').filter(s => s.slot.status === 'ACTIVE').map(rowOf(app)).sort((a, b) => ORDER[state(a)] - ORDER[state(b)])
+  return part('Seated: tell the server', rows.length ? `<ul class="max-h-48 divide-y divide-slate-200 overflow-y-auto dark:divide-slate-700">${rows.map(seatedRow(w)).join('')}</ul>` : muted('Nobody seated.'))
+}
+const outcome: Record<'true' | 'false', (app: App, d: Decision, e: ServiceEvent) => unknown> = {
+  true: (app, d, e) => d.ok && (commit(app, d.patches), narrate(app, [e])),
+  false: (app, d) => d.ok || note(app, 'warn', d.err),
+}
+const tell = (app: App, ev: Event) => {
+  const table = arg(ev, 'table'), w = world(app)
+  const slot = having(w, 'slot').find(s => s.slot.table === table && s.slot.status === 'ACTIVE')
+  const d: Decision = ask(app, 'tell', table) ?? {ok: false, err: 'engine.tell is not available'}
+  slot && outcome[String(d.ok) as 'true'](app, d, {ev: 'told', party: slot.slot.party, table, server: serverOf(app, table) ?? '', by: hostOf(w)})
+}
+const draw = (app: App) => [greet, intake, ladder, requests, seated].map(f => f(app)).join('')
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`
 
 // ---- acts (each is followed by a `ui.rev` bump so the panel repaints)
@@ -135,7 +166,7 @@ const acts: Record<string, (app: App, ev: Event) => unknown> = {
     st(a).greeted = [...st(a).greeted, id]
     narrate(a, [{ev: 'greeted', party: id, by: hostOf(world(a))}])
   },
-  'stand-hear': hear, 'stand-offer': offer, 'stand-answer': answer, 'stand-seatled': seatled, 'stand-reply': reply,
+  'stand-hear': hear, 'stand-offer': offer, 'stand-answer': answer, 'stand-seatled': seatled, 'stand-reply': reply, 'stand-tell': tell,
 }
 export const stand = (app: App) => {
   Object.assign(uiOf(app), {stand: uiOf(app).stand ?? fresh()})

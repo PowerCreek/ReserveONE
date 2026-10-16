@@ -127,3 +127,56 @@ test('every HostEvent has a narrated plain sentence (and the decline-and-leave e
   assert.equal(explain({ev: 'answered', party: 'p1', spot: 't2', yes: false}, w).msg, 'Chen party declined the banquette and left the list')
   assert.equal(explain({ev: 'left', party: 'p1'}, w).msg, 'W1 x4 left the list after declining the banquette')
 })
+// ---- awareness (service modes): who must be told
+const dana: Entity = {id: 'dana', body: {role: 'server', x: 0, y: 0, speed: 1, task: null, backlog: [], party: null}, staff: {name: 'Dana', active: true, sections: [], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 40}}
+const inArea = (e: Entity, id: string): Entity => ({...e, area: {id}})
+const sat = (id: string, party: string, table: string, told?: boolean): Entity =>
+  ({id, slot: {table, party, seatedAt: 0, turnAt: 3600000, status: 'ACTIVE', ...(told ? {told: {by: 'host', at: 0}} : {})}})
+const seatedP = (n: number, name: string) => party(n, 'W', 2, name, {})
+/** Contract-typed Service double: Dana holds everything; tell refuses seen areas and sets `slot.told`. */
+const service: Partial<HostEngine> = {
+  serverFor: () => ({staff: 'dana', fallback: false, by: 'chunks' as never}),
+  tell: (_p, w, now, table) => {
+    const s = having(w, 'slot').find(x => x.slot.table === table && x.slot.status === 'ACTIVE')
+    return s ? {ok: true, tone: 'ok', msg: 'told', patches: [set(s.id, {slot: {...s.slot, told: {by: 'host', at: now}}})]} : {ok: false, err: 'nobody seated there'}
+  },
+}
+const world3 = () => [dana, seatedP(1, 'Chen'), seatedP(2, 'Ortiz'), inArea(tbl('t4', 'P4', 4), 'grotto'), tbl('t5', 'P5', 4), sat('s1', 'p1', 't4'), sat('s2', 'p2', 't5')]
+test('awareness: untold grotto seating is pending with Tell Dana; main floor says the server sees it and has no action', async () => {
+  const {el} = mount(world3(), {...fake(), ...coach, ...service})
+  await settle()
+  const pane = text(el, '[data-stand]')
+  assert.match(pane, /Chen party at P4 \(Grotto\) Not told yet Tell Dana/)
+  assert.match(pane, /Ortiz party at P5 \(Main floor\) server sees it/)
+  assert.deepEqual([...el.querySelectorAll('[data-act="stand-tell"]')].map(b => b.getAttribute('data-table')), ['t4'])
+})
+test('awareness: Tell calls engine.tell, writes slot.told, swaps the badge and narrates "You told Dana ..."', async () => {
+  const {el, app} = mount(world3(), {...fake(), ...coach, ...service})
+  await settle()
+  click(el, '[data-act="stand-tell"]')
+  assert.equal(app.store.state.world.ents.s1.slot!.told!.by, 'host')
+  assert.equal(log(app)[0], 'You told Dana the Chen party is at P4')
+  await settle()
+  assert.match(text(el, '[data-stand]'), /Chen party at P4 \(Grotto\) Told Dana/)
+  assert.equal(el.querySelectorAll('[data-act="stand-tell"]').length, 0)
+})
+test('awareness: an already-told seating shows the told chip; a refusal or a missing engine.tell is a warning, not a throw', async () => {
+  const told = mount([dana, seatedP(1, 'Chen'), inArea(tbl('t4', 'P4', 4), 'grotto'), sat('s1', 'p1', 't4', true)], {...fake(), ...coach, ...service})
+  await settle()
+  assert.match(text(told.el, '[data-stand]'), /Told Dana/)
+  const bare = mount(world3(), {...fake(), ...coach})
+  await settle()
+  assert.match(text(bare.el, '[data-stand]'), /Not told yet Tell server/)
+  click(bare.el, '[data-act="stand-tell"]')
+  assert.match(log(bare.app)[0], /engine\.tell is not available/)
+  assert.equal(bare.app.store.state.world.ents.s1.slot!.told, undefined)
+  const refuse = mount(world3(), {...fake(), ...coach, ...service, tell: () => ({ok: false, err: 'no server holds P4'})})
+  await settle()
+  click(refuse.el, '[data-act="stand-tell"]')
+  assert.equal(log(refuse.app)[0], 'no server holds P4')
+})
+test('told describer names the teller (You for the host, a name otherwise) and the server', () => {
+  const w: World = {nextParty: 3, ents: Object.fromEntries(world3().concat([{id: 'host', body: {role: 'host', x: 0, y: 0, speed: 1, task: null, backlog: [], party: null}}]).map((e): [string, Entity] => [e.id, e]))}
+  assert.equal(explain({ev: 'told', party: 'p1', table: 't4', server: 'dana', by: 'host'}, w).msg, 'You told Dana the Chen party is at P4')
+  assert.equal(explain({ev: 'told', party: 'p1', table: 't4', server: 'dana', by: 'dana'}, w).msg, 'Dana told Dana the Chen party is at P4')
+})

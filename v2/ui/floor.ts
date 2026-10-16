@@ -1,8 +1,9 @@
 // Floor view (U2, U3): top-down SVG of one floor at a time (tabs pick it), with sections, tables and their feature chips, link groups, door, units, task lines and pings.
 import {having} from '../contracts/index.ts'
-import type {App, Id, World} from '../contracts/index.ts'
-import {door, link, ping, section, table, unit} from './draw.ts'
+import type {App, Hold, Id, World} from '../contracts/index.ts'
+import {badge, door, link, ping, section, table, unit} from './draw.ts'
 import {H, W, doorFloor, floorOf} from './geo.ts'
+import {holdsOf, live} from './assign.ts'
 import {presets} from './presets.ts'
 import {arg, esc, panel} from './render.ts'
 import {btn, card, on} from './tone.ts'
@@ -20,14 +21,16 @@ export const shown = (w: World, chosen?: Id) => {
   return ids.includes(chosen ?? '') ? chosen : ids[0]
 }
 const here = (fid?: Id) => <T extends {pos: {floor: Id}}>(e: T) => fid === undefined || e.pos.floor === fid
+/** What the active service mode paints on the floor: who holds each table, and whether section tints are in force. */
+export interface Holding {holds: Hold[]; live: boolean}
 /** `fid` filters tables, link groups, units and pings to one floor; the door shows on its own floor. */
-export const floorSvg = (w: World, fx: Fx[], fid?: Id) => {
+export const floorSvg = (w: World, fx: Fx[], fid?: Id, held: Holding = {holds: [], live: true}) => {
   const ts = having(w, 'table', 'pos').filter(here(fid))
-  const secs = having(w, 'section').map(s => section(s, ts.filter(t => t.table.section === s.id)))
+  const secs = having(w, 'section').map(s => section(s, ts.filter(t => t.table.section === s.id), held.live))
   const links = having(w, 'link').filter(k => fid === undefined || floorOf(w, k.link.members[0]) === fid)
   const at = doorFloor(w)
   return `<svg viewBox="0 0 ${W} ${H}" class="w-full rounded bg-slate-100 dark:bg-slate-900" role="img" aria-label="restaurant floor">` + [
-    ...secs, ...links.map(link(w)), ...ts.map(table), ...(fid === undefined || at === undefined || at === fid ? [door] : []),
+    ...secs, ...links.map(link(w)), ...ts.map(table), ...ts.map(badge(w, held.holds)), ...(fid === undefined || at === undefined || at === fid ? [door] : []),
     ...having(w, 'body').filter(b => fid === undefined || floorOf(w, b.id) === fid).map(unit(w)),
     ...fx.filter(f => fid === undefined || !f.floor || f.floor === fid).map(ping),
   ].join('') + '</svg>'
@@ -45,7 +48,7 @@ export const tabsOf = (w: World, fid?: Id) => {
 const draw = (app: App) => {
   const w = app.store.state.world
   const fid = shown(w, uiOf(app).floorId)
-  return having(w, 'table', 'pos').length ? tabsOf(w, fid) + floorSvg(w, uiOf(app).fx, fid) : empty
+  return having(w, 'table', 'pos').length ? tabsOf(w, fid) + floorSvg(w, uiOf(app).fx, fid, {holds: holdsOf(app), live: live(app)}) : empty
 }
 export const floor = (app: App) => {
   app.act('floor', (a, ev) => ((uiOf(a).floorId = arg(ev, 'id')), uiOf(a).rev++))

@@ -1,6 +1,7 @@
 // UI plugin (C7): each concern is a small plugin; this file only lists them. Sim mode is the first tab.
 import {history} from '../kernel/index.ts'
 import type {App, Plugin} from '../contracts/index.ts'
+import {assign} from './assign.ts'
 import {alerts, alertsPane} from './alerts.ts'
 import {reserve, bookPane} from './book.ts'
 import {clock} from './clock.ts'
@@ -22,7 +23,7 @@ const simPane = `<div class="grid gap-3 lg:grid-cols-[1fr_22rem]"><div class="sp
 const panes = {sim: simPane, queue: queuePane, book: bookPane, staff: staffPane, alerts: alertsPane}
 /** Any change to the world or the clock bumps `ui.rev`, the one path every repainting panel binds to. */
 const live = (app: App) => ['world', 'now'].forEach(p => app.store.watch(p, () => view(app).rev++))
-const parts: Plugin[] = [history, tabs, controls, floor, queue, seat, reserve, staff, stand, alerts, clock, runner, live]
+const parts: Plugin[] = [history, tabs, controls, floor, queue, seat, reserve, staff, assign, stand, alerts, clock, runner, live]
 export const ui: Plugin = app => {
   init(app)
   parts.forEach(p => app.use(p))

@@ -1,24 +1,26 @@
 // Every SimEvent and HostEvent becomes a narrated line (kind, msg) and a floor ping (where). A table of describers keyed by event name (C3).
 import {defaultPolicy} from '../contracts/index.ts'
-import type {HostEvent, Id, Level, SimEvent, World} from '../contracts/index.ts'
+import type {HostEvent, Id, Level, ServiceEvent, SimEvent, World} from '../contracts/index.ts'
 import {floorOf, locate} from './geo.ts'
-type Ev = SimEvent | HostEvent
+type Ev = SimEvent | HostEvent | ServiceEvent
 type Line = {msg: string; at: Id}
 type Describe = {[K in Ev['ev']]: (e: Extract<Ev, {ev: K}>, w: World) => Line}
 const H = defaultPolicy.host
 /** Log badge and ping ring per host event (literals so the build scanner sees them); sim kinds stay in tone.ts. */
 export const HKIND: Record<string, string> = {
   greeted: 'bg-sky-600', heard: 'bg-indigo-600', quoted: 'bg-slate-600', offered: 'bg-violet-600', answered: 'bg-emerald-600',
-  led: 'bg-teal-600', asked: 'bg-orange-600', replied: 'bg-fuchsia-600', moved: 'bg-cyan-600', mood: 'bg-pink-600',
+  led: 'bg-teal-600', asked: 'bg-orange-600', replied: 'bg-fuchsia-600', moved: 'bg-cyan-600', mood: 'bg-pink-600', told: 'bg-lime-600',
 }
 export const HRING: Record<string, string> = {
   greeted: 'stroke-sky-500', heard: 'stroke-indigo-500', quoted: 'stroke-slate-500', offered: 'stroke-violet-500', answered: 'stroke-emerald-500',
-  led: 'stroke-teal-500', asked: 'stroke-orange-500', replied: 'stroke-fuchsia-500', moved: 'stroke-cyan-500', mood: 'stroke-pink-500',
+  led: 'stroke-teal-500', asked: 'stroke-orange-500', replied: 'stroke-fuchsia-500', moved: 'stroke-cyan-500', mood: 'stroke-pink-500', told: 'stroke-lime-500',
 }
 const who = (w: World, id: Id) => w.ents[id]?.party && `${w.ents[id]!.party!.label} x${w.ents[id]!.party!.size}`
 /** Table label; a link group reads as its primary member. */
 export const spotName = (w: World, id: Id) => w.ents[w.ents[id]?.link?.members[0] ?? id]?.table?.label ?? id
 const nm = (w: World, id: Id) => w.ents[id]?.staff?.name ?? id
+/** The host is "You" in the player's own log; any other teller is named. */
+const teller = (w: World, id: Id) => ({host: 'You'} as Record<string, string>)[w.ents[id]?.body?.role ?? 'host'] ?? actor(w, id)
 const ROLE = {host: 'The host', server: 'A server', busser: 'A busser', guest: 'A guest'}
 const actor = (w: World, id: Id) => w.ents[id]?.staff?.name ?? ROLE[w.ents[id]?.body?.role ?? 'host']
 const crew = (w: World, id: Id) => (w.ents[id]?.party ? `${w.ents[id]!.party!.name || w.ents[id]!.party!.label} party` : id)
@@ -56,6 +58,7 @@ const describe: Describe = {
   asked: (e, w) => ({msg: `${crew(w, e.party)} asked for another table (${reason(e.reason)}${e.stage === 'seated' ? ', already seated' : ''}): "${H.reasons[e.reason]?.says ?? e.reason}"`, at: e.party}),
   replied: (e, w) => ({msg: `The host answered the ${reason(e.reason)} request of ${crew(w, e.party)} with "${H.responses[e.response]?.label ?? e.response}": ${MOVE[e.move]} (mood ${sign(e.mood)})`, at: e.party}),
   moved: (e, w) => ({msg: `${crew(w, e.party)} moved from ${spotName(w, e.from)} to ${spotName(w, e.to)}`, at: anchor(w, e.to)}),
+  told: (e, w) => ({msg: `${teller(w, e.by)} told ${w.ents[e.server]?.staff?.name ?? 'the server'} the ${crew(w, e.party)} is at ${spotName(w, e.table)}`, at: e.table}),
   mood: (e, w) => ({msg: `${crew(w, e.party)} mood ${e.delta < 0 ? 'fell' : 'rose'} by ${Math.abs(e.delta)}: ${reason(e.why)}`, at: e.party}),
 }
 /** Call before the tick's patches are applied: departed parties and bodies are still in the world. */

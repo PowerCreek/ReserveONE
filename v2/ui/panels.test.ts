@@ -82,3 +82,9 @@ test('staff: rotation rows, duty toggle; alerts: engine alerts and tab badge', a
   assert.match(text(el, '[data-alerts]'), /Party late/)
   assert.match(text(el, '[data-act="tab"][data-id="alerts"]'), /Alerts 1/)
 })
+test('header shows the service mode chip and the staff tab carries the assignment panel', async () => {
+  const {el} = rig()
+  await settle()
+  assert.match(text(el, 'header [data-mode]'), /(Sectioned|Rotation) (schedule|manual)/)
+  assert.equal(el.querySelectorAll('[data-show="ui.on.staff"] [data-assign] [data-act="svcmode"]').length, 3)
+})

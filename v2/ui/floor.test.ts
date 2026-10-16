@@ -56,3 +56,16 @@ test('floor tabs filter tables, links, units and pings by floor; chips mark feat
   assert.doesNotMatch(f().textContent!, /DOOR/)
   assert.deepEqual(['g1', 'g2', 'b1'].map(id => floorOf(app.store.state.world, id)), ['f1', 'f2', 'f2'])
 })
+test('floor paints the holder on each table, and fades section tints when the mode has no holds', () => {
+  const {app} = rig()
+  load(app, 'rush')
+  const w = app.store.state.world
+  const hs = [{table: 't1', area: 'main', staff: 'sv1', by: 'chunk' as const}, {table: 't2', area: 'main', staff: null, by: 'rotation' as const}]
+  const on = floorSvg(w, [], undefined, {holds: hs, live: true})
+  assert.equal(on.match(/data-hold=/g)!.length, 1) // only t1 has a holder
+  assert.match(on, /<title>Ana \(chunk\)/)
+  assert.match(on, /fill-opacity="\.12"/)
+  const off = floorSvg(w, [], undefined, {holds: [], live: false})
+  assert.doesNotMatch(off, /data-hold/)
+  assert.match(off, /fill-opacity="\.04"/)
+})

@@ -12,7 +12,7 @@ export const KIND: Record<string, string> = {
   arrived: 'bg-sky-600', seated: 'bg-emerald-600', served: 'bg-violet-600', cleared: 'bg-amber-600', left: 'bg-slate-500',
   stuck: 'bg-rose-600', info: 'bg-slate-500', ok: 'bg-emerald-600', warn: 'bg-amber-600', action: 'bg-indigo-600',
   greeted: 'bg-sky-600', heard: 'bg-indigo-600', quoted: 'bg-slate-600', offered: 'bg-violet-600', answered: 'bg-emerald-600',
-  led: 'bg-teal-600', asked: 'bg-orange-600', replied: 'bg-fuchsia-600', moved: 'bg-cyan-600', mood: 'bg-pink-600',
+  led: 'bg-teal-600', asked: 'bg-orange-600', replied: 'bg-fuchsia-600', moved: 'bg-cyan-600', mood: 'bg-pink-600', told: 'bg-lime-600',
 }
 export const RING: Record<string, string> = {
   arrived: 'stroke-sky-500', seated: 'stroke-emerald-500', served: 'stroke-violet-500', cleared: 'stroke-amber-500', left: 'stroke-slate-400', stuck: 'stroke-rose-500',

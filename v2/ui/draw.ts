@@ -1,6 +1,6 @@
 // SVG fragments for the floor (U2). Pure string builders over entities; classes come from tone.ts, data colours from entity data.
-import {defaultPolicy} from '../contracts/index.ts'
-import type {Components, Ent, Entity, World} from '../contracts/index.ts'
+import {defaultPolicy, having} from '../contracts/index.ts'
+import type {Components, Ent, Entity, Hold, World} from '../contracts/index.ts'
 import {HRING} from './events.ts'
 import {DOOR, locate} from './geo.ts'
 import type {Fx} from './state.ts'
@@ -31,10 +31,11 @@ export const table = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
   `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${t.table.shape === 'booth' ? 4 : 12}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
   txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
   txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + chips(t) + '</g>'
-export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[]) => {
+/** `live` = the active mode has standing holds; otherwise the chunk tints fade (nobody holds them). */
+export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
   const xs = ts.flatMap(t => [t.pos.x, t.pos.x + t.pos.w]), ys = ts.flatMap(t => [t.pos.y, t.pos.y + t.pos.h])
   const [x, y] = [Math.min(...xs) - 16, Math.min(...ys) - 16]
-  return ts.length ? `<rect x="${x}" y="${y}" width="${Math.max(...xs) + 16 - x}" height="${Math.max(...ys) + 16 - y}" rx="16" fill="${esc(s.section.color)}" fill-opacity=".12"/>` +
+  return ts.length ? `<rect x="${x}" y="${y}" width="${Math.max(...xs) + 16 - x}" height="${Math.max(...ys) + 16 - y}" rx="16" fill="${esc(s.section.color)}" fill-opacity="${live ? '.12' : '.04'}"/>` +
     txt(x + 30, y + 12, 'fill-slate-500 text-[10px] uppercase dark:fill-slate-400', s.section.name) : ''
 }
 export const link = (w: World) => (k: Ent<'link'>) => {
@@ -54,3 +55,11 @@ export const ping = (f: Fx) =>
   `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? HRING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
 export const door = `<g><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
+const STAFF = ['fill-sky-600', 'fill-emerald-600', 'fill-amber-600', 'fill-rose-600', 'fill-violet-600', 'fill-teal-600', 'fill-orange-600', 'fill-pink-600']
+/** A coloured initial on the table corner for whoever holds it now (colour = the holder's place in the crew). */
+export const badge = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'>) => {
+  const h = hs.find(x => x.table === t.id && x.staff)
+  const s = w.ents[h?.staff ?? '']
+  const i = having(w, 'staff').findIndex(x => x.id === s?.id)
+  return h && s?.staff ? `<g data-hold="${esc(t.id)}"><title>${esc(`${s.staff.crew?.join(' + ') ?? s.staff.name} (${h.by})`)}</title><circle cx="${t.pos.x + 4}" cy="${t.pos.y + 4}" r="7" class="${STAFF[i % STAFF.length]}"/>${txt(t.pos.x + 4, t.pos.y + 7.5, 'fill-white text-[9px] font-bold', s.staff.name[0])}</g>` : ''
+}

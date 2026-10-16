@@ -1,4 +1,4 @@
-// The real venue as data (C3): v1 `src/realFloors.ts` item lists + `src/seed.ts` sizing and flow, folded into v2 entities. Sections stay unassigned.
+// The real venue as data (C3): v1 `src/realFloors.ts` item lists + `src/seed.ts` sizing and flow, folded into v2 entities. Each table carries its `area` tag (crew.ts deals sections).
 import type {Entity} from './contracts/index.ts'
 type Shape = 'rect' | 'booth'
 type Item = [id: string, label: string, cap: number, shape: Shape]
@@ -19,6 +19,9 @@ const bar: Item[] = [
 const patio: Item[] = rect(...Array.from({length: 7}, (_, i): [string, string, number] => [`rf_p${i + 1}`, `P${i + 1}`, 4]))
 const upstairs: Item[] = rect(...Array.from({length: 7}, (_, i): [string, string, number] => [`rf_u${i + 1}`, `U${i + 1}`, 4]), ['rf_u8', 'U8', 6], ['rf_u9', 'U9', 4], ['rf_u10', 'U10', 2], ['rf_u_bar', 'Bar', 10])
 const floors: [id: string, name: string, items: Item[]][] = [['rf1', 'Main Dining Room', main], ['rf2', 'Bar', bar], ['rf3', 'Patio', patio], ['rf4', 'Upstairs', upstairs]]
+/** Area per floor; the six `rf_g*` booths on the main floor are the grotto. */
+const areaOf: Record<string, string> = {rf1: 'main', rf2: 'bar', rf3: 'patio', rf4: 'upstairs'}
+const area = (fid: string, id: string) => (id.startsWith('rf_g') ? 'grotto' : areaOf[fid]!)
 const size = (cap: number, shape: Shape): [number, number] => (shape === 'booth' ? [120, 80] : cap <= 2 ? [40, 80] : cap <= 4 ? [80, 80] : [Math.ceil(cap / 2) * 40, 80])
 const CANVAS = [1200, 720] // v1 canvas the flow was laid out on
 const GAP = 16, MARGIN = 40
@@ -35,7 +38,7 @@ export const venue = (floor: [number, number]): Entity[] => {
   return floors.flatMap(([fid, name, items]): Entity[] => [
     {id: fid, floor: {name, active: true}},
     ...flow(items).map(({item: [id, label, capacity, shape], x, y, w, h}): Entity => ({
-      id, pos: {floor: fid, x: Math.round(x * kx), y: Math.round(y * ky), w: Math.round(w * kx), h: Math.round(h * ky)},
+      id, area: {id: area(fid, id)}, pos: {floor: fid, x: Math.round(x * kx), y: Math.round(y * ky), w: Math.round(w * kx), h: Math.round(h * ky)},
       table: {label, capacity, min: 1, shape, status: 'available', waiter: null, section: null},
     })),
   ])

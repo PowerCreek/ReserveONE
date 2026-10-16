@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type {Entity} from '../contracts/index.ts'
 import {Engine} from './index.ts'
+import {bump, serverFor} from './rotate.ts'
 import {N, P, demo, mins, staff, table, world} from './testkit.ts'
 const rk = (...ss: ReturnType<typeof staff>[]) => Engine.rotate(P, world(ss), N).map(r => r.staff).join()
 test('rotate: lowest cover tally goes next; ties go to the longest since last seated; tally outranks idle', () => {
@@ -16,10 +18,10 @@ test('rotate: no cap, skip demotes, inactive servers are left out, never-seated 
 })
 test('serverFor: best-ranked server covering the section; otherwise the top server, flagged fallback', () => {
   const w = demo()
-  assert.deepEqual(Engine.serverFor(P, w, N, ['t5']), {staff: 'w1', fallback: false})
-  assert.deepEqual(Engine.serverFor(P, w, N, ['t1', 't8']), {staff: 'w2', fallback: false}) // Dev outranks Maya
-  assert.deepEqual(Engine.serverFor(P, world([table('x', 2), staff('s', 0, 1)]), N, ['x']), {staff: 's', fallback: true})
-  assert.deepEqual(Engine.serverFor(P, world([table('x', 2)]), N, ['x']), {staff: null, fallback: true})
+  assert.deepEqual(Engine.serverFor(P, w, N, ['t5']), {staff: 'w1', fallback: false, by: 'chunk'})
+  assert.deepEqual(Engine.serverFor(P, w, N, ['t1', 't8']), {staff: 'w2', fallback: false, by: 'chunk'}) // Dev outranks Maya
+  assert.deepEqual(Engine.serverFor(P, world([table('x', 2), staff('s', 0, 1)]), N, ['x']), {staff: 's', fallback: true, by: 'fallback'})
+  assert.deepEqual(Engine.serverFor(P, world([table('x', 2)]), N, ['x']), {staff: null, fallback: true, by: 'fallback'})
 })
 const lapsed = (ids: string[]) => { const w = demo(); return {...w, ents: {...w.ents, ...Object.fromEntries(ids.map(i => [i, {...w.ents[i], table: {...w.ents[i].table!, status: 'lapsed' as const}}]))}} }
 test('bus: the lapsed table whose server is next up (Dev, B2) is cleared first, flips when Sam becomes next up', () => {
@@ -37,4 +39,41 @@ test('bus: priority = waiting parties that fit x demand + base + rotation bonus;
   assert.deepEqual(Engine.bus(P, world([table('x', 2)]), N), [])
   assert.equal(Engine.bus(P, lapsed(['t5']), N).find(b => b.table === 't5')!.waitedMin, 0)
   assert.ok(P.seat.lapsedClearMin > 0 && mins(1) === 60000)
+})
+
+const at = (h: number) => new Date(2026, 5, 1, h).getTime()
+const area = (e: Entity, id: string): Entity => ({...e, area: {id}})
+const sv = (override: string | null): Entity => ({id: 'service', service: {override, carve: {}}})
+const floor = () => world([area(table('m1', 4, 'available', 'sA'), 'main'), staff('a', 10, 5, {sections: ['sA']}), staff('b', 0, 5, {sections: ['sB']})])
+test('serverFor: sectioned (10:00, 16:00) keeps the section holder; rotation (12:00) hands the seating to the lowest tally', () => {
+  const pick = (h: number, w = floor()) => serverFor(P, w, at(h), ['m1'])
+  assert.deepEqual(pick(10), {staff: 'a', fallback: false, by: 'chunk'})
+  assert.deepEqual(pick(12), {staff: 'b', fallback: false, by: 'rotation'})
+  assert.deepEqual(pick(16), {staff: 'a', fallback: false, by: 'chunk'})
+})
+test('serverFor: the service override beats the schedule either way', () => {
+  const ents = (o: string | null) => world([...Object.values(floor().ents), sv(o)])
+  assert.equal(serverFor(P, ents('rotation'), at(10), ['m1']).staff, 'b')
+  assert.equal(serverFor(P, ents('sectioned'), at(12), ['m1']).staff, 'a')
+})
+test('serverFor: sectioned reads the carve per area: dealt top (patio), bar pair (level); an undealt top falls back to a unit that fits', () => {
+  const w = world([area(table('p1', 4), 'patio'), {...area(table('p2', 4), 'patio'), assign: {staff: 'b'}}, area(table('r1', 4), 'bar'), staff('a', 0, 9), staff('b', 5, 5), staff('pair', 20, 5, {area: 'bar', weight: 2})])
+  assert.deepEqual(serverFor(P, w, at(10), ['p2']), {staff: 'b', fallback: false, by: 'tops'})
+  assert.deepEqual(serverFor(P, w, at(10), ['r1']), {staff: 'pair', fallback: false, by: 'level'})
+  assert.deepEqual(serverFor(P, w, at(10), ['p1']), {staff: 'a', fallback: true, by: 'fallback'}) // pair is bar-only
+})
+test('rotation: a weight-2 bartender pair counts as two slots, so it takes twice the covers of a floor server', () => {
+  const bar = ['r1', 'r2', 'r3'].map(id => area(table(id, 4), 'bar'))
+  const run = (ss: ReturnType<typeof staff>[], n: number): Record<string, number> => Array.from({length: n}).reduce<{ss: typeof ss; got: Record<string, number>}>(({ss, got}, _, i) => {
+    const id = serverFor(P, world([...bar, ...ss]), at(12) + i * 60000, ['r1']).staff!
+    return {ss: bump(ss as never, id, 4, at(12) + i * 60000) as never, got: {...got, [id]: (got[id] ?? 0) + 4}}
+  }, {ss, got: {}}).got
+  const got = run([staff('a', 0, 5), staff('b', 0, 5), staff('pair', 0, 5, {area: 'bar', weight: 2, crew: ['Kit', 'Lou']})], 16)
+  assert.deepEqual(got, {a: 16, b: 16, pair: 32})
+  assert.deepEqual(rk(staff('a', 6, 5), staff('pair', 8, 5, {weight: 2})), 'pair,a') // 8/2 < 6
+})
+test('rotation: a unit bound to an area never takes another area; unbound units take any', () => {
+  const w = world([area(table('m1', 4), 'main'), staff('pair', 0, 99, {area: 'bar', weight: 2}), staff('a', 50, 1)])
+  assert.deepEqual(serverFor(P, w, at(12), ['m1']), {staff: 'a', fallback: false, by: 'rotation'})
+  assert.deepEqual(serverFor(P, world([area(table('m1', 4), 'main'), staff('pair', 0, 9, {area: 'bar'})]), at(12), ['m1']), {staff: null, fallback: true, by: 'fallback'})
 })
