@@ -18,3 +18,5 @@
 - `v2/test/boot.test.ts` runs `v2/build.mjs` itself and boots `dist/v2.html` in jsdom.
 - Open (from lane D): engine `center('door')` should fall back to the policy door; floor view ignores `floor` (4 floors overlap: add a floor selector in `v2/ui/floor.ts`); clean-slate seed has no host/servers/sections so the sim idles until a preset loads.
 - v1 parity not yet in v2: Gantt, audit log, ledger, locator, sections-as-blobs editing, layout mode/editing, shifts, drawer widgets, book wizard.
+- Convention (pinned): a party is "led, not seated" when it has an `offer` with `status: 'accepted'` on a table and no `slot` on that table; "seated" = has the slot. Stage for requests: arrived | seated accordingly.
+- Starters: `ui/scenario.ts` `load(app,id)` loads presets or `scenarios[id]`; `choices()` lists both; `controls.ts` picker must render `choices()` (U4).

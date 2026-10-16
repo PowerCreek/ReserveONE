@@ -19,3 +19,9 @@ test('spots: a link with a missing member degrades to the remaining table', () =
   const w = world([table('a', 2), {id: 'g', link: {members: ['a', 'gone']}}])
   assert.deepEqual(Engine.spots(w).map(s => s.id), ['a'])
 })
+test('spots: feats is the sorted union of member feat.tags (empty when untagged)', () => {
+  const tag = (id: string, tags?: string[]) => ({...table(id, 2), ...(tags ? {feat: {tags}} : {})})
+  const w = world([tag('a', ['quiet', 'booth']), tag('b', ['booth', 'window']), tag('c'), {id: 'g', link: {members: ['a', 'b']}}])
+  const by = Object.fromEntries(Engine.spots(w).map(s => [s.id, s.spot.feats]))
+  assert.deepEqual(by, {g: ['booth', 'quiet', 'window'], c: []})
+})

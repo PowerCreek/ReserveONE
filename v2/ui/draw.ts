@@ -1,14 +1,36 @@
 // SVG fragments for the floor (U2). Pure string builders over entities; classes come from tone.ts, data colours from entity data.
-import type {Ent, Entity, World} from '../contracts/index.ts'
+import {defaultPolicy} from '../contracts/index.ts'
+import type {Components, Ent, Entity, World} from '../contracts/index.ts'
+import {HRING} from './events.ts'
 import {DOOR, locate} from './geo.ts'
 import type {Fx} from './state.ts'
 import {esc} from './render.ts'
 import {RING, ROLE, TABLE} from './tone.ts'
+declare module './state.ts' {
+  interface Fx {floor?: string} // set by host narration; a ping without one shows on every floor
+}
 const txt = (x: number, y: number, cls: string, s: unknown) => `<text x="${x}" y="${y}" text-anchor="middle" class="${cls}">${esc(s)}</text>`
-export const table = (t: Ent<'table' | 'pos'>) =>
-  `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${t.table.shape === 'booth' ? 4 : 12}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
+const CHIP: Record<string, string> = {
+  seat: 'fill-sky-100 stroke-sky-500 dark:fill-sky-950 dark:stroke-sky-400', zone: 'fill-emerald-100 stroke-emerald-500 dark:fill-emerald-950 dark:stroke-emerald-400',
+  air: 'fill-amber-100 stroke-amber-500 dark:fill-amber-950 dark:stroke-amber-400', access: 'fill-violet-100 stroke-violet-500 dark:fill-violet-950 dark:stroke-violet-400',
+}
+const SHOWN = 3 // chips under a table; the rest fold into "+n" (the tooltip lists all)
+const feats = defaultPolicy.host.feats
+const cw = (s: string) => s.length * 4.2 + 6
+/** Feature chips in a centred row under the table: a 4-letter tag per feature, coloured by its group. */
+export const chips = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => {
+  const tags = (t.feat?.tags ?? []).map(f => ({f, s: (feats[f]?.label ?? f).slice(0, 4), cls: CHIP[feats[f]?.group ?? 'air']}))
+  const row = [...tags.slice(0, SHOWN), ...(tags.length > SHOWN ? [{f: '+', s: `+${tags.length - SHOWN}`, cls: CHIP.access}] : [])]
+  const ws = row.map(c => cw(c.s)), total = ws.reduce((a, b) => a + b + 2, -2)
+  const xs = ws.map((_, i) => t.pos.x + t.pos.w / 2 - total / 2 + ws.slice(0, i).reduce((a, b) => a + b + 2, 0))
+  return row.map((c, i) => `<g data-feat="${esc(c.f)}"><rect x="${xs[i]}" y="${t.pos.y + t.pos.h + 3}" width="${ws[i]}" height="9" rx="4" stroke-width="1" class="${c.cls}"/>` +
+    txt(xs[i] + ws[i] / 2, t.pos.y + t.pos.h + 10, 'fill-slate-700 text-[7px] dark:fill-slate-200', c.s) + '</g>').join('')
+}
+const tip = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => (t.feat?.tags.length ? ` | ${t.feat.tags.map(f => feats[f]?.label ?? f).join(', ')}` : '')
+export const table = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
+  `<g><title>${esc(t.table.label)} cap ${t.table.capacity} ${t.table.status}${esc(tip(t))}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${t.table.shape === 'booth' ? 4 : 12}" stroke-width="2" class="${TABLE[t.table.status]}"/>` +
   txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
-  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + '</g>'
+  txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`) + chips(t) + '</g>'
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[]) => {
   const xs = ts.flatMap(t => [t.pos.x, t.pos.x + t.pos.w]), ys = ts.flatMap(t => [t.pos.y, t.pos.y + t.pos.h])
   const [x, y] = [Math.min(...xs) - 16, Math.min(...ys) - 16]
@@ -29,6 +51,6 @@ export const unit = (w: World) => (e: Ent<'body'>) =>
   `<g><title>${esc(e.id)} ${e.body.role} ${esc(e.body.task?.do ?? 'idle')}</title>${target(w, e) ?? ''}<circle cx="${e.body.x}" cy="${e.body.y}" r="${e.body.role === 'guest' ? 8 : 10}" class="${ROLE[e.body.role]}"/>` +
   txt(e.body.x, e.body.y + 4, 'fill-white text-[10px] font-bold', tag(e)) + txt(e.body.x, e.body.y - 14, 'fill-slate-500 text-[9px] dark:fill-slate-400', e.body.task?.do ?? '') + '</g>'
 export const ping = (f: Fx) =>
-  `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
+  `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? HRING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
 export const door = `<g><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
