@@ -72,8 +72,13 @@ test('rotation: a weight-2 bartender pair counts as two slots, so it takes twice
   assert.deepEqual(got, {a: 16, b: 16, pair: 32})
   assert.deepEqual(rk(staff('a', 6, 5), staff('pair', 8, 5, {weight: 2})), 'pair,a') // 8/2 < 6
 })
-test('rotation: a unit bound to an area never takes another area; unbound units take any', () => {
+const bound = {...P, service: {...P.service, modes: {...P.service.modes, rotation: {...P.service.modes.rotation, anywhere: false}}}}
+test('rotation: where the mode is not `anywhere`, a unit bound to an area never takes another area; unbound units take any', () => {
   const w = world([area(table('m1', 4), 'main'), staff('pair', 0, 99, {area: 'bar', weight: 2}), staff('a', 50, 1)])
-  assert.deepEqual(serverFor(P, w, at(12), ['m1']), {staff: 'a', fallback: false, by: 'rotation'})
-  assert.deepEqual(serverFor(P, world([area(table('m1', 4), 'main'), staff('pair', 0, 9, {area: 'bar'})]), at(12), ['m1']), {staff: null, fallback: true, by: 'fallback'})
+  assert.deepEqual(serverFor(bound, w, at(12), ['m1']), {staff: 'a', fallback: false, by: 'rotation'})
+  assert.deepEqual(serverFor(bound, world([area(table('m1', 4), 'main'), staff('pair', 0, 9, {area: 'bar'})]), at(12), ['m1']), {staff: null, fallback: true, by: 'fallback'})
+})
+test('rotation (anywhere, the default): servers and bartenders rotate over every area, a pair counting two slots', () => {
+  const w = world([area(table('m1', 4), 'main'), staff('pair', 0, 99, {area: 'bar', weight: 2}), staff('a', 50, 1)])
+  assert.deepEqual(serverFor(P, w, at(12), ['m1']), {staff: 'pair', fallback: false, by: 'rotation'})
 })

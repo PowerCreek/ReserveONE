@@ -7,12 +7,12 @@ export type Carve = 'chunk' | 'whole' | 'tops' | 'level'
 /** `seen`: a server sees new seatings here and starts service unprompted; otherwise the host must tell them (`slot.told`). `carve`: allowed ways to split it, first = default (the `service` entity may choose another). */
 export interface AreaDef {label: string; seen: boolean; carve: Carve[]}
 /** `holds`: standing holds (sections, tops, levels) decide the server; else seatings rotate across the crew by cover tally / weight. */
-export interface ModeDef {label: string; holds: boolean}
+export interface ModeDef {label: string; holds: boolean; anywhere?: boolean} // anywhere: in a mode without holds, every unit (servers and bartenders) rotates over every area; else a unit with `staff.area` serves only that area
 /** From minute-of-day `from` (local, 0-1439) the mode is `mode`; rows ascend, the last row at or before now wins. */
 export interface Slice {from: number; mode: string}
 export interface ServiceCfg {modes: Reg<ModeDef>; schedule: Slice[]; areas: Reg<AreaDef>}
 export const defaultService: ServiceCfg = {
-  modes: {sectioned: {label: 'Sectioned', holds: true}, rotation: {label: 'Rotation', holds: false}},
+  modes: {sectioned: {label: 'Sectioned', holds: true}, rotation: {label: 'Rotation', holds: false, anywhere: true}},
   schedule: [{from: 0, mode: 'sectioned'}, {from: 11 * 60, mode: 'rotation'}, {from: 15 * 60, mode: 'sectioned'}],
   areas: {
     main: {label: 'Main floor', seen: true, carve: ['chunk']},

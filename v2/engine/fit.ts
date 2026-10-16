@@ -1,7 +1,7 @@
 import {having} from '../contracts/index.ts'
 import type {Ent, Engine, Id, Policy, Ranked, SeqItem, World} from '../contracts/index.ts'
 import {spots} from './spots.ts'
-import {merges} from './merge.ts'
+import {mergesOf} from './merge.ts'
 import {holds} from './holds.ts'
 import {keeper} from './keep.ts'
 import {selfSeated} from './seatcheck.ts'
@@ -20,7 +20,8 @@ const pool = (p: Policy, w: World, o: Opt) => (all: Spot[]) => all.filter(s => s
 /** How many merge options each table is part of: the fewer, the less seating it there breaks combinations up. */
 const reaches = (pairs: Spot[]) => pairs.flatMap(s => s.spot.tables).reduce<Record<Id, number>>((m, t) => ({...m, [t]: (m[t] ?? 0) + 1}), {})
 const ctx = (p: Policy, w: World, now: number, o: Opt): Ctx => {
-  const pairs = o.merge === false ? [] : pool(p, w, o)(merges(p, w))
+  const standing = new Set(having(w, 'link').filter(l => !l.link.merged).flatMap(l => l.link.members))
+  const pairs = o.merge === false ? [] : pool(p, w, o)(mergesOf(p, w, t => !standing.has(t.id))) // tables still occupied join too: a merge can be quoted for when they turn over
   return {p, w, now, pool: pool(p, w, o)(spots(w)), pairs, holds: holds(p, w, now, o.skip), need: (avgTurn(p, w) + p.seat.resetMin) * MIN, rst: p.seat.resetMin * MIN, keep: keeper(p, w, now, o.skip), reach: reaches(pairs)}
 }
 const push = (c: Ctx) => (at: number, h: Hold) => (at + c.need > h.start && at < h.end + c.rst ? h.end + c.rst : at)
@@ -34,14 +35,15 @@ const timed = (c: Ctx, run: Run, rk: Ranked[]) => {
   const taken = run.out.flatMap(i => i.tables)
   return (s: Spot): Cand => ({s, at: Math.max(c.now, shift(c, s, run.free[s.id])), pos: pos(s), sq: c.keep([...taken, ...s.spot.tables]).length, reach: s.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0)})
 }
-/** A single table is preferred: merges (adjacent free pairs, smallest first) only join when no single fit is ready now. */
+/** A single table is preferred: merges (smallest first) only join when no single fit is ready now; waiting merges (tables still turning over) only when no merge is ready either, so a quote can name them. */
 const cands = (c: Ctx, run: Run, rk: Ranked[], size: number): Cand[] => {
-  const [one, two] = [c.pool, c.pairs].map(ss => ss.filter(s => s.spot.capacity >= size).map(timed(c, run, rk)))
+  const timeds = (ss: Spot[]) => ss.filter(s => s.spot.capacity >= size).map(timed(c, run, rk))
+  const one = timeds(c.pool)
+  const two = one.some(x => x.at <= c.now) ? [] : timeds(c.pairs)
   const ready = two.filter(x => x.at <= c.now)
   const plain = ready.filter(x => !x.s.spot.last) // last-resort merges (the centre lane) only when no other merge is ready
-  return [...one, ...(one.some(x => x.at <= c.now) ? [] : plain.length ? plain : ready)]
+  return [...one, ...(ready.length ? (plain.length ? plain : ready) : two)]
 }
-/** Ready spots: no reservation squeezed first, then the tightest fit, fewest tables, the next-up server, the table in fewest merge options. */
 const order = (byPos: boolean) => (a: Cand, b: Cand) => (byPos ? a.sq - b.sq : 0) || a.s.spot.capacity - b.s.spot.capacity || a.s.spot.tables.length - b.s.spot.tables.length || (byPos ? a.pos - b.pos || a.reach - b.reach : 0) || a.at - b.at
 const choose = (c: Ctx, cs: Cand[]) => {
   const free = cs.filter(x => x.at <= c.now)

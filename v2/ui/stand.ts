@@ -1,7 +1,7 @@
 // Host stand (U4): greet the next party, record intake chips, voice ladder offers, seat a led party, reply to table-change requests. Free play: no scoring.
 // Engine calls go through `ask` (optional: a missing function degrades to a note); writes go through the undoable `commit`.
 import {defaultPolicy, having, partsOf} from '../contracts/index.ts'
-import type {App, Components, Decision, Ent, Entity, HostEvent, Id, Level, Patch, Rung, ServiceEvent, Want, World} from '../contracts/index.ts'
+import type {App, Components, Decision, Ent, Entity, HostEvent, Id, Level, Patch, Placed, Rung, ServiceEvent, Want, World} from '../contracts/index.ts'
 import {commit} from '../kernel/index.ts'
 import {ask} from './ask.ts'
 import {HKIND, explain, spotName} from './events.ts'
@@ -10,7 +10,7 @@ import {arg, esc, panel} from './render.ts'
 import {reqOf, seatNow} from './seat.ts'
 import {modeNow} from './assign.ts'
 import {uiOf} from './state.ts'
-import {card, on} from './tone.ts'
+import {card, choice, cta, ctaSm, ghost, ok} from './tone.ts'
 const H = defaultPolicy.host
 const tier = defaultPolicy.queue.tier
 const areas = defaultPolicy.service.areas
@@ -58,14 +58,22 @@ const btn = 'rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300 dark:bg
 const LV: Record<Level, string> = {need: 'bg-rose-600 text-white', strong: 'bg-amber-500 text-white', soft: 'bg-slate-300 text-slate-800 dark:bg-slate-600 dark:text-slate-100'}
 const part = (title: string, body: string) => `<section><h3 class="mb-1 text-xs font-semibold uppercase text-slate-500">${title}</h3>${body}</section>`
 const muted = (s: string) => `<p class="text-xs text-slate-500">${s}</p>`
-const act = (name: string, attrs: string, label: string, cls = btn) => `<button data-act="stand-${name}" ${attrs} class="${cls}">${esc(label)}</button>`
+const act = (name: string, attrs: string, label: string, cls = btn) => `<button type="button" data-act="stand-${name}" ${attrs} class="${cls}">${esc(label)}</button>`
 const ledRows = (w: World) => parties(w).filter(e => led(w, e)).map(e =>
-  `<div class="mt-1 rounded border border-emerald-500 p-1 text-xs">${esc(crew(e))} led to ${esc(spotName(w, e.offer!.spot))}, not seated ${act('seatled', `data-id="${e.id}"`, 'Seat', on)}</div>`).join('')
+  `<div class="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-500 bg-emerald-50 p-2 text-xs dark:bg-emerald-950"><span>${esc(crew(e))} led to ${esc(spotName(w, e.offer!.spot))}, not seated</span> ${act('seatled', `data-id="${e.id}"`, 'Seat', ok)}</div>`).join('')
+const KIND: Record<string, string> = {W: 'Walk-in', P: 'Priority', R: 'Reservation', V: 'VIP'}
+const waited = (p: P, now: number) => `${Math.max(0, Math.floor((now - since(p)) / 60000))}m`
+/** One party at the door as a radio choice: who, how many, what kind, how long they have waited. */
+const partyChoice = (f: string, seen: string[], now: number) => (p: P) =>
+  `<button type="button" role="radio" aria-checked="${p.id === f}" data-act="stand-focus" data-id="${p.id}" class="${choice(p.id === f)}"><span class="font-semibold">${esc(p.party.label)} x${p.party.size}${seen.includes(p.id) ? ' <span class="text-emerald-700 dark:text-emerald-400" aria-label="greeted">✓</span>' : ''}</span><span class="text-slate-500">${KIND[p.party.kind] ?? p.party.kind}, waiting ${waited(p, now)}</span></button>`
 const greet = (app: App) => {
   const w = world(app), f = focus(app), at = door(w), seen = st(app).greeted
-  const chips = at.map(p => act('focus', `data-id="${p.id}"`, `${p.party.label} x${p.party.size}${seen.includes(p.id) ? ' (greeted)' : ''}`, p.id === f ? on : pill)).join(' ')
-  const go = seen.includes(f) ? muted(`Greeted ${esc(crew(w.ents[f]))}.`) : act('greet', '', `Greet ${crew(w.ents[f])}`, on)
-  return part('At the door', (f ? `<div class="flex flex-wrap gap-1">${chips}</div><div class="mt-1">${go}</div>` : muted('Nobody at the door.')) + ledRows(w))
+  const now = app.store.state.now
+  const go = seen.includes(f)
+    ? `<p role="status" class="mt-2 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Greeted ${esc(crew(w.ents[f]))}. Ask what they would like, then pick an offer below.</p>`
+    : `<div class="mt-2">${act('greet', '', `Greet ${crew(w.ents[f])}`, cta)}</div>`
+  const head = `<div role="radiogroup" aria-label="Parties at the door" class="flex flex-wrap gap-2">${at.map(partyChoice(f, seen, now)).join('')}</div>`
+  return part(`At the door <span class="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] normal-case dark:bg-slate-700">${at.length}</span>`, (f ? head + go : muted('Nobody at the door.')) + ledRows(w))
 }
 const recorded = (e: Entity) => (e.wants?.list ?? []).filter(x => x.said || e.wants?.heard.includes(x.feat))
 const wantChip = (x: Want) => `<span class="rounded-full px-2 py-0.5 text-xs ${LV[x.level]}" title="${esc(x.accord)} of the party">${x.avoid ? 'avoid ' : ''}${esc(feat(x.feat))} | ${x.level} | ${esc(H.whys[x.why]?.label ?? x.why)}</span>`
@@ -81,23 +89,33 @@ const nameOf = (w: World, id?: Id | null) => (id ? (w.ents[id]?.staff?.crew?.joi
 /** Who would serve a spot if it were seated now (the section holder, or the next in the rotation). */
 const serves = (app: App, spot: Id) => nameOf(world(app), ask(app, 'serverFor', partsOf(world(app), spot))?.staff)
 const rung = (app: App) => (r: Rung) => `<li class="py-1 text-xs"><b>${esc(r.step)}</b> ${esc(r.say)} ${r.gives.map(g => `<span class="${pill}">+${esc(feat(g))}</span>`).join(' ')} ${r.lacks.map(m => `<span class="${pill}">-${esc(feat(m.feat))} (${m.level})</span>`).join(' ')}
-${r.spot ? `<span class="text-xs text-slate-500">server ${esc(serves(app, r.spot) || 'none yet')}</span> ` : ''}${r.spot ? act('offer', `data-step="${esc(r.step)}" data-spot="${esc(r.spot)}"`, 'Offer') : ''}</li>`
+${r.spot ? `<span class="text-xs text-slate-500">server ${esc(serves(app, r.spot) || 'none yet')}</span> ` : ''}${r.spot ? act('offer', `data-step="${esc(r.step)}" data-spot="${esc(r.spot)}"`, 'Offer', ctaSm) : ''}</li>`
 const open = (w: World, e: Entity) => e.offer?.status === 'open'
-  ? `<div class="mb-1 rounded border border-violet-500 p-1 text-xs">Offered ${esc(spotName(w, e.offer.spot))} (${esc(e.offer.step)}) ${act('answer', `data-id="${e.id}" data-yes="1"`, 'Accept', on)} ${act('answer', `data-id="${e.id}" data-yes="0"`, 'Decline')}</div>`
+  ? `<div role="group" aria-label="Their answer" class="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-500 bg-violet-50 p-2 text-xs dark:bg-violet-950"><span>Offered ${esc(spotName(w, e.offer.spot))} (${esc(e.offer.step)}): what did the party say?</span><span class="flex gap-2">${act('answer', `data-id="${e.id}" data-yes="1"`, 'Accept', ok)} ${act('answer', `data-id="${e.id}" data-yes="0"`, 'Decline', ghost)}</span></div>`
   : ''
 /** In a rotation mode: the units in turn order; each offer below says who takes it. */
 const nextUp = (app: App) => {
   const w = world(app), order = (ask(app, 'rotate') ?? []).filter(r => w.ents[r.staff]?.staff?.active).map(r => nameOf(w, r.staff))
-  return modeNow(app) === 'rotation' && order.length ? `<p class="mb-1 text-xs"><span class="text-slate-500">Rotation order (a pair only takes its own level)</span> <b>${esc(order[0]!)}</b>${order.length > 1 ? `, then ${esc(order.slice(1, 5).join(', '))}` : ''}</p>` : ''
+  return modeNow(app) === 'rotation' && order.length ? `<p class="mb-1 text-xs"><span class="text-slate-500">Rotation order, all servers and bartenders</span> <b>${esc(order[0]!)}</b>${order.length > 1 ? `, then ${esc(order.slice(1, 5).join(', '))}` : ''}</p>` : ''
 }
 const ladder = (app: App) => {
   const w = world(app), f = focus(app), e = w.ents[f]
   const rs = ask(app, 'ladder', f)
-  return part('Ladder offers', nextUp(app) + (!e?.party ? muted('Pick a party.') : `${open(w, e)}${rs ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rs.map(rung(app)).join('') || muted('No rungs: the party fits as asked.')}</ul>` : muted('Engine host service not available.')}`))
+  const rungs = rs ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rs.map(rung(app)).join('') || muted('No rungs: the party fits as asked.')}</ul>` : muted('Engine host service not available.')
+  const body = !e?.party ? muted('Pick a party.') : e.offer?.status === 'open' ? open(w, e) : rungs // one thing to do at a time: while an offer waits for an answer, only the answer is asked for
+  return part('Ladder offers', nextUp(app) + body)
+}
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
+const plan = (w: World) => (x: Placed) =>
+  `<li class="py-1 text-xs"><b>${esc(w.ents[x.party]?.party?.name ?? x.party)}</b> x${x.size} at ${clock(x.at)}: ${x.spot ? `${esc(x.label.split('+').map(l => (/^\d+$/.test(l) ? `T${l}` : l)).join(' + '))}${x.merge ? ' pushed together' : ''}, free by ${clock(x.free)}` : '<span class="text-rose-600">no table will be free in time</span>'}</li>`
+/** The temporal plan: where each reservation due soon will sit, given when the tables in use turn over. */
+const coming = (app: App) => {
+  const xs = ask(app, 'outlook') ?? []
+  return part('Coming up', xs.length ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${xs.map(plan(world(app))).join('')}</ul>` : muted('No reservations to place soon.'))
 }
 const options = (app: App) => (e: P) => {
   const r = e.request!
-  const os = (ask(app, 'options', e.id) ?? []).map(o => act('reply', `data-id="${e.id}" data-r="${esc(o.response)}" title="${esc(o.say)}"`, o.label)).join(' ')
+  const os = (ask(app, 'options', e.id) ?? []).map(o => act('reply', `data-id="${e.id}" data-r="${esc(o.response)}" title="${esc(o.say)}"`, o.label, ghost)).join(' ')
   return `<li class="py-1 text-xs"><b>${esc(crew(e))}</b> at ${esc(spotName(world(app), r.table))} (${esc(H.reasons[r.reason]?.label ?? r.reason)}, ${r.stage}): "${esc(H.reasons[r.reason]?.says ?? r.reason)}"<div class="mt-1 flex flex-wrap gap-1">${os}</div></li>`
 }
 const requests = (app: App) => {
@@ -115,7 +133,7 @@ const state = (r: Row) => (r.seen ? 'seen' : r.slot.slot.told ? 'told' : 'pendin
 const chips: Record<string, (r: Row) => string> = {
   seen: r => `<span class="rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">${esc(r.server || 'server')} sees it</span>`,
   told: r => `<span class="rounded-full bg-sky-600 px-2 py-0.5 text-xs text-white">Told ${esc(r.server || 'server')}</span>`,
-  pending: r => `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">Not told yet</span> ${act('tell', `data-table="${r.slot.slot.table}"`, `Tell ${r.server || 'server'}`, on)}`,
+  pending: r => `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">Not told yet</span> ${act('tell', `data-table="${r.slot.slot.table}"`, `Tell ${r.server || 'server'}`, ctaSm)}`,
 }
 const ORDER: Record<string, number> = {pending: 0, told: 1, seen: 2}
 const seatedRow = (w: World) => (r: Row) =>
@@ -135,7 +153,7 @@ const tell = (app: App, ev: Event) => {
   const d: Decision = ask(app, 'tell', table) ?? {ok: false, err: 'engine.tell is not available'}
   slot && outcome[String(d.ok) as 'true'](app, d, {ev: 'told', party: slot.slot.party, table, server: serverOf(app, table) ?? '', by: hostOf(w)})
 }
-const draw = (app: App) => [greet, intake, ladder, requests, seated].map(f => f(app)).join('')
+const draw = (app: App) => [greet, intake, ladder, coming, requests, seated].map(f => f(app)).join('')
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`
 
 // ---- acts (each is followed by a `ui.rev` bump so the panel repaints)

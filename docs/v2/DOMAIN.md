@@ -24,6 +24,8 @@ host service
     - runs: main 17-23 and 9-12, grotto G1-G3 and G4-G6, bar B20-B21 and B14-B16, upstairs two aisles (4 and 3 tables) joined along each aisle and across it -> venue data (adj)
     - centre lane (9-12) is a last resort: offered only when no other merge is ready -> comp: adj.last
     - walk-ins vs reservations: a spot that would leave a reservation due within clock.aheadMin without a table (or tables pushed together) is demoted and flagged -> fn: keeper (keep.ts); policy: host.score.squeeze, host.squeezeSay, host.clock.aheadMin; tie-break: fewest merge options broken
+    - temporal plan: tables count as free for a reservation if their party will have left by then; reservations due within policy.plan.horizonMin are placed in time order on the tightest spot (a table, else tables pushed together; centre lane last; tables that merge nowhere kept for small parties); a walk-in seated now is assumed gone after an average turn -> fn: outlook (plan.ts), keeper; policy: plan.*
+    - rotation is restaurant-wide in a mode with `anywhere`: every server and bartender pair (weight 2) rotates over every area; covers planned from upcoming reservations count against a unit ahead of time (deferral), except for the party being seated; sections about to fill from planned reservations are not underflowing -> policy: service.modes.rotation.anywhere, plan.anticipate; fn: rotate, serverFor, sectionStats
     - bar stools (B1-B12, upstairs bar) are first come, first served: the host never offers or seats them -> policy: seat.selfSeat
   - fallback ladder when the preferred feature has run out -> fn: ladder -> Rung[]; policy: host.ladder
     - exact: the ready match -> ladder step kind exact

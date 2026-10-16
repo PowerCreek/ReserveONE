@@ -71,9 +71,11 @@ test('ladder: rungs offer, Accept leads the party, Seat books the table; Decline
   assert.equal(app.store.state.world.ents.p1.offer!.status, 'open')
   assert.match(log(app).join('|'), /The host offered Chen party the banquette at T2 \(near\)/)
   await settle()
+  assert.equal(el.querySelectorAll('[data-act="stand-offer"]').length, 0) // an open offer shows only its answer, not the same offer again
   click(el, '[data-act="stand-answer"][data-yes="0"]')
   assert.equal(app.store.state.world.ents.p1.offer!.status, 'declined')
   assert.equal(log(app)[0], 'Chen party declined the banquette')
+  await settle()
   click(el, '[data-act="stand-offer"]')
   await settle()
   click(el, '[data-act="stand-answer"][data-yes="1"]')

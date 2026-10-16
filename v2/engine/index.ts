@@ -23,7 +23,8 @@ import {standing as holds} from './holds.ts'
 import {assign} from './assign.ts'
 import {knows} from './knows.ts'
 import {tell} from './tell.ts'
-export {spots, merges, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
+import {outlook} from './plan.ts'
+export {outlook, spots, merges, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
 export {apply} from './patch.ts'
 export {queueOrder, line} from './queue.ts'
 export {freeUp} from './free.ts'
@@ -35,4 +36,4 @@ export {settle} from './respond.ts'
 export {heard} from './heard.ts'
 export {toldEvents} from './tell.ts'
 export type Engine = HostEngine
-export const Engine: HostEngine = {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
+export const Engine: HostEngine = {outlook, spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}

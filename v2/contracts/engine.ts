@@ -14,6 +14,8 @@ export interface Ranked {staff: Id; score: number}
 export interface Pick {staff: Id | null; fallback: boolean; by?: Hold['by'] | 'fallback'} // by = which hold or rotation chose the server
 export interface BusItem {table: Id; staff: Id | null; waitedMin: number; priority: number}
 export interface Alert {kind: 'late' | 'lapsed' | 'event' | 'section'; ref: Id; level: 'info' | 'warn' | 'crit'; msg: string}
+/** One upcoming reservation as planned: the spot it will sit at (a table, or tables pushed together) and when that spot is free; spot null = nothing will be free in time. */
+export interface Placed {party: Id; size: number; at: number; spot: Id | null; tables: Id[]; label: string; free: number; merge: boolean}
 export interface Engine {
   spots: (w: World) => Ent<'spot'>[] // derive seatable spots (tables + link groups)
   fit: Decide<[sizes: number[]], SeqItem[]> // seating/fit: progressive sequence (SPEC §3)
@@ -21,8 +23,9 @@ export interface Engine {
   seat: Decide<[req: SeatReq], Decision> // auto or manual seating -> patches (slot, table status, staff tally)
   eta: Decide<[size: number], Quote> // turnover/ETA: quote for a new walk-in
   turnover: Decide<[intervalMin: number], Bucket[]>
-  rotate: Decide<[], Ranked[]> // rotation/fair-share by covers
-  serverFor: Decide<[tables: Id[]], Pick>
+  rotate: Decide<[skip?: Id], Ranked[]> // rotation/fair-share by covers, plus the covers each unit is planned to take from upcoming reservations (policy.plan.anticipate); `skip` = a reservation party being seated (its own plan is not counted)
+  serverFor: Decide<[tables: Id[], skip?: Id], Pick>
+  outlook: Decide<[], Placed[]> // temporal plan: where each upcoming, table-less reservation will sit, given when occupied tables turn over
   bus: Decide<[], BusItem[]>
   alerts: Decide<[], Alert[]>
   reconcile: Decide<[], Patch[]> // lapse overdue slots, lock/unlock private events (idempotent)

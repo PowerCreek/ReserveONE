@@ -10,6 +10,7 @@ export interface Policy {
   rotation: {idleCapMin: number; idleWeight: number} // score = -tally + idle*idleWeight - skip
   alerts: {prepMin: number; warnMin: number; busBase: number; busDemand: number; busRank: number}
   sim: {walkPxPerSec: number; dwellSec: {seat: number; serve: number; clear: number}; door: [x: number, y: number]; floor: [w: number, h: number]; autoSeat: boolean} // autoSeat: the sim host seats the queue head by itself (default off: the player seats); door = spawn point (the `door` entity is seeded from it); floor = canvas size
+  plan: {horizonMin: number; slackMin: number; anticipate: number} // temporal plan: reservations due within horizonMin are placed ahead (tables free by then, merges included); slackMin = lateness tolerated; anticipate = how much of a server's planned covers counts against them in the rotation (0 = ignore)
   merge: {max: number} // most tables a merge (tables pushed together) may join; which tables touch is venue data (`adj`)
   look: {probes: number; tight: number; sizes: number[]; msg: Record<Heat, string>} // lookahead: probe count, tight-runway depth, default sizes, heat messages
   rows: {past: number; future: number} // turnover rows around the current one
@@ -24,6 +25,7 @@ export const defaultPolicy: Policy = {
   rotation: {idleCapMin: 600, idleWeight: 0.001},
   alerts: {prepMin: 30, warnMin: 15, busBase: 30.5, busDemand: 10, busRank: 5},
   sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [24, 260], floor: [800, 520], autoSeat: false},
+  plan: {horizonMin: 150, slackMin: 5, anticipate: 1},
   merge: {max: 4},
   look: {probes: 40, tight: 3, sizes: [1, 2, 3, 4, 5, 6], msg: {NO_TABLE: 'No table fits', CAUTION_WAIT: 'EXHAUSTED NOW', WARM_AMBER: 'Tight Runway', HOT_GREEN: 'Clear'}},
   rows: {past: 3, future: 5},

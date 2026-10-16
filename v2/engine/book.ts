@@ -8,7 +8,7 @@ import {serverFor} from './rotate.ts'
 interface B {p: Policy; w: World; now: number; req: SeatReq; who?: Pty; ts: Ent<'table'>[]; pk: Pick; num: number; pid: Id; label: string}
 const brief = (p: Policy, w: World, now: number, req: SeatReq, who: Pty | undefined, ts: Ent<'table'>[]): B => {
   const num = who?.party.num ?? nextNum(w)
-  return {p, w, now, req, who, ts, num, pk: serverFor(p, w, now, ts.map(t => t.id)), pid: who?.id ?? `pty${num}`, label: who?.party.label ?? partyLabel(req.prefix ?? '', req.kind, num)}
+  return {p, w, now, req, who, ts, num, pk: serverFor(p, w, now, ts.map(t => t.id), who?.id), pid: who?.id ?? `pty${num}`, label: who?.party.label ?? partyLabel(req.prefix ?? '', req.kind, num)}
 }
 const tables = (b: B): Patch[] => b.ts.map(t => set(t.id, {table: {...t.table, status: 'occupied', waiter: b.pk.staff}}))
 /** Seating several tables that no link group covers pushes them together: a `merged` link, dissolved when they clear. */

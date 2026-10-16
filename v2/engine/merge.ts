@@ -15,6 +15,8 @@ const once = (sets: T[][]) => [...new Map(sets.map(s => [mergeId(s.map(t => t.id
 /** Each level grows every set by one touching table; sets are told apart by their sorted ids. */
 const levels = (w: World, ok: (t: T) => boolean, max: number): T[][][] =>
   Array.from({length: max - 1}).reduce<T[][][]>(acc => [...acc, once(acc[acc.length - 1]!.flatMap(s => touching(w, ok)(s).map(n => [...s, n])))], [having(w, 'table').filter(ok).map(t => [t])])
-/** Every set of free, ungrouped, touching tables on one floor, once each: the spots a host could push together, ordered by id. */
-export const merges = (p: Policy, w: World): Ent<'spot'>[] =>
-  levels(w, free(grouped(w)), p.merge.max).slice(1).flat().map(ts => ({id: mergeId(ts.map(t => t.id)), ts: [...ts].sort((a, b) => a.id.localeCompare(b.id))})).map(g => marked(w, spot(g)))
+/** Every set (2..policy.merge.max) of touching tables on one floor that pass `ok`, once each, ordered by id. */
+export const mergesOf = (p: Policy, w: World, ok: (t: T) => boolean): Ent<'spot'>[] =>
+  levels(w, ok, p.merge.max).slice(1).flat().map(ts => ({id: mergeId(ts.map(t => t.id)), ts: [...ts].sort((a, b) => a.id.localeCompare(b.id))})).map(g => marked(w, spot(g)))
+/** The spots a host could push together now: free, ungrouped, touching tables. */
+export const merges = (p: Policy, w: World): Ent<'spot'>[] => mergesOf(p, w, free(grouped(w)))

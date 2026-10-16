@@ -2,3 +2,8 @@
 @theme {
   --color-ink: #0f172a;
 }
+@layer base {
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--color-sky-500); outline-offset: 2px; }
+}
