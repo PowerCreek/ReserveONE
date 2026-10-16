@@ -3,6 +3,8 @@ import type {Ent, Engine, Id, Policy, Ranked, SeqItem, World} from '../contracts
 import {spots} from './spots.ts'
 import {merges} from './merge.ts'
 import {holds} from './holds.ts'
+import {keeper} from './keep.ts'
+import {selfSeated} from './seatcheck.ts'
 import type {Hold} from './holds.ts'
 import {avgTurn, freeAt} from './avail.ts'
 import {bump, pickIn, rankStaff} from './rotate.ts'
@@ -11,11 +13,16 @@ import {MIN} from './time.ts'
 /** floor: only that floor; skip: ignore this party's own reservation hold; busy: tables already promised (sim claims). */
 export interface Opt {floor?: Id; skip?: Id; busy?: Id[]; merge?: boolean}
 type Spot = Ent<'spot'>
-interface Ctx {p: Policy; w: World; now: number; pool: Spot[]; pairs: Spot[]; holds: Hold[]; need: number; rst: number}
+interface Ctx {p: Policy; w: World; now: number; pool: Spot[]; pairs: Spot[]; holds: Hold[]; need: number; rst: number; keep: (taken: Id[]) => Id[]; reach: Record<Id, number>}
 interface Run {free: Record<Id, number>; last: number; ss: Ent<'staff'>[]; out: SeqItem[]}
-interface Cand {s: Spot; at: number; pos: number}
-const pool = (o: Opt) => (all: Spot[]) => all.filter(s => s.spot.status !== 'blocked_private' && s.spot.floor === (o.floor ?? s.spot.floor) && !s.spot.tables.some(t => o.busy?.includes(t)))
-const ctx = (p: Policy, w: World, now: number, o: Opt): Ctx => ({p, w, now, pool: pool(o)(spots(w)), pairs: o.merge === false ? [] : pool(o)(merges(w)), holds: holds(p, w, now, o.skip), need: (avgTurn(p, w) + p.seat.resetMin) * MIN, rst: p.seat.resetMin * MIN})
+interface Cand {s: Spot; at: number; pos: number; sq: number; reach: number}
+const pool = (p: Policy, w: World, o: Opt) => (all: Spot[]) => all.filter(s => s.spot.status !== 'blocked_private' && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)) && s.spot.floor === (o.floor ?? s.spot.floor) && !s.spot.tables.some(t => o.busy?.includes(t)))
+/** How many merge options each table is part of: the fewer, the less seating it there breaks combinations up. */
+const reaches = (pairs: Spot[]) => pairs.flatMap(s => s.spot.tables).reduce<Record<Id, number>>((m, t) => ({...m, [t]: (m[t] ?? 0) + 1}), {})
+const ctx = (p: Policy, w: World, now: number, o: Opt): Ctx => {
+  const pairs = o.merge === false ? [] : pool(p, w, o)(merges(p, w))
+  return {p, w, now, pool: pool(p, w, o)(spots(w)), pairs, holds: holds(p, w, now, o.skip), need: (avgTurn(p, w) + p.seat.resetMin) * MIN, rst: p.seat.resetMin * MIN, keep: keeper(p, w, now, o.skip), reach: reaches(pairs)}
+}
 const push = (c: Ctx) => (at: number, h: Hold) => (at + c.need > h.start && at < h.end + c.rst ? h.end + c.rst : at)
 const shift = (c: Ctx, s: Spot, at: number) => c.holds.filter(h => s.spot.tables.includes(h.table)).sort((a, b) => a.start - b.start).reduce(push(c), at)
 const lead = (c: Ctx, run: Run, rk: Ranked[]) => (s: Spot) => {
@@ -24,14 +31,18 @@ const lead = (c: Ctx, run: Run, rk: Ranked[]) => (s: Spot) => {
 }
 const timed = (c: Ctx, run: Run, rk: Ranked[]) => {
   const pos = lead(c, run, rk)
-  return (s: Spot): Cand => ({s, at: Math.max(c.now, shift(c, s, run.free[s.id])), pos: pos(s)})
+  const taken = run.out.flatMap(i => i.tables)
+  return (s: Spot): Cand => ({s, at: Math.max(c.now, shift(c, s, run.free[s.id])), pos: pos(s), sq: c.keep([...taken, ...s.spot.tables]).length, reach: s.spot.tables.reduce((n, t) => n + (c.reach[t] ?? 0), 0)})
 }
 /** A single table is preferred: merges (adjacent free pairs, smallest first) only join when no single fit is ready now. */
 const cands = (c: Ctx, run: Run, rk: Ranked[], size: number): Cand[] => {
   const [one, two] = [c.pool, c.pairs].map(ss => ss.filter(s => s.spot.capacity >= size).map(timed(c, run, rk)))
-  return [...one, ...(one.some(x => x.at <= c.now) ? [] : two.filter(x => x.at <= c.now))]
+  const ready = two.filter(x => x.at <= c.now)
+  const plain = ready.filter(x => !x.s.spot.last) // last-resort merges (the centre lane) only when no other merge is ready
+  return [...one, ...(one.some(x => x.at <= c.now) ? [] : plain.length ? plain : ready)]
 }
-const order = (byPos: boolean) => (a: Cand, b: Cand) => a.s.spot.capacity - b.s.spot.capacity || (byPos ? a.pos - b.pos : 0) || a.at - b.at
+/** Ready spots: no reservation squeezed first, then the tightest fit, fewest tables, the next-up server, the table in fewest merge options. */
+const order = (byPos: boolean) => (a: Cand, b: Cand) => (byPos ? a.sq - b.sq : 0) || a.s.spot.capacity - b.s.spot.capacity || a.s.spot.tables.length - b.s.spot.tables.length || (byPos ? a.pos - b.pos || a.reach - b.reach : 0) || a.at - b.at
 const choose = (c: Ctx, cs: Cand[]) => {
   const free = cs.filter(x => x.at <= c.now)
   const near = cs.filter(x => x.at <= Math.min(...cs.map(y => y.at)) + c.p.seat.fitSlackMin * MIN)

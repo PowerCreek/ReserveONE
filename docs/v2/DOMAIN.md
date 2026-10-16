@@ -20,7 +20,11 @@ host service
     - capacity and tightest-fit baseline -> fn: fit, spots (existing); policy: seat
     - queue order and tiers -> fn: queueOrder (existing); policy: queue.tier
   - seating sides: wall side is upholstered bench (2), aisle side chairs (2): main 17-23, bar outer perimeter (B15, B21); grotto all chairs; corner booths (B14, B16, B20) are 3-tops (table surface), bar B1-B12 single stools, B22 managers' desk (blocked) -> comp: feat.tags (banquette, chairs), table.status
-  - merge: adjacent free tables combine capacities when no single spot fits -> fn: merges; policy: host.ladder[merge], merge; comp: adj, link.merged
+  - merge: tables push together when no single spot fits: any connected set (up to policy.merge.max) of free tables from the venue's runs -> fn: merges; policy: host.ladder[merge], merge.max; comp: adj, link.merged, spot.last
+    - runs: main 17-23 and 9-12, grotto G1-G3 and G4-G6, bar B20-B21 and B14-B16, upstairs two aisles (4 and 3 tables) joined along each aisle and across it -> venue data (adj)
+    - centre lane (9-12) is a last resort: offered only when no other merge is ready -> comp: adj.last
+    - walk-ins vs reservations: a spot that would leave a reservation due within clock.aheadMin without a table (or tables pushed together) is demoted and flagged -> fn: keeper (keep.ts); policy: host.score.squeeze, host.squeezeSay, host.clock.aheadMin; tie-break: fewest merge options broken
+    - bar stools (B1-B12, upstairs bar) are first come, first served: the host never offers or seats them -> policy: seat.selfSeat
   - fallback ladder when the preferred feature has run out -> fn: ladder -> Rung[]; policy: host.ladder
     - exact: the ready match -> ladder step kind exact
     - wait: a matching spot frees within the tolerance for the level -> kind wait; policy: host.ladder[].maxWaitMin

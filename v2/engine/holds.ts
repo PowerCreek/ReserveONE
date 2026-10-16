@@ -1,4 +1,4 @@
-import {having} from '../contracts/index.ts'
+import {having, partsOf} from '../contracts/index.ts'
 import type {Components, Ent, Id, Policy, Ranked, Service, World} from '../contracts/index.ts'
 import type {Hold as Standing} from '../contracts/index.ts'
 import {holdsOn} from './modes.ts'
@@ -16,7 +16,7 @@ const live: Record<Res['status'], (r: Res, now: number, grace: number) => boolea
 }
 const ofRes = (p: Policy, w: World, now: number, skip?: Id): Hold[] =>
   having(w, 'party', 'reservation').filter(e => e.id !== skip && e.reservation.table !== null && live[e.reservation.status](e.reservation, now, p.seat.lateGraceMin))
-    .map(e => ({table: e.reservation.table!, start: e.reservation.at, end: e.reservation.at + e.reservation.durationMin * MIN}))
+    .flatMap(e => partsOf(w, e.reservation.table!).map(table => ({table, start: e.reservation.at, end: e.reservation.at + e.reservation.durationMin * MIN})))
 const ofEvents = (p: Policy, w: World): Hold[] =>
   having(w, 'event').filter(e => !e.event.reclaimed).flatMap(e => e.event.tables.map(table => ({table, start: e.event.start - p.alerts.prepMin * MIN, end: e.event.end})))
 /** Time windows a table is promised away: live reservations with a table, plus private events (prep lock first). */

@@ -1,5 +1,5 @@
 // Floor view (U2, U3): top-down SVG of one floor at a time (tabs pick it), with sections, tables and their feature chips, link groups, door, units, task lines and pings.
-import {having} from '../contracts/index.ts'
+import {defaultPolicy, having} from '../contracts/index.ts'
 import type {App, Hold, Id, World} from '../contracts/index.ts'
 import {badge, chips, door, link, ping, section, table, unit} from './draw.ts'
 import {H, W, doorFloor, floorOf} from './geo.ts'
@@ -36,7 +36,7 @@ export const floorSvg = (w: World, fx: Fx[], fid?: Id, held: Holding = {holds: [
   ].join('') + '</svg>'
 }
 const tab = (w: World, fid?: Id) => (f: {id: Id; floor: {name: string}}) => {
-  const ts = having(w, 'table', 'pos').filter(t => t.pos.floor === f.id)
+  const ts = having(w, 'table', 'pos').filter(t => t.pos.floor === f.id && !defaultPolicy.seat.selfSeat.includes(t.table.shape)) // stools are first come, first served: not the host's to count
   const free = ts.filter(t => t.table.status === 'available').length
   return `<button data-act="floor" data-id="${esc(f.id)}" class="${f.id === fid ? on : btn}">${esc(f.floor.name)} <span class="text-xs opacity-75">${free}/${ts.length}</span></button>`
 }

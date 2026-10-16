@@ -12,7 +12,7 @@ export const caseOf = (p: Policy, w: World, party: Id, live: Ask[] = ['open']): 
   const req = w.ents[party]?.request
   const who = partyOf(w, party)
   const def = req && p.host.reasons[req.reason]
-  return req && live.includes(req.status) && who && def ? {party, size: who.party.size, def, req, cur: spotOf(w, req.table)} : undefined
+  return req && live.includes(req.status) && who && def ? {party, size: who.party.size, def, req, cur: spotOf(p, w, req.table)} : undefined
 }
 const tagsOf = (w: World, s: Spot): string[] => [...new Set([...(s.spot.feats ?? []), ...s.spot.tables.flatMap(t => w.ents[t]?.feat?.tags ?? [])])]
 const full = (d: ReasonDef, tags: string[]) => d.seek.every(f => tags.includes(f)) && !d.avoid.some(f => tags.includes(f))

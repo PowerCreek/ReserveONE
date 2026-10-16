@@ -20,8 +20,9 @@ export interface ResponseDef {label: string; host: string; then: {spot: Out; non
 export interface Host {
   feats: Reg<FeatDef>
   whys: Reg<WhyDef>
-  score: {level: Record<Level, number>; avoid: number; accord: Record<'all' | 'most' | 'one', number>; slack: number} // slack = penalty per spare cover
+  score: {level: Record<Level, number>; avoid: number; accord: Record<'all' | 'most' | 'one', number>; slack: number; squeeze: number} // slack = penalty per spare cover; squeeze = penalty per reservation about to arrive that the spot would leave without a table
   ladder: StepDef[]
+  squeezeSay: string // appended to a rung that would leave reservations without a table; {parties}
   clock: Clock
   reasons: Reg<ReasonDef>
   responses: Reg<ResponseDef>
@@ -42,7 +43,8 @@ export const defaultHost: Host = {
     bench: {label: 'the bench side suits us', flavour: 'function', mult: 1.5}, mobility: {label: 'mobility', flavour: 'function', mult: 3}, comfort: {label: 'comfort', flavour: 'function', mult: 1},
     occasion: {label: 'a celebration', flavour: 'occasion', mult: 1.2}, habit: {label: 'we always sit there', flavour: 'taste', mult: 0.75}, nice: {label: 'they are just nice', flavour: 'taste', mult: 0.5},
   },
-  score: {level: {need: 1000, strong: 10, soft: 3}, avoid: -1, accord: {all: 1, most: 0.75, one: 0.5}, slack: 0.5},
+  score: {level: {need: 1000, strong: 10, soft: 3}, avoid: -1, accord: {all: 1, most: 0.75, one: 0.5}, slack: 0.5, squeeze: 4},
+  squeezeSay: 'That takes the tables {parties} will need soon.',
   ladder: [
     {kind: 'exact', say: '{spot} is ready for {party}.'},
     {kind: 'wait', maxWaitMin: {strong: 15, soft: 10}, say: 'A {gives} table opens in {min} min: would {party} like to wait?'},

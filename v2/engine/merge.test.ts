@@ -12,12 +12,12 @@ import {busy, guest, room, tbl, want} from './mkit.ts'
 /** A table with neighbours: `adj` is symmetric venue data, so each side names the other. */
 const next = (e: Entity, ...ids: string[]): Entity => ({...e, adj: {with: ids}})
 const pair = (a: string, b: string, cap: number, ...tags: string[]) => [next(tbl(a, cap, tags), b), next(tbl(b, cap, tags), a)]
-const spotsOf = (w: ReturnType<typeof room>) => merges(w).map(s => [s.id, s.spot.capacity, s.spot.label])
+const spotsOf = (w: ReturnType<typeof room>) => merges(P, w).map(s => [s.id, s.spot.capacity, s.spot.label])
 test('merges: only adjacent pairs where both tables are free and ungrouped, once each, same floor', () => {
   const w = room(next(tbl('t1', 4), 't2', 't3'), next(tbl('t2', 4), 't1'), next(tbl('t3', 2, [], 'f2'), 't1'), tbl('t4', 4), next(tbl('t5', 4), 't6'), ...busy(next(tbl('t6', 4), 't5'), 30))
   assert.deepEqual(spotsOf(w), [['m:t1+t2', 8, 'T1+T2']])
   const grouped = room(...pair('a', 'b', 2), {id: 'k', link: {members: ['a', 'b']}})
-  assert.deepEqual(merges(grouped), [])
+  assert.deepEqual(merges(P, grouped), [])
 })
 test('fit: a party of 8 is one merge of two adjacent 4-tops, claimed so the next party cannot reuse its tables', () => {
   const w = room(...pair('t1', 't2', 4), tbl('t3', 4), ...pair('t4', 't5', 4))
@@ -64,11 +64,11 @@ test('seat: a merge writes a merged link so the pair is one occupied spot; clear
   const k = having(seated, 'link')
   assert.deepEqual(k.map(l => [l.link.members, l.link.merged]), [[['t1', 't2'], true]])
   assert.deepEqual(Engine.spots(seated).map(s => [s.id, s.spot.capacity, s.spot.status]), [[k[0].id, 8, 'occupied'], ['t3', 4, 'available']])
-  assert.deepEqual(merges(seated), [])
+  assert.deepEqual(merges(P, seated), [])
   const cleared = apply(seated, freeUp(seated, ['t2'], N))
   assert.deepEqual(having(cleared, 'link'), [])
   assert.deepEqual(['t1', 't2'].map(i => cleared.ents[i].table!.status), ['available', 'available'])
-  assert.deepEqual(merges(cleared).map(s => s.id), ['m:t1+t2'])
+  assert.deepEqual(merges(P, cleared).map(s => s.id), ['m:t1+t2'])
 })
 test('seat: a standing link group (not merged) survives a clear; a manual seat on a merge id pair links too', () => {
   const w = demo()

@@ -17,14 +17,14 @@ export interface Components {
   pos: {floor: Id; x: number; y: number; w: number; h: number}
   table: {label: string; capacity: number; min: number; shape: 'rect' | 'booth' | 'stool'; status: TStatus; waiter: Id | null; section: Id | null}
   link: {members: Id[]; merged?: boolean} // link group; members[0] is primary; `merged` = pushed together at seating, dissolved when the tables clear (engine.freeUp)
-  adj: {with: Id[]} // table: neighbours it can be pushed together with (venue data, derived once from positions)
+  adj: {with: Id[]; last?: boolean} // table: neighbours it can be pushed together with (venue data); last = merges using this table are a last resort (the centre lane), offered only when no other merge is ready
   party: {num: number; label: string; prefix: string; kind: PType; name: string; size: number; here?: number}
   reservation: {at: number; durationMin: number; table: Id | null; status: 'BOOKED' | 'ARRIVED' | 'SEATED' | 'NO_SHOW' | 'QUEUED'; phone: string; notes: string}
   queue: {since: number; quotedMin: number; status: 'WAITING' | 'SEATED'; from: Id | null}
   slot: {table: Id; party: Id; seatedAt: number; turnAt: number; endedAt?: number; status: 'ACTIVE' | 'LAPSED' | 'COMPLETED'; told?: {by: Id; at: number}} // told = the host told this table's server (needed where policy.service.areas[area].seen is false)
   staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number; weight?: number; area?: Id; crew?: string[]} // weight = rotation participants this unit counts as (default 1; a bartender pair = 2); area = the only area it serves (default any); crew = a pair's names
   event: {name: string; tables: Id[]; start: number; end: number; locked: Id[]; reclaimed: boolean}
-  spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]} // derived by engine.spots
+  spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]; last?: boolean} // derived by engine.spots; last = a merge through a last-resort table
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
   wants: {list: Want[]; heard: string[]} // party qualifiers; `heard` = feat ids the host recorded at intake
   offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'} // ladder proposal to a party

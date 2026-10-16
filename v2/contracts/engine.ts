@@ -32,8 +32,8 @@ export interface Engine {
 
 // Host service (wave 2): matching, fallback ladder, re-seat responses. Same shape as Engine; lanes implement `Coach`, the lead wires `HostEngine`.
 export interface Miss {feat: string; level: Level; why: string}
-export interface Fit {spot: Id; score: number; met: string[]; missed: Miss[]; waitMin: number; ready: boolean} // one candidate for a party, best first
-export interface Rung {step: string; spot: Id | null; gives: string[]; lacks: Miss[]; waitMin: number; say: string} // one proposal the host can voice; need-level wants are never lacks
+export interface Fit {spot: Id; score: number; met: string[]; missed: Miss[]; waitMin: number; ready: boolean; squeezes: Id[]} // one candidate for a party, best first; squeezes = reservations about to arrive that would be left without a spot if this one is taken
+export interface Rung {step: string; spot: Id | null; gives: string[]; lacks: Miss[]; waitMin: number; say: string; squeezes?: Id[]} // one proposal the host can voice; need-level wants are never lacks
 export interface Option {response: string; label: string; say: string; spot: Id | null} // a response the host may give to an open request
 export interface Reply {patches: Patch[]; events: HostEvent[]; move: 'swap' | 'offer' | 'stay'; mood: number; says: string}
 export interface Coach {

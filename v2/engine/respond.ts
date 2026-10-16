@@ -72,7 +72,7 @@ const ignore = (p: Policy, w: World, c: Case): Settled => {
 const take = (w: World, c: Case, s: Spot): Settled => ({patches: outcome.swap(w, c, s), events: [{ev: 'answered', party: c.party, spot: s.id, yes: true}, {ev: 'moved', party: c.party, from: c.cur?.id ?? c.req.table, to: s.id}]})
 const refuse = (c: Case): Settled => ({patches: [shut(c)], events: [no(c.party, c.req.spot ?? '')]})
 const offered = (p: Policy, w: World, now: number, c: Case): Settled => {
-  const s = spotOf(w, c.req.spot ?? '')
+  const s = spotOf(p, w, c.req.spot ?? '')
   const open = s?.spot.status === 'available' && s.spot.capacity >= c.size
   const late = age(now, c.req.at) >= p.host.clock.reseatWindowMin
   return s && open && likes(w, c, s) ? take(w, c, s) : open || late ? refuse(c) : nil
