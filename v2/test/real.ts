@@ -1,5 +1,5 @@
 // Integration rig: the real engine + real ui mounted in jsdom, exactly as main.ts builds them (minus the venue seed).
-import type {App as AppT, SimEvent, State} from '../contracts/index.ts'
+import type {App as AppT, SimOut, State} from '../contracts/index.ts'
 import {Engine} from '../engine/index.ts'
 import {App} from '../kernel/index.ts'
 import {load, step, ui} from '../ui/index.ts'
@@ -11,5 +11,5 @@ export const real = () => {
   return {el, app: app.mount(el)}
 }
 /** Run one preset headless: load it, then step the clock `sec` times at `dtMs`; returns every sim event in order. */
-export const run = (app: AppT, preset: string, sec: number, dtMs = 1000): SimEvent[] => (load(app, preset), Array.from({length: sec}, () => step(app, dtMs)).flat())
-export const count = (evs: SimEvent[]) => evs.reduce<Record<string, number>>((n, e) => ({...n, [e.ev]: (n[e.ev] ?? 0) + 1}), {})
+export const run = (app: AppT, preset: string, sec: number, dtMs = 1000): SimOut['events'] => (load(app, preset), Array.from({length: sec}, () => step(app, dtMs)).flat())
+export const count = (evs: SimOut['events']) => evs.reduce<Record<string, number>>((n, e) => ({...n, [e.ev]: (n[e.ev] ?? 0) + 1}), {})

@@ -43,7 +43,7 @@ const unqueued = (e: Entity): Entity => Object.fromEntries(Object.entries(e).fil
 type Stager = (app: App, e: Entity, x: Do<'place'>, body: NonNullable<Entity['body']>) => Patch[]
 /** seated = the engine books the table; arrived = led there, not seated: out of the queue, an accepted offer on the table marks where. */
 const stages: Record<Do<'place'>['stage'], Stager> = {
-  seated: (app, e, x, body) => [...complain(app, ask(app, 'seat', {size: e.party!.size, kind: e.party!.kind, party: e.id, tables: [x.table]})), {op: 'set', id: e.id, parts: {body}}],
+  seated: (app, e, x, body) => (app.apply([{op: 'set', id: e.id, parts: {body}}]), complain(app, ask(app, 'seat', {size: e.party!.size, kind: e.party!.kind, party: e.id, tables: [x.table]}))), // at the table first: the seating then queues the guest's wait for service
   arrived: (app, e, x, body) => [{op: 'del', id: e.id}, {op: 'add', ent: {...unqueued(e), body, offer: {spot: x.table, step: 'exact', gives: [], lacks: [], at: app.store.state.now, status: 'accepted'}}}],
 }
 const place: Doer<'place'> = (app, x, id) => {

@@ -17,7 +17,12 @@ import {ladder} from './ladder.ts'
 import {ask} from './ask.ts'
 import {options} from './options.ts'
 import {respond} from './respond.ts'
-export {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond}
+import {modeAt} from './modes.ts'
+import {standing as holds} from './holds.ts'
+import {assign} from './assign.ts'
+import {knows} from './knows.ts'
+import {tell} from './tell.ts'
+export {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}
 export {apply} from './patch.ts'
 export {queueOrder, line} from './queue.ts'
 export {freeUp} from './free.ts'
@@ -26,5 +31,6 @@ export {sectionStats} from './section.ts'
 export {askedEvent} from './ask.ts'
 export {settle} from './respond.ts'
 export {heard} from './heard.ts'
+export {toldEvents} from './tell.ts'
 export type Engine = HostEngine
-export const Engine: HostEngine = {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond}
+export const Engine: HostEngine = {spots, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell}

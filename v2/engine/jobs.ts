@@ -8,6 +8,7 @@ import {bus} from './bus.ts'
 import {bodyOf, emit} from './simctx.ts'
 import type {Ctx, Stage} from './simctx.ts'
 import {set} from './patch.ts'
+import {knows} from './knows.ts'
 type Of<K extends Task['do']> = Extract<Task, {do: K}>
 type Job = (c: Ctx, w: World, id: Id) => Task[]
 /** Tasks other staff already hold (guests' passive tasks are not claims). */
@@ -27,14 +28,17 @@ const offer = (c: Ctx, w: World, q: Pty): { q: Pty; table: Id }[] => {
   const t = !engaged(q) && !q.body?.task && !seats(w).some(s => s.party === q.id) ? spot(c, w, seats(w).map(s => s.table), q) : undefined
   return t ? [{q, table: t}] : []
 }
-const hostJob: Job = (c, w) => {
+const hostSeats: Job = (c, w) => {
   const o = line(c.p, w).flatMap(q => offer(c, w, q))[0]
   return o ? trip(c, w, o.table, {do: 'seat', party: o.q.id, table: o.table}, c.p.sim.dwellSec.seat) : []
 }
+const noJob: Job = () => []
+/** The sim host seats only when the policy lets it (`sim.autoSeat`); otherwise the player seats. */
+const hostJob: Job = (c, w, id) => ({true: hostSeats, false: noJob}[String(c.p.sim.autoSeat) as 'true' | 'false'])(c, w, id)
 const serverJob: Job = (c, w, id) => {
   const held = inflight(w).filter((t): t is Of<'serve'> => t.do === 'serve').map(t => t.table)
   const asks = having(w, 'party', 'body').flatMap(g => (g.body.task?.do === 'serve' ? [g.body.task.table] : []))
-  const mine = asks.filter(t => !held.includes(t) && [id, null].includes(w.ents[t]?.table?.waiter ?? null))[0]
+  const mine = asks.filter(t => !held.includes(t) && [id, null].includes(w.ents[t]?.table?.waiter ?? null) && knows(c.p, w, c.now, t))[0]
   return mine ? trip(c, w, mine, {do: 'serve', table: mine}, c.p.sim.dwellSec.serve) : []
 }
 const busserJob: Job = (c, w) => {

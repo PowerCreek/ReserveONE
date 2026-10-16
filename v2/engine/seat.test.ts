@@ -60,3 +60,10 @@ test('seat: skip-next is cleared by any seating', () => {
   const skipped = {...w, ents: {...w.ents, w2: {...w.ents.w2, staff: {...w.ents.w2.staff!, skip: 300}}}}
   assert.equal(okay({size: 2, tables: ['t5']}, skipped).w.ents.w2.staff!.skip, 0)
 })
+test('seat: a party with a body walks to the table and awaits service (the one path for stand, runner and sim host)', () => {
+  const body = {role: 'guest' as const, x: 0, y: 0, speed: 80, task: null, backlog: [], party: 'pty7'}
+  const w = demo()
+  const {w: w1} = okay({size: 2, queue: 'pty7', floor: 'f1'}, {...w, ents: {...w.ents, pty7: {...w.ents.pty7, body}}})
+  assert.deepEqual([w1.ents.pty7.body!.task, w1.ents.pty7.body!.backlog], [{do: 'move', x: 440 + 40, y: 40 + 40}, [{do: 'serve', table: 't5'}]])
+  assert.equal(okay({size: 2, queue: 'pty7', floor: 'f1'}).w.ents.pty7.body, undefined) // no body, nothing to send
+})

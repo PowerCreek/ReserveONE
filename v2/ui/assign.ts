@@ -11,13 +11,8 @@ type Svc = Components['service']
 const svcOf = (w: World): Svc => ({override: null, carve: {}, ...w.ents.service?.service})
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 const nat = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true})
-/** The schedule row in force at `now` (local minute of day, as the engine reads it). */
-export const slice = (now: number) => {
-  const d = new Date(now)
-  return cfg.schedule.filter(s => s.from <= d.getHours() * 60 + d.getMinutes()).at(-1)
-}
-/** Active mode id: the engine's answer, else the override, else the schedule (so the floor still reads without the service). */
-export const modeNow = (app: App): string => ask(app, 'modeAt') ?? svcOf(app.store.state.world).override ?? slice(app.store.state.now)?.mode ?? 'sectioned'
+/** Active mode id: always the engine's answer (it owns the clock and the override); without the service the override, else the first mode. */
+export const modeNow = (app: App): string => ask(app, 'modeAt') ?? svcOf(app.store.state.world).override ?? Object.keys(cfg.modes)[0]
 /** Whether holds are in force now (policy.service.modes[mode].holds). */
 export const live = (app: App) => cfg.modes[modeNow(app)]?.holds ?? false
 export const holdsOf = (app: App): Hold[] => ask(app, 'holds') ?? []
@@ -56,10 +51,7 @@ const modes = (app: App) => {
   const over = svcOf(app.store.state.world).override
   return [pill('svcmode', 'data-to="auto"', 'Follow schedule', over === null), ...Object.entries(cfg.modes).map(([id, m]) => pill('svcmode', `data-to="${id}"`, m.label, over === id))].join('')
 }
-const sched = (app: App) => {
-  const now = slice(app.store.state.now)
-  return cfg.schedule.map(s => `<span class="${s === now ? 'font-semibold text-sky-600 dark:text-sky-400' : 'text-slate-500'}">${hhmm(s.from)} ${esc(labelOf(s.mode))}</span>`).join(' &rarr; ')
-}
+const sched = () => cfg.schedule.map(s => `<span class="text-slate-500">${hhmm(s.from)} ${esc(labelOf(s.mode))}</span>`).join(' &rarr; ')
 const readout = (app: App) => {
   const over = svcOf(app.store.state.world).override
   return `<p class="text-sm">Now: <b data-mode-now>${esc(labelOf(modeNow(app)))}</b> <span class="text-xs text-slate-500">${over ? 'manual override' : 'by schedule'}${live(app) ? '' : ' (no standing holds)'}</span></p>`
@@ -95,7 +87,7 @@ const tops = (app: App) => (id: string) => {
 const draw = (app: App) => {
   const w = app.store.state.world
   const piece = Object.keys(cfg.areas).filter(id => cfg.areas[id].carve.includes('tops') && carveOf(w, id) === 'tops' && tablesOf(w, id).length)
-  return `<h2 class="mb-2 text-sm font-semibold">Service mode</h2>${readout(app)}<p class="my-1 text-xs">${sched(app)}</p>` +
+  return `<h2 class="mb-2 text-sm font-semibold">Service mode</h2>${readout(app)}<p class="my-1 text-xs">${sched()}</p>` +
     `<div class="flex flex-wrap items-center gap-2">${modes(app)}<span class="mx-1">|</span>${deal(app)}</div>` +
     `<ul class="mt-2 divide-y divide-slate-200 dark:divide-slate-700">${Object.entries(cfg.areas).map(area(app)).join('')}</ul>` +
     (piece.length && !live(app) ? '<p class="mt-2 text-xs text-slate-500">Tops are ignored while this mode has no standing holds.</p>' : '') + piece.map(tops(app)).join('')

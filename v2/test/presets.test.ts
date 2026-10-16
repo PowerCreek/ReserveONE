@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {presets, step} from '../ui/index.ts'
 import {count, real, run} from './real.ts'
+// presets are the sim host's own sandbox: it seats for them
+defaultPolicy.sim.autoSeat = true
 const stuck = (evs: {ev: string}[]) => evs.filter(e => e.ev === 'stuck')
 // Turns last 45-90 sim minutes, so cleared/left only appear after the first two minutes: phase 1 is the literal 120 s, phase 2 coasts on (no new arrivals; the ui repaint of a 300-party queue dominates jsdom time).
 Object.keys(presets).forEach(id => test(`preset ${id}: 120 sim seconds seat and serve, then a full turn clears and leaves, never stuck`, () => {

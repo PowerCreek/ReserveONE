@@ -109,7 +109,7 @@ test('rotation: tops note says holds are off; pairs are one weighted card per le
   assert.match(pair[0].textContent!, /Bar: Cy \+ Di.*pair x2.*covers 8 \(4\.0 per weight\)/)
   assert.equal(el.querySelectorAll('[data-units] [data-unit]').length, 3) // two servers + one pair, never one slot per bartender
 })
-test('degrades without the service: readout falls back to the schedule and Deal warns', async () => {
+test('degrades without the service: the readout never recomputes the clock (first mode) and Deal warns', async () => {
   const el = dom().getElementById('app')!
   const s = seed()
   s.now = NOON
@@ -117,7 +117,7 @@ test('degrades without the service: readout falls back to the schedule and Deal 
   const app = App.create(s).use(a => a.provide('engine', fake() as HostEngine)).use(ui)
   app.mount(el)
   await settle()
-  assert.equal(text(el, '[data-mode-now]'), 'Rotation')
+  assert.equal(text(el, '[data-mode-now]'), 'Sectioned')
   click(el, '[data-act="svcdeal"]')
   assert.match(app.store.state.ui.log![0].msg, /No assign service/)
 })

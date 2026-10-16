@@ -34,16 +34,18 @@ test('the built page boots in jsdom without errors, shows the selected floor, th
   assert.match(doc.querySelector('[data-stand]')!.textContent!, /At the door[\s\S]*Greet/)
   win.close()
 })
-test('seed: 4 floors, 66 sectioned, featured tables inside the policy floor, a host, 3 servers and a busser, ids equal keys, plus the door', () => {
+test('seed: 4 floors, 66 held and featured tables inside the policy floor, a host, 4 servers, 2 bartender pairs and a busser, ids equal keys, plus the door and the service entity', () => {
   const w = seed().world
   const [fw, fh] = defaultPolicy.sim.floor
   assert.equal(having(w, 'floor').length, 4)
   assert.equal(having(w, 'table', 'pos').length, 66)
   assert.ok(Object.entries(w.ents).every(([k, e]) => e.id === k))
-  assert.ok(having(w, 'table').every(t => t.table.section !== null && t.table.status === 'available' && (w.ents[t.id].feat?.tags.length ?? 0) > 0))
+  assert.ok(having(w, 'table').every(t => t.table.status === 'available' && (w.ents[t.id].feat?.tags.length ?? 0) > 0))
+  assert.ok(having(w, 'table').every(t => t.table.section !== null || w.ents[t.id].assign || ['bar', 'upstairs'].includes(w.ents[t.id].area?.id ?? '')), 'every table has a holder: section, dealt top, or area pair')
   assert.ok(having(w, 'table', 'pos').every(t => t.pos.x + t.pos.w <= fw && t.pos.y + t.pos.h <= fh))
-  assert.deepEqual(having(w, 'section').map(s => s.id), ['sec_main', 'sec_bar', 'sec_out'])
-  assert.deepEqual(having(w, 'body').map(b => b.body.role).sort(), ['busser', 'host', 'server', 'server', 'server'])
-  assert.ok(having(w, 'table').every(t => w.ents[t.table.section!]?.section), 'every table sits in a section a server covers')
+  assert.deepEqual(having(w, 'section').map(s => s.id), ['sec_m1', 'sec_m2', 'sec_m3', 'sec_m4', 'sec_grotto'])
+  assert.deepEqual(having(w, 'body').map(b => b.body.role).sort(), ['busser', 'host', ...Array(6).fill('server')])
+  assert.ok(having(w, 'table').every(t => !t.table.section || w.ents[t.table.section]?.section), 'a table section is a declared section')
+  assert.deepEqual(w.ents.service.service, {override: null, carve: {main: 'chunk', grotto: 'whole', patio: 'tops', bar: 'level', upstairs: 'level'}})
   assert.deepEqual([w.ents.door.pos!.x, w.ents.door.pos!.y], defaultPolicy.sim.door)
 })

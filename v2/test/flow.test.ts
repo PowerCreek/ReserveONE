@@ -85,3 +85,27 @@ test('starter table-change: both parties raise their request (announced as asked
   assert.equal(evs.filter(e => e.ev === 'asked').length, 2)
   assert.ok(evs.some(e => e.ev === 'left'), 'unanswered requests and patience end in parties leaving')
 })
+const served = (evs: {ev: string}[]) => evs.filter(e => e.ev === 'served')
+const sim = (app: AppT, sec: number) => Array.from({length: sec}, () => step(app, 1000)).flat()
+// The stand seats a led party at `spot`; the ladder picks no particular area, so the offer is placed by hand on a main-floor and a patio table.
+const ledTo = async (spot: string) => {
+  const {el, app} = await fresh()
+  uiOf(app).rate = 0
+  app.apply([{op: 'set', id: 'pty1', parts: {offer: {spot, step: 'exact', gives: [], lacks: [], at: app.store.state.now, status: 'accepted'}}}])
+  uiOf(app).rev++
+  await settle()
+  await tap(el, '[data-act="stand-seatled"]')
+  return {el, app}
+}
+test('fresh seed: a party the stand seated on the main floor is served without a Tell (the seating queued the guest for service)', async () => {
+  const {app} = await ledTo('rf_5')
+  assert.deepEqual(world(app).ents.pty1.body!.backlog, [{do: 'serve', table: 'rf_5'}])
+  assert.equal(served(sim(app, 240)).length, 1)
+})
+test('fresh seed: a party the stand seated on the patio waits unserved until Tell on the stand, then is served', async () => {
+  const {el, app} = await ledTo('rf_p1')
+  assert.equal(served(sim(app, 240)).length, 0, 'not told yet')
+  await tap(el, '[data-act="stand-tell"]')
+  assert.equal(having(world(app), 'slot').find(s => s.slot.party === 'pty1')!.slot.told?.by, 'host')
+  assert.equal(served(sim(app, 240)).length, 1, 'served after Tell')
+})

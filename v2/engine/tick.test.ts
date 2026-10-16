@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {Engine, apply, heard} from './index.ts'
-import {N, P, mins, table, world} from './testkit.ts'
-import type {Entity, SimEvent, World} from '../contracts/index.ts'
+import {N, P as base, mins, table, world} from './testkit.ts'
+import type {Entity, SimOut, World} from '../contracts/index.ts'
+const P = {...base, sim: {...base.sim, autoSeat: true}} // these tests exercise the sim host itself
 const unit = (id: string, role: 'host' | 'server' | 'busser', x: number, extra: Partial<Entity> = {}): Entity =>
   ({id, body: {role, x, y: 0, speed: P.sim.walkPxPerSec, task: null, backlog: [], party: null}, ...extra})
 const room = (): World => world([
@@ -10,7 +11,7 @@ const room = (): World => world([
   unit('host', 'host', 20), unit('bus', 'busser', 40),
   unit('srv', 'server', 60, {staff: {name: 'Sam', active: true, sections: ['sA'], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 18}}),
 ])
-interface Run {w: World; now: number; log: SimEvent[]}
+interface Run {w: World; now: number; log: SimOut['events']}
 const step = (r: Run, dt = 500): Run => {
   const out = Engine.tick(P, r.w, r.now + dt, dt)
   return {w: apply(r.w, out.patches), now: r.now + dt, log: [...r.log, ...out.events]}
@@ -108,4 +109,37 @@ test('sim: a world without a door entity spawns guests at the policy door; a par
   const held = apply(room(), [{op: 'add', ent: waiting(1, 1, {offer: {spot: 't1', step: 'exact', gives: [], lacks: [], at: N, status: 'accepted'}})}])
   const r = until({w: held, now: N, log: []}, r => r.now > N + mins(1), undefined, 1000)
   assert.deepEqual(r.log, [])
+})
+// ---- service: the sim host seats only when the policy says so; a seated guest is served only by a server who knows
+const down = (id: string, area?: string): Entity => ({...table(id, 10, 'available', 'sA', null, 'f1', 160), assign: {staff: 'srv'}, ...(area ? {area: {id: area}} : {})}) // sectioned at N: a dealt top
+const seated = (area?: string): Run => { // the stand seats a guest the sim spawned; the sim host (autoSeat off) is not involved
+  const w = apply(room(), Engine.spawn(base, room(), N, 7))
+  const w1 = {...w, ents: {...w.ents, t1: down('t1', area)}}
+  const guest = Object.values(w1.ents).find(e => e.queue)!
+  const d = Engine.seat(base, w1, N, {size: guest.party!.size, kind: 'W', party: guest.id, tables: ['t1']})
+  assert.ok(d.ok)
+  return {w: apply(w1, d.ok ? d.patches : []), now: N, log: []}
+}
+const stepBase = (r: Run, dt = 500): Run => {
+  const out = Engine.tick(base, r.w, r.now + dt, dt)
+  return {w: apply(r.w, out.patches), now: r.now + dt, log: [...r.log, ...out.events]}
+}
+const runBase = (r: Run, done: (r: Run) => boolean, max = 1200): Run => (done(r) || max === 0 ? r : runBase(stepBase(r), done, max - 1))
+test('sim: with autoSeat off (the default) the host never seats a waiting party', () => {
+  const w = apply(room(), Engine.spawn(base, room(), N, 7))
+  const r = runBase({w, now: N, log: []}, x => x.now >= N + mins(5))
+  assert.deepEqual([base.sim.autoSeat, evs(r).filter(e => e !== 'arrived')], [false, []])
+})
+test('sim: a guest the stand seated is served at once on the main floor (the seating hands its body the serve task)', () => {
+  const r = runBase(seated(), x => evs(x).includes('served'))
+  assert.deepEqual(evs(r).filter(e => e !== 'arrived'), ['served'])
+  assert.deepEqual(r.log.filter(e => e.ev === 'served'), [{ev: 'served', table: 't1', by: 'srv'}])
+})
+test('sim: a patio seating stays unserved until the host tells the server, then is served', () => {
+  const r = runBase(seated('patio'), x => x.now >= N + mins(5))
+  assert.deepEqual(evs(r).filter(e => e !== 'arrived'), [])
+  const d = Engine.tell(base, r.w, r.now, 't1')
+  assert.ok(d.ok)
+  const after = runBase({...r, w: apply(r.w, d.ok ? d.patches : [])}, x => evs(x).includes('served'))
+  assert.deepEqual(evs(after).filter(e => e !== 'arrived'), ['served'])
 })

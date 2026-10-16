@@ -22,6 +22,11 @@ const floors: [id: string, name: string, items: Item[]][] = [['rf1', 'Main Dinin
 /** Area per floor; the six `rf_g*` booths on the main floor are the grotto. */
 const areaOf: Record<string, string> = {rf1: 'main', rf2: 'bar', rf3: 'patio', rf4: 'upstairs'}
 const area = (fid: string, id: string) => (id.startsWith('rf_g') ? 'grotto' : areaOf[fid]!)
+/** Features (policy.host.feats ids) per floor, per shape and per table; a table carries the union. */
+const byFloor: Record<string, string[]> = {rf1: [], rf2: ['loud'], rf3: ['patio', 'window', 'sunny'], rf4: ['quiet']}
+const byShape: Record<Shape, string[]> = {booth: ['booth'], rect: ['chairs']}
+const byTable: Record<string, string[]> = {rf_g1: ['door'], rf_g2: ['door'], rf_1: ['window'], rf_2: ['window'], rf_9: ['accessible'], rf_10: ['accessible'], rf_24: ['roomy'], rf_u8: ['roomy'], rf_u_bar: ['bar'], rf_b20: ['hightop'], rf_b22: ['hightop']}
+const tags = (fid: string, id: string, shape: Shape) => [...byShape[shape], ...(byFloor[fid] ?? []), ...(byTable[id] ?? [])]
 const size = (cap: number, shape: Shape): [number, number] => (shape === 'booth' ? [120, 80] : cap <= 2 ? [40, 80] : cap <= 4 ? [80, 80] : [Math.ceil(cap / 2) * 40, 80])
 const CANVAS = [1200, 720] // v1 canvas the flow was laid out on
 const GAP = 16, MARGIN = 40
@@ -38,7 +43,7 @@ export const venue = (floor: [number, number]): Entity[] => {
   return floors.flatMap(([fid, name, items]): Entity[] => [
     {id: fid, floor: {name, active: true}},
     ...flow(items).map(({item: [id, label, capacity, shape], x, y, w, h}): Entity => ({
-      id, area: {id: area(fid, id)}, pos: {floor: fid, x: Math.round(x * kx), y: Math.round(y * ky), w: Math.round(w * kx), h: Math.round(h * ky)},
+      id, area: {id: area(fid, id)}, feat: {tags: tags(fid, id, shape)}, pos: {floor: fid, x: Math.round(x * kx), y: Math.round(y * ky), w: Math.round(w * kx), h: Math.round(h * ky)},
       table: {label, capacity, min: 1, shape, status: 'available', waiter: null, section: null},
     })),
   ])

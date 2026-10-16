@@ -1,21 +1,17 @@
 import {having} from '../contracts/index.ts'
-import type {Components, Entity, Patch, Task, World} from '../contracts/index.ts'
+import type {Components, Entity, Task} from '../contracts/index.ts'
 import {add, del, set} from './patch.ts'
-import {center, partyOf, phase} from './ents.ts'
+import {partyOf, phase} from './ents.ts'
 import {bodyOf, emit, skip} from './simctx.ts'
 import type {Stage} from './simctx.ts'
 import {seat} from './seat.ts'
 import {freeUp} from './free.ts'
 type Of<K extends Task['do']> = Extract<Task, {do: K}>
-const follow = (w: World, t: Of<'seat'>): Patch[] => {
-  const gb = w.ents[t.party]?.body
-  return gb ? [set(t.party, {body: {...gb, task: {do: 'move', ...center(w, t.table)}, backlog: [{do: 'serve', table: t.table}]}})] : []
-}
 const seated: Stage = (c, id, a) => {
   const t = a.done as Of<'seat'>
   const who = partyOf(a.w, t.party)
   const r = who ? seat(c.p, a.w, c.now, {size: who.party.size, kind: who.party.kind, party: t.party, tables: [t.table]}) : ({ok: false, err: 'party is gone'} as const)
-  return r.ok ? emit(a, [...r.patches, ...follow(a.w, t)], [{ev: 'seated', party: t.party, table: t.table, by: id}]) : emit(a, [], [{ev: 'stuck', unit: id, task: t, why: r.err}])
+  return r.ok ? emit(a, r.patches, [{ev: 'seated', party: t.party, table: t.table, by: id}]) : emit(a, [], [{ev: 'stuck', unit: id, task: t, why: r.err}])
 }
 const served: Stage = (_c, id, a) => {
   const t = a.done as Of<'serve'>
