@@ -18,4 +18,4 @@ export interface AuditEntry{id:string;at:string;actor:'host'|'system';action:'cr
 export interface Ref{label:string;value:string;tid?:string;warn?:boolean}
 export interface Receipt{k:number;title:string;refs:Ref[]}
 /** Simulation door list: guests at/heading to the door. 'walkin' = party (here of size present); 'arrive' = +size guests for an existing reservation or queued party. */
-export interface SimEntry{id:string;at:string;kind:'walkin'|'arrive';name:string;size:number;here?:number;ref?:{type:'res'|'queue';id:string}}
+export interface SimEntry{id:string;at:string;kind:'walkin'|'arrive';name:string;size:number;here?:number;ref?:{type:'res'|'queue';id:string};party_id?:number;prefix?:string;type?:PType}

@@ -19,7 +19,8 @@ export function unseatToQueue(d:Data,slotId:string,now:number):{d:Data;label:str
 export function unqueueToDoor(d:Data,qid:string,now:number):Data|null{
   const q=d.queue.find(x=>x.id===qid&&x.status==='WAITING');if(!q)return null;
   const res=q.origin_reservation_id?d.reservations.find(r=>r.id===q.origin_reservation_id):undefined,at=new Date(now).toISOString();
-  const e:SimEntry=res?{id:`se_back_${q.id}`,at,kind:'arrive',name:res.name,size:res.party_size,ref:{type:'res',id:res.id}}:{id:`se_back_${q.id}`,at,kind:'walkin',name:q.name,size:q.party_size,here:hereQ(q)};
+  const e:SimEntry=res?{id:`se_back_${q.id}`,at,kind:'arrive',name:res.name,size:res.party_size,ref:{type:'res',id:res.id}}:
+    {id:`se_back_${q.id}`,at,kind:'walkin',name:q.name,size:q.party_size,here:hereQ(q),party_id:q.party_id,prefix:q.prefix,type:q.type};
   return{...d,queue:d.queue.filter(x=>x.id!==q.id),sim:[...(d.sim??[]),e],
     reservations:res?d.reservations.map(r=>r===res?{...r,status:'BOOKED',arrived_count:0,arrived_at:undefined}:r):d.reservations};
 }

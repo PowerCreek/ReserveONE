@@ -69,3 +69,8 @@ export const applyLink=(assocs:Assoc[],ids:string[]):Assoc[]=>{
 export const dissolve=(assocs:Assoc[],sel:string[])=>assocs.filter(a=>!members(a).some(m=>sel.includes(m)));
 export const removeFromGroup=(assocs:Assoc[],sel:string[])=>assocs.map(a=>{
   const m=members(a).filter(x=>!sel.includes(x));return m.length===members(a).length?a:{...a,primary_table_id:m[0]??a.primary_table_id,associated_table_ids:m.slice(1)}});
+/** touched = sel overlaps at least one group; full = every group sel touches has ALL its members in sel (Remove-from-Group would be redundant/messy there — Dissolve is the one clean action). */
+export function groupTouch(assocs:Assoc[],sel:string[]):{touched:boolean;full:boolean}{
+  const hit=assocs.filter(a=>members(a).some(m=>sel.includes(m)));
+  return{touched:hit.length>0,full:hit.length>0&&hit.every(a=>members(a).every(m=>sel.includes(m)))};
+}

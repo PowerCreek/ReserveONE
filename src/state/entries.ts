@@ -76,7 +76,7 @@ export const addArrived=(A:App,t:{kind:'res'|'queue';id:string},delta:number)=>{
   else{const q=d.queue.find(x=>x.id===t.id),r=q?.origin_reservation_id?d.reservations.find(x=>x.id===q.origin_reservation_id):undefined;cur=r?hereRes(r):q?hereQ(q):0}
   setArrived(A,t,cur+delta)};
 /** THE way to add a party to the queue (Fast seating, N-top cards, simulation door list). `here` < size = a partial walk-in party (rest still coming). */
-export function addToQueue(A:App,o:{name?:string;size:number;type?:PType;prefix?:string;here?:number;quoted?:number;notes?:string;id?:string;refs?:Ref[];quiet?:boolean}){
+export function addToQueue(A:App,o:{name?:string;size:number;type?:PType;prefix?:string;here?:number;quoted?:number;notes?:string;id?:string;party_id?:number;refs?:Ref[];quiet?:boolean}){
   const r=enqueue(A.data,o),here=r.entry.arrived_count??o.size;
   A.mutate(d=>enqueue(d,{...o,id:r.entry.id}).d);
   if(!o.quiet)A.receipt('Added to queue',[{label:'Party',value:`${r.label} · ${o.size}`},{label:'Guest',value:r.entry.name},{label:'Position',value:'#'+r.pos},...(here<o.size?[{label:'Here',value:`${here}/${o.size}`,warn:true}]:[]),...(o.refs??[])]);

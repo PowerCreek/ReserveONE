@@ -3,7 +3,7 @@ import {MIN,dayKey,dayStartMs,holdsFrom} from './party';
 import {buildUnits} from './geometry';
 import {planSequence} from './predict';
 const TIER:Record<string,number>={P:0,V:1,W:2,R:2};
-/** Single source of queue order (priority/VIP first, then oldest). Used by the Queue panel and walk-in quotes. */
+/** Single source of queue order: P (priority, active service recovery) first, then V (VIP, host discretion), then W/R (ordinary) by how long they've waited. See HANDOFF.md "Priority seating policy". Used by the Queue panel and walk-in quotes. */
 export const queueOrder=(q:QueueEntry[])=>q.filter(x=>x.status==='WAITING').sort((a,b)=>TIER[a.type]-TIER[b.type]||Date.parse(a.queued_at)-Date.parse(b.queued_at));
 export interface TEvent{at:number;kind:'in'|'out';covers:number;proj:boolean}
 /** Covers in/out events: observed (seated_at / ended_at <= now) and projected (turn times of occupied tables, reservation arrivals). Overdue turns/late arrivals project to 'now'. */

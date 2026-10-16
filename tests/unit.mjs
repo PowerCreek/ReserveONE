@@ -7,7 +7,9 @@ t('relabel HSW-7',m.relabel({party_label:'HSW-7'}).party_label==='HS-W-7');t('re
 t('dayKey/shiftDay roundtrip',m.shiftDay(m.shiftDay('2026-03-08',1),-1)==='2026-03-08'&&m.shiftDay('2026-12-31',1)==='2027-01-01');
 const ev=(s,e)=>({id:'e1',name:'X',table_ids:['t13'],start:iso(s),end:iso(e),locked_ids:[],reclaimed:false}),e=ev(N+100*MIN,N+220*MIN);
 t('state PENDING',m.eventState(e,N)==='RESERVED_PENDING');t('state PREP',m.eventState(e,N+71*MIN)==='BLOCKED_PREP');t('state ACTIVE',m.eventState(e,N+101*MIN)==='ACTIVE_EVENT');t('state EXPIRING',m.eventState(e,N+210*MIN)==='EXPIRING_WARNING');t('state EXPIRED',m.eventState(e,N+221*MIN)==='EXPIRED_RECLAIMED');
-const d0=m.createSeed(N),d1={...d0,events:[ev(N+10*MIN,N+100*MIN)]},r1=m.reconcile(d1,N),tb=x=>x.tables.find(q=>q.id==='t13');
+const seed0=m.createSeed();
+t('clean-slate seed (real deployment): just the 4 real floors, no demo data',seed0.floors.length===4&&seed0.floors.map(f=>f.name).join(',')==='Main Dining Room,Bar,Patio,Upstairs'&&seed0.sections.length===0&&seed0.waiters.length===0&&seed0.slots.length===0&&seed0.reservations.length===0&&seed0.queue.length===0&&seed0.tables.length===66&&seed0.tables.every(x=>x.section_id===null));
+const d0=m.testData(N),d1={...d0,events:[ev(N+10*MIN,N+100*MIN)]},r1=m.reconcile(d1,N),tb=x=>x.tables.find(q=>q.id==='t13');
 t('prep locks',tb(r1).status==='blocked_private');t('idempotent',m.reconcile(r1,N)===r1);t('expiry reclaims',tb(m.reconcile(r1,N+101*MIN)).status==='available');
 t('auto-lapse',m.reconcile(d0,N+30*MIN).slots.find(s=>s.id==='s1').status==='LAPSED');
 t('event hold -30m',m.holdsFrom([],N,[ev(N+100*MIN,N+220*MIN)])[0].start===N+70*MIN);
@@ -52,6 +54,9 @@ t('deleting a member dissolves a pair',m.normalizeAssociations([far[0]],as).leng
 t('3-group minus one keeps remaining pair',m.normalizeAssociations([...far],m.applyLink([],['p','q','r']))[0].associated_table_ids.length===1);
 t('cross-floor link rejected (only rule)',m.planLink([far[0],{...far[1],floor_id:'g'}],[],['p','q']).err==='Linked tables must be on the same floor');
 t('single table rejected',m.planLink(far,[],['p']).err==='Select 2+ tables to link');
+t('groupTouch: no group touched',!m.groupTouch(as,['z']).touched);
+t('groupTouch: partial selection is touched but not full',m.groupTouch(as,['p']).touched&&!m.groupTouch(as,['p']).full);
+t('groupTouch: full selection of a group is touched and full',m.groupTouch(as,['p','q']).touched&&m.groupTouch(as,['p','q']).full);
 // bubble fill (hulls)
 const inP=(p,pts)=>{let c=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const a=pts[i],b=pts[j];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)c=!c}return c};
 g=m.sectionGraph([TB('a',0,0),TB('b',300,0)],[]);t('pair bubble fills the whole gap band',g.polys.length===1&&inP({x:190,y:5},g.polys[0])&&inP({x:190,y:75},g.polys[0])&&!inP({x:190,y:95},g.polys[0]));
@@ -82,7 +87,7 @@ const lnk=m.seatParty(d0,{size:4,prefix:'HS',type:'W'},['t1'],'f1',N,'selected')
 t('ledger labels a linked group A1+A2',m.ledgerEvents(lnk.d,m.dayKey(N)).some(e=>e.label==='A1+A2'&&e.covers===4&&e.kind==='in'));
 const base=Math.floor(N/(5*MIN))*5*MIN,es=[{at:base+MIN,kind:'in',label:'X',covers:4,tid:'x'},{at:base+4*MIN,kind:'out',label:'Y',covers:3,tid:'y'},{at:base+7*MIN,kind:'in',label:'Z',covers:2,tid:'z'}];
 const b5=m.bucketEvents(es,5);t('bucket 5m: 2 rows, newest first, net covers',b5.length===2&&b5[0].es[0].label==='Z'&&b5[0].net===2&&b5[1].net===1);t('bucket 1m splits into 3',m.bucketEvents(es,1).length===3);
-const ts=m.tableStates(d0,'f1',N),by=l=>ts.find(x=>x.unit.label===l);
+const ts=m.tableStates(d0,N,'f1'),by=l=>ts.find(x=>x.unit.label===l);
 t('table states: seated(+covers)/lapsed/reserved/open',by('A3').state==='seated'&&by('A3').covers===4&&by('B2').state==='lapsed'&&by('B3').state==='reserved'&&by('A1+A2').state==='open'&&by('C3').state==='open');
 // pinch
 const pv=m.pinchView(1,100,200,{x:600,y:360},{x:.5,y:.5},1200,720);t('pinch out doubles zoom around midpoint',pv.zoom===2&&pv.pan.x===300&&pv.pan.y===180);
@@ -235,6 +240,8 @@ t('starter populates walk-ins AND reservation arrivals',(()=>{const s=m.genStart
  // unqueue -> door
  const ub=m.unqueueToDoor(e1.d,e1.entry.id,N);
  t('unqueue (walk-in): leaves the queue, returns as a door entry with the guests who are here',!ub.queue.some(q=>q.id===e1.entry.id)&&ub.sim.some(x=>x.kind==='walkin'&&x.name==='Zed'&&x.size===3&&x.here===3));
+ const se=ub.sim.find(x=>x.name==='Zed'),e2=m.enqueue(ub,{id:'q2',name:se.name,size:se.size,here:se.here,party_id:se.party_id,prefix:se.prefix,type:se.type},N);
+ t('door->queue round trip keeps the same party_id/label (no re-mint) and does not bump nextPartyId',e2.entry.party_id===e1.entry.party_id&&e2.label===m.partyLabel(e1.entry.prefix,e1.entry.type,e1.entry.party_id)&&e2.d.nextPartyId===ub.nextPartyId);
  t('unqueue (reservation): booked again + door arrival for the reservation',(()=>{const pr={...dr,reservations:dr.reservations.map(x=>x.id==='rq'?{...x,status:'QUEUED',arrived_count:2}:x),queue:[{...e1.entry,id:'qx',origin_reservation_id:'rq',party_size:2,arrived_count:2}]},r=m.unqueueToDoor(pr,'qx',N);return r.reservations.find(x=>x.id==='rq').status==='BOOKED'&&r.reservations.find(x=>x.id==='rq').arrived_count===0&&r.sim.some(x=>x.kind==='arrive'&&x.ref.id==='rq')&&!r.queue.length})());
 }
 console.log(bad?`${bad} FAILED`:'all unit tests pass');process.exit(bad?1:0);

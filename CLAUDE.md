@@ -10,3 +10,6 @@ Restaurant host-stand web app: React 18 + TypeScript, esbuild single-file build,
 **Commands:** `npm install` · `npx tsc --noEmit` · `npm run build` (→ `dist/index.html`, one self-contained file) · `npm test` (unit via esbuild+node, UI smoke via jsdom).
 
 **Rules of the house:** one way per action (reuse `clearTables`, `enqueue`, `seatModeFor`, `tableInfo`…); every container gets a `HELP` entry; anything naming a table gets `data-tid`; numeric fields use `NumInput`; new top-right fixed widgets go in `FixedTop`; add unit + smoke checks in the same change; update HANDOFF/PROTOCOLS when you decide something.
+
+## v2 (branch `v2/engine-sim`)
+Rebuild lives in `v2/`. Read `docs/v2/CONTEXT.md` then follow `docs/v2/POLICY.md` (C code shape, E engine, U ui/sim, W workflow). Lanes own disjoint files; log gap notes per W4.

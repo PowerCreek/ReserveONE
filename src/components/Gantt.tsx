@@ -4,7 +4,7 @@ import {NumInput} from './NumInput';
 import {DayNav} from './Reserve';
 import {TableCard} from './Inspector';
 import {isLate,fmtClock,MIN,PREP_MIN,dayStartMs} from '../party';
-import {Help} from './Help';
+import {Panel} from './Panel';
 const LW=112,HR=3600e3;
 export function Gantt(){
   const A=useApp(),{data,gz,day,gint,gan,sel,today}=A,isToday=day===today;
@@ -34,8 +34,8 @@ export function Gantt(){
           return <div key={s.id} className={'gbar slot'+(b<now?' past':'')} style={{left:x(a),width:Math.max(6,x(b)-x(a))}} onClick={()=>A.focusTable(t.id)}>{s.party_label} · {s.party_size}</div>})}
           {resBars(resIn.filter(r=>r.table_id===t.id),t.id)}{evBars(t.id)}</>)}</div>)]});
   const unas=resIn.filter(r=>!r.table_id),one=sel.length===1?sel[0]:null,oneT=one?data.tables.find(t=>t.id===one):null;
-  return <div className="panel"><div className="toolbar scroll-x"><DayNav/></div>
-    <div className="toolbar scroll-x"><Help id="gantt"/>
+  return <Panel id="gantt" title="Gantt" drawer={false} sizing><div className="toolbar scroll-x"><DayNav/></div>
+    <div className="toolbar scroll-x">
       {[5,10,15,30,60].map(z=><button key={z} className={'btn'+(gz===z?' on':'')} onClick={()=>A.setGz(z)}>{z===60?'1h':z+'m'}</button>)}
       <button className="btn" onClick={()=>{setFollow(false);go((sc.current?.scrollLeft??0)-60*ppm*60)}}>◀ 1h</button>
       <button className="btn" onClick={()=>{setFollow(false);go((sc.current?.scrollLeft??0)+60*ppm*60)}}>1h ▶</button>
@@ -48,5 +48,5 @@ export function Gantt(){
     <div className="gscroll" ref={sc} onScroll={()=>{if(!prog.current)setFollow(false)}}><div className="ginner" style={{width:W}}>{isToday&&<div className="gnowline" style={{left:LW+x(now)}}/>}
       <div className="ghead" style={{width:W}}><div className="glabel gcorner">Table</div><div className="ghcells" style={{width:TW}}>{head}{isToday&&<div className="gnowtag" style={{left:x(now)}} title="Current time">NOW {fmtClock(now)}</div>}</div></div>
       {rows}{(all||unas.length>0)&&<div className="grow gfloor" style={{width:W}}><div className="glabel">Unassigned</div>{track(resBars(unas))}</div>}
-      {!rows.length&&!unas.length&&<div className="muted" style={{padding:12,position:'sticky',left:0}}>Nothing scheduled for this day. Toggle “Active only” to see all tables.</div>}</div></div></div>;
+      {!rows.length&&!unas.length&&<div className="muted" style={{padding:12,position:'sticky',left:0}}>Nothing scheduled for this day. Toggle “Active only” to see all tables.</div>}</div></div></Panel>;
 }

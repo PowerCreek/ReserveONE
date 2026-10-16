@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useState,useRef,useEffect} from 'react';
 import {useApp} from '../state/store';
 import {rotation,busPriority,LAPSED_CLEAR} from '../engines';
 import {unlock} from '../audio';
@@ -13,12 +13,20 @@ import {reset} from '../storage';
 import {isLate,fmtClock} from '../party';
 import {findSpot,baseDims} from '../geometry';
 export function Header(){
-  const A=useApp(),{data,now}=A;
+  const A=useApp(),{data,now}=A,ref=useRef<HTMLDivElement>(null);
   const miss=expectingMore(data).reduce((n,x)=>n+x.missing,0),seated=data.tables.filter(t=>t.status==='occupied').length,bus=data.tables.filter(t=>t.status==='lapsed').length;
-  return <div className="hdr"><h1>Host Seating Planner</h1><div className="row wrap">
+  // the fixed-position locator/sim-bar (.fixtop) must clear the header's real height, not a guessed one — the header's own row wraps at narrow widths, so measure it live instead of hardcoding a pixel offset that drifts the moment this row's content changes.
+  useEffect(()=>{const el=ref.current;if(!el)return;
+    const set=()=>document.documentElement.style.setProperty('--hdr-h',el.offsetHeight+'px');
+    set();window.addEventListener('resize',set);
+    if(typeof ResizeObserver==='undefined')return()=>window.removeEventListener('resize',set);
+    const ro=new ResizeObserver(set);ro.observe(el);
+    return()=>{ro.disconnect();window.removeEventListener('resize',set)}},[]);
+  return <div ref={ref} className="hdr"><h1>Host Seating Planner</h1><div className="row wrap">
     <span className="badge sky">{new Date(now).toLocaleString([],{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span><span className="badge">{data.tables.length} tables</span>{miss>0&&<span className="badge warn" title="Guests still expected from partially arrived parties">⏳ {miss} to come</span>}<span className="badge ok">{seated} seated</span><span className="badge warn">{bus} to bus</span>
     <span className="badge">{data.queue.filter(q=>q.status==='WAITING').length} queued</span><span className="badge late">{data.reservations.filter(r=>isLate(r,now)).length} late</span>
     <button className="btn sm" title="Collapse unpinned panels" onClick={()=>A.setUi(Object.fromEntries(PANEL_IDS.map(i=>[i,{...(A.ui[i]||{}),c:!A.ui[i]?.p}])))}>⊟</button><button className="btn sm" title="Expand all panels" onClick={()=>A.setUi(Object.fromEntries(PANEL_IDS.map(i=>[i,{...(A.ui[i]||{}),c:false}])))}>⊞</button><button className="btn sm" title="Alert chime" onClick={()=>{if(!A.sound)unlock();A.setSound(!A.sound)}}>{A.sound?'🔔':'🔕'}</button><button className="btn sm" disabled={!A.canUndo} onClick={A.undo}>↶</button><button className="btn sm" disabled={!A.canRedo} onClick={A.redo}>↷</button>
+    <button className={'btn sm'+(A.layoutMode?' warn':'')} title={A.layoutMode?'Layout Mode is on: table names, capacity, add/delete are editable. Click to return to Service Mode.':'Service Mode: table names, capacity and add/delete are locked. Click to enter Layout Mode and edit them.'} onClick={()=>A.setLayoutMode(!A.layoutMode)}>{A.layoutMode?'🔧 Layout Mode':'🔒 Service Mode'}</button>
     <button className="btn sm" onClick={()=>{if(confirm('Reset all data to the seed?')){reset();location.reload()}}}>↺ Reset data</button></div></div>;
 }
 export function StatusSlot(){
@@ -34,8 +42,9 @@ export function FloorNav(){
   const addTable=()=>{const c=shape==='booth'?Math.min(cap,6):cap,b=baseDims(c,shape),p=x!==''&&y!==''?{x:+x,y:+y}:findSpot(data.tables,A.floorId,b.w,b.h);
     const id='t'+Date.now();A.mutate(d=>({...d,tables:[...d.tables,{id,label:name.trim()||`T${d.tables.length+1}`,capacity:c,min_capacity:1,x:p.x,y:p.y,width:b.w,height:b.h,shape,status:'available',assigned_waiter_id:null,section_id:null,floor_id:A.floorId}]}));
     A.setSel([id]);setName('');setX('');setY('');setM('')};
+  const edit=A.layoutMode;
   return <><div className="scroll-x row">{data.floors.map(f=><button key={f.id} className={'btn'+(f.id===A.floorId?' on':'')} onClick={()=>A.setFloorId(f.id)}>{f.name} ({data.tables.filter(t=>t.floor_id===f.id).length})</button>)}
-    <button className="btn" onClick={()=>setM('floor')}>＋ Level</button><button className="btn" onClick={()=>setM('table')}>＋ Add Table</button></div>
+    <button className="btn" disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to add a level'} onClick={()=>setM('floor')}>＋ Level</button><button className="btn" disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to add a table'} onClick={()=>setM('table')}>＋ Add Table</button></div>
     {m==='floor'&&<Modal title="New level" onClose={()=>setM('')}><input className="inp" placeholder="Name" value={name} onChange={e=>setName(e.target.value)}/><button className="btn primary" onClick={addFloor}>Add</button></Modal>}
     {m==='table'&&<Modal title="Add table" onClose={()=>setM('')}><input className="inp" placeholder="Label" value={name} onChange={e=>setName(e.target.value)}/>
       <div className="row"><NumInput min={1} max={20} value={cap} label="Table capacity" onChange={setCap}/><select className="inp" value={shape} onChange={e=>setShape(e.target.value as 'rect'|'booth')}><option value="rect">Rect</option><option value="booth">Booth</option></select></div>

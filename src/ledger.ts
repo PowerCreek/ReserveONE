@@ -15,9 +15,9 @@ export function bucketEvents(ev:LEvent[],n:number){
   const m=new Map<number,LEvent[]>();for(const e of ev){const k=Math.floor(e.at/(n*MIN));m.set(k,[...(m.get(k)??[]),e])}
   return [...m].sort((a,b)=>b[0]-a[0]).map(([k,es])=>({start:k*n*MIN,end:(k+1)*n*MIN,es,net:es.reduce((s,e)=>s+(e.kind==='in'?e.covers:-e.covers),0)}));
 }
-/** Every seating unit on a floor classified: open (unreserved) / reserved / seated / lapsed / blocked. */
-export function tableStates(d:Data,floor:string,now:number){
-  return buildUnits(d.tables,d.assocs).filter(u=>u.floor_id===floor).map(u=>{
+/** Every seating unit classified: open (unreserved) / reserved / seated / lapsed / blocked. All floors together (one establishment) unless `floor` narrows it to one. */
+export function tableStates(d:Data,now:number,floor?:string){
+  return buildUnits(d.tables,d.assocs).filter(u=>!floor||u.floor_id===floor).map(u=>{
     const sl=d.slots.find(s=>s.status!=='COMPLETED'&&u.tableIds.includes(s.table_id));
     const res=d.reservations.filter(r=>(r.status==='BOOKED'||r.status==='ARRIVED')&&r.table_id&&u.tableIds.includes(r.table_id)&&dayKey(Date.parse(r.time))===dayKey(now)&&Date.parse(r.time)+r.duration_min*MIN>now)
       .sort((a,b)=>Date.parse(a.time)-Date.parse(b.time))[0];

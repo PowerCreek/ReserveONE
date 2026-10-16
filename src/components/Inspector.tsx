@@ -1,5 +1,5 @@
 import {useApp} from '../state/store';
-import {expandIds,rotateTables,setCapacity,planLink,applyLink,dissolve,removeFromGroup} from '../geometry';
+import {expandIds,setCapacity,planLink,applyLink,dissolve,removeFromGroup,groupTouch} from '../geometry';
 import {clearTables,unseat} from '../state/entries';
 import {Panel} from './Panel';
 import {fmtClock,fmtDay,dayKey} from '../party';
@@ -7,12 +7,11 @@ import {TStatus} from '../types';
 export function Inspector(){
   const A=useApp(),{data,sel,flash}=A,ts=data.tables.filter(t=>sel.includes(t.id));
   if(!ts.length)return <Panel id="inspector" title="Inspector"><div className="muted">Select a table (canvas, Gantt or Inspector) or marquee-select several.</div></Panel>;
-  const one=ts.length===1?ts[0]:null,ids=expandIds(sel,data.assocs);
+  const one=ts.length===1?ts[0]:null,ids=expandIds(sel,data.assocs),gt=groupTouch(data.assocs,sel),canLink=sel.length>=2;
   const upd=(f:(t:typeof ts[0])=>Partial<typeof ts[0]>,push=true)=>A.mutate(d=>({...d,tables:d.tables.map(t=>sel.includes(t.id)?{...t,...f(t)}:t)}),push);
   const setStatus=(s:TStatus)=>{
     if(s!=='available'){upd(()=>({status:s}));return A.receipt(`Marked ${s.replace('_',' ')}`,ts.map(t=>({label:'Table',value:t.label,tid:t.id})))}
     clearTables(A,sel)};
-  const rot=()=>{const n=rotateTables(data.tables,ids,A.grid);n?A.mutate(d=>({...d,tables:n})):flash('Blocked: overlaps','warn')};
   const cap=(c:number)=>{const n=setCapacity(data.tables,one!.id,c);n?A.mutate(d=>({...d,tables:n})):flash('Blocked: overlaps','warn')};
   const link=()=>{const p=planLink(data.tables,data.assocs,sel);'err' in p?flash(p.err,'warn'):A.mutate(d=>({...d,assocs:applyLink(d.assocs,p.ids)}))};
   const del=()=>{A.mutate(d=>({...d,tables:d.tables.filter(t=>!sel.includes(t.id))}));A.setSel([])};
@@ -22,17 +21,21 @@ export function Inspector(){
   const ext=()=>{const sl=data.slots.filter(x=>ids.includes(x.table_id)&&x.status!=='COMPLETED');
     if(sl.length)A.receipt('Turn extended +15m',sl.flatMap(x=>[{label:'Party',value:`${x.party_label} · ${x.party_size}`},{label:'Table',value:data.tables.find(t=>t.id===x.table_id)?.label??'',tid:x.table_id},{label:'New turn',value:fmtClock(Date.parse(x.expected_turn_at)+15*60000)}]));
     extend()};
+  const edit=A.layoutMode;
   return <Panel id="inspector" title={one?`Table ${one.label}`:`${ts.length} tables`}>
-    {one&&<div className="row"><input className="inp" value={one.label} onFocus={()=>A.mutate(d=>({...d}),true)} onChange={e=>upd(()=>({label:e.target.value}),false)} onBlur={e=>e.target.value.trim()||upd(t=>({label:t.id}),false)}/>
-      <button className="btn" onClick={()=>cap(one.capacity-1)}>−</button><span className="cap">{one.capacity}</span><button className="btn" onClick={()=>cap(one.capacity+1)}>＋</button></div>}
+    {one&&<div className="row"><input className="inp" value={one.label} disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to rename'} onFocus={()=>A.mutate(d=>({...d}),true)} onChange={e=>upd(()=>({label:e.target.value}),false)} onBlur={e=>e.target.value.trim()||upd(t=>({label:t.id}),false)}/>
+      <button className="btn" disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to change capacity'} onClick={()=>cap(one.capacity-1)}>−</button><span className="cap">{one.capacity}</span><button className="btn" disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to change capacity'} onClick={()=>cap(one.capacity+1)}>＋</button></div>}
+    {one&&!edit&&<div className="muted">Name and seats are locked in Service Mode — switch to Layout Mode (header) to edit them.</div>}
     <div className="row"><select className="inp" value={ts.every(t=>t.section_id===ts[0].section_id)?ts[0].section_id??'':'__mixed'} onChange={e=>upd(()=>({section_id:e.target.value||null}))}>
       <option value="">No section</option>{ts.some(t=>t.section_id!==ts[0].section_id)&&<option value="__mixed" disabled>Mixed</option>}{data.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-    <div className="row wrap">{(['available','occupied','lapsed','blocked_private'] as TStatus[]).map(s=>
+    <div className="igroup">{(['available','occupied','lapsed','blocked_private'] as TStatus[]).map(s=>
       <button key={s} className={'btn'+(ts.every(t=>t.status===s)?' on':'')} onClick={()=>setStatus(s)}>{s==='available'?'Mark Available':s==='blocked_private'?'Block':s==='lapsed'?'Mark Lapsed':'Occupied'}</button>)}</div>
-    <div className="row wrap"><button className="btn" onClick={rot}>⟳ Rotate</button><button className="btn" onClick={link}>🔗 Add/Merge Group</button>
-      <button className="btn" onClick={()=>A.mutate(d=>({...d,assocs:removeFromGroup(d.assocs,sel)}))}>Remove from Group</button>
-      <button className="btn" onClick={()=>A.mutate(d=>({...d,assocs:dissolve(d.assocs,sel)}))}>Dissolve Group</button>
-      <button className="btn" onClick={ext}>+15m turn</button><button className="btn danger" onClick={del}>🗑 Delete</button></div>{one&&<TableCard id={one.id}/>}</Panel>;
+    <div className="igroup">
+      <button className="btn" disabled={!canLink} title={canLink?undefined:'Select 2+ tables to link'} onClick={link}>🔗 Add/Merge Group</button>
+      {gt.touched&&!gt.full&&<button className="btn" onClick={()=>A.mutate(d=>({...d,assocs:removeFromGroup(d.assocs,sel)}))}>Remove from Group</button>}
+      {gt.touched&&<button className="btn" onClick={()=>A.mutate(d=>({...d,assocs:dissolve(d.assocs,sel)}))}>Dissolve Group</button>}
+    </div>
+    <div className="row wrap"><button className="btn" onClick={ext}>+15m turn</button><button className="btn danger" disabled={!edit} title={edit?undefined:'Enable Layout Mode (header) to delete a table'} onClick={del}>🗑 Delete</button></div>{one&&<TableCard id={one.id}/>}</Panel>;
 }
 
 /** Table summary + what is scheduled on it (slots, reservations, events). Shared by Inspector and Gantt. */

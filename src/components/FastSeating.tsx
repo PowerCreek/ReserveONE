@@ -11,10 +11,11 @@ import {PType} from '../types';
 type Pv=ReturnType<typeof previewSeat>;
 /** Seat now (auto best / selected) OR mark a table ahead (hours or days) for a new party or the active reservation. */
 export function FastSeating(){
-  const A=useApp(),{data}=A,[nm,setNm]=useState(''),[ahead,setAhead]=useState(false),[at,setAt]=useState(()=>loc(Date.now()+2*3600e3)),[dur,setDur]=useState(90),[touched,setTouched]=useState(false);
+  const A=useApp(),{data}=A,[nm,setNm]=useState(''),[ahead,setAhead]=useState(false),[at,setAt]=useState(()=>loc(Date.now()+2*3600e3)),[dur,setDur]=useState(90),[touched,setTouched]=useState(false),[reason,setReason]=useState('');
   const q=data.queue.find(x=>x.id===A.activeQ),r=data.reservations.find(x=>x.id===A.activeR);
   const ap=q?{size:q.party_size,prefix:q.prefix,type:q.type,party_id:q.party_id,queueId:q.id,resId:q.origin_reservation_id??undefined}:r?{size:r.party_size,prefix:r.prefix,type:r.type,party_id:r.party_id,resId:r.id,duration:r.duration_min}:null;
   const type=(ap?.type??A.ptype) as PType,size=ap?.size??A.size,prefix=ap?.prefix??data.prefix;
+  const needsReason=!ap&&(type==='P'||type==='V'),reasonOk=!needsReason||reason.trim().length>0;
   const label=ap?partyLabel(ap.prefix,ap.type,ap.party_id):partyLabel(prefix,type,data.nextPartyId);
   const req=()=>ap??{size,prefix,type};
   const aheadOn=ahead&&!q,whenMs=r&&!touched?Date.parse(r.time):new Date(at).getTime(),len=r&&!touched?r.duration_min:dur,okAt=!isNaN(whenMs);
@@ -33,15 +34,16 @@ export function FastSeating(){
   const hv=(p:Pv|null)=>({onMouseEnter:()=>A.setPv(p&&p.ok?p.ids:[]),onMouseLeave:()=>A.setPv([])});
   const ahA=aheadOn&&okAt?planAhead(data,{size,whenMs,dur:len,sel:null,exceptRes:r?.id}):null,ahS=aheadOn&&okAt&&A.sel.length?planAhead(data,{size,whenMs,dur:len,sel:A.sel,exceptRes:r?.id}):null;
   const hvA=(p:AheadPlan|null)=>({onMouseEnter:()=>A.setPv(p&&p.ok?p.tableIds:[]),onMouseLeave:()=>A.setPv([])});
-  const enqueue=()=>{addToQueue(A,{name:nm,size,type,prefix});setNm('')};
+  const enqueue=()=>{addToQueue(A,{name:nm,size,type,prefix,notes:reason.trim()||undefined});setNm('');setReason('')};
   const mark=(p:AheadPlan|null)=>{if(!p||!p.ok)return A.flash(p?p.err:'Pick a valid date and time','warn');markAhead(A,p,{size,name:nm||undefined,whenMs,dur:len,resId:r?.id});if(!r)setNm('');A.setActiveR(null)};
   const when=(ms:number)=>{setAt(loc(ms));setTouched(true)};
   return <Panel id="fast" title="Fast seating">
     <div className="muted">{ap?`Active party ${label}`:`New party → ${aheadOn?partyLabel(prefix,'R',data.nextPartyId):label}`}{ap&&<button className="btn sm" style={{marginLeft:8}} onClick={()=>{A.setActiveQ(null);A.setActiveR(null)}}>clear</button>}</div>
     <div className="row"><input className="inp" style={{width:70}} value={data.prefix} maxLength={4} onChange={e=>A.mutate(d=>({...d,prefix:sanitizePrefix(e.target.value)}),false)} disabled={!!ap}/>
-      {(['W','P','R','V'] as PType[]).map(t=><button key={t} className={'chip'+(type===t?' on':'')} disabled={!!ap} onClick={()=>A.setPtype(t)}>{t}</button>)}</div>
+      {(['W','P','V'] as PType[]).map(t=><button key={t} className={'chip'+(type===t?' on':'')} disabled={!!ap} title={t==='P'?'Priority: active service recovery (host error, over-quoted wait, accessibility need)':t==='V'?'VIP: a recognized guest, at host discretion':'Ordinary walk-in'} onClick={()=>{A.setPtype(t);if(t==='W')setReason('')}}>{t}</button>)}</div>
     <div className="row"><button className="btn" disabled={!!ap} onClick={()=>A.setSize(Math.max(1,size-1))}>−</button><span className="cap">{size}</span><button className="btn" disabled={!!ap} onClick={()=>A.setSize(Math.min(12,size+1))}>＋</button></div>
     <div className="row"><input className="inp" placeholder="Name (optional)" value={nm} disabled={!!ap} onChange={e=>setNm(e.target.value)}/></div>
+    {needsReason&&<div className="row"><input className="inp" placeholder={type==='P'?'Reason (required) — what happened?':'Reason (required) — who, and why?'} value={reason} onChange={e=>setReason(e.target.value)}/></div>}
     <div className="row"><button className={'chip'+(!aheadOn?' on':'')} onClick={()=>setAhead(false)}>Seat now</button>
       <button className={'chip'+(aheadOn?' on':'')} disabled={!!q} title={q?'Queued parties are seated now':'Hold a table for later today or another day'} onClick={()=>setAhead(true)}>Mark ahead</button></div>
     {aheadOn?<>
@@ -55,5 +57,5 @@ export function FastSeating(){
     :<>
       {selCard}<div className="pvbox"><div className="muted nw">Auto-allocate will seat →</div><PreviewLine p={autoP!}/>{selP&&<><div className="muted nw">Seat at {ss.label} →</div><PreviewLine p={selP}/></>}</div>
       <div className="row wrap"><button className="btn primary" {...hv(autoP)} onClick={()=>seatReq(A,req(),'auto',r?.table_id)}>Auto-allocate &amp; seat</button><button className="btn" disabled={!free} title={free?undefined:ss.kind==='none'?'Select a table first':ss.msg} {...hv(selP)} onClick={()=>seatReq(A,req(),'selected')}>{ss.kind==='none'?'Seat at selected (pick a table)':free?`Seat at ${ss.label} (${ss.cap}-top)`:`Seat at ${ss.label} ✕`}</button>
-        <button className="btn" disabled={!!ap} onClick={enqueue}>Add to queue</button></div></>}</Panel>;
+        <button className="btn" disabled={!!ap||!reasonOk} title={reasonOk?undefined:'Priority/VIP needs a reason, for accountability'} onClick={enqueue}>Add to queue</button></div></>}</Panel>;
 }

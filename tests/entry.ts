@@ -1,6 +1,8 @@
 export {sectionStats} from '../src/sections';
 export {eventState,reconcile} from '../src/state/alerts';
 export {createSeed} from '../src/seed';
+export {testData} from './fixture';
+export {defaultPrefs} from '../src/storage';
 export {holdsFrom,partyLabel,dayKey,shiftDay,dayStartMs} from '../src/party';
 export {busPriority,lookahead} from '../src/engines';
 export {buildUnits} from '../src/geometry';
@@ -10,7 +12,7 @@ export {sectionGraph} from '../src/blobs';
 export {tableConflict,bestFit,dayLoad} from '../src/booking';
 export {seatRefs} from '../src/state/entries';
 export {seatParty} from '../src/state/seat';
-export {planLink,normalizeAssociations,applyLink} from '../src/geometry';
+export {planLink,normalizeAssociations,applyLink,groupTouch} from '../src/geometry';
 export {rotation} from '../src/engines';
 export {markAvailable} from '../src/state/seat';
 export {ledgerEvents,bucketEvents,tableStates} from '../src/ledger';

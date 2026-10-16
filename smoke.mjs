@@ -1,6 +1,11 @@
-import {JSDOM} from 'jsdom';import fs from 'fs';
+import {JSDOM} from 'jsdom';import fs from 'fs';import {build} from 'esbuild';
+// The production seed (src/seed.ts) is a clean slate for real deployment — no demo tables/staff/bookings — so the smoke suite
+// seeds localStorage directly with the same known rich fixture (tests/fixture.ts) the app would normally persist there itself,
+// via the exact mechanism storage.ts already supports (load() prefers saved data over createSeed()).
+await build({entryPoints:['tests/entry.ts'],bundle:true,format:'esm',platform:'node',outfile:'tests/.u.mjs',logLevel:'silent'});
+const fx=await import('./tests/.u.mjs'),fxData=fx.testData(),fxPrefs=fx.defaultPrefs(fxData),fxSeed=JSON.stringify({v:1,data:fxData,prefs:fxPrefs});
 const html=fs.readFileSync(process.env.OUT||'dist/index.html','utf8'),errs=[];
-const d=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'http://localhost/',beforeParse(w){w.addEventListener('error',e=>errs.push(e.message));w.SVGElement.prototype.getScreenCTM=()=>({inverse:()=>({}),a:1});w.DOMPoint=class{constructor(x,y){this.x=x;this.y=y}matrixTransform(){return this}};w.confirm=()=>true}});
+const d=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true,url:'http://localhost/',beforeParse(w){w.addEventListener('error',e=>errs.push(e.message));w.SVGElement.prototype.getScreenCTM=()=>({inverse:()=>({}),a:1});w.DOMPoint=class{constructor(x,y){this.x=x;this.y=y}matrixTransform(){return this}};w.confirm=()=>true;try{w.localStorage.setItem('host-seating-planner:v1',fxSeed)}catch{}}});
 const w=d.window,q=s=>[...w.document.querySelectorAll(s)],tick=(n=40)=>new Promise(r=>setTimeout(r,n));
 const btn=(t,sc='button')=>q(sc).find(b=>b.textContent.trim().startsWith(t)||b.textContent.includes(t));
 const panel=h=>q('.panel').find(p=>p.querySelector('h3')?.textContent.startsWith(h));
@@ -47,6 +52,17 @@ q('.glabel').find(e=>e.textContent.startsWith('A3')).click();await tick();ok('ga
 ok('locator pin appears for the referenced table',q('.locator .locbtn').length===1&&q('.locbtn')[0].textContent.includes('A3'));
 q('.locbtn')[0].click();await tick();ok('locator popup = interactive canvas with arrow on target',q('.modal.big .cv').length===1&&q('.modal.big text').filter(x=>x.textContent==='▼').length===1);
 q('.modal.big .pbtn[title="Close"]')[0].click();await tick();ok('locator popup closes',!q('.modal.big').length);
+// canvas tool palette
+btn('Split').click();await tick();
+ok('canvas tools: ungrouped selection (A3) shows Rotate + Group but no Remove/Dissolve',q('.ctools').length===1&&q('.ctools button').some(b=>/Rotate/.test(b.textContent))&&q('.ctools button').some(b=>b.textContent==='🔗 Group')&&!q('.ctools button').some(b=>/Remove from Group|Dissolve Group/.test(b.textContent)));
+btn('Active only').click();await tick();// A1/A2 have nothing scheduled, so they're hidden under the default active-only filter
+q('.glabel').find(e=>e.textContent.startsWith('A1')).click();await tick();
+ok('canvas tools: partial group selection (A1 alone) shows both Remove and Dissolve',q('.ctools button').some(b=>/Remove from Group/.test(b.textContent))&&q('.ctools button').some(b=>/Dissolve Group/.test(b.textContent)));
+btn('All tables').click();await tick();// restore active-only default for the row-count test below
+w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape'}));await tick();ok('canvas tools: disappears when selection clears',!q('.ctools').length);
+q('.glabel').find(e=>e.textContent.startsWith('A3')).click();await tick();
+w.document.dispatchEvent(new w.Event('scroll',{bubbles:true}));await tick();
+ok('canvas tools: scrolling repositions (stays co-located), does not dismiss like Help/HoverCard',q('.ctools').length===1);
 q('.glabel').find(e=>e.textContent.startsWith('B1')).click();await tick();btn('Mark Available').click();await tick();
 ok('clear receipt: table + closed party + server delta',(()=>{const t=q('.rcpt')[0]?.textContent||'';return t.includes('Table cleared')&&t.includes('HS-W-2')&&t.includes('covers')})());
 btn('Active only').click();await tick();ok('all tables toggle adds rows',q('.grow').length>rowsA);
@@ -113,6 +129,9 @@ pb(panel('Ledger'),'5m').click();await tick();ok('ledger interval selectable',pb
  set(inp(),'');await tick();fire(inp(),'focusout');await tick();ok('blur with empty text restores the last valid value',inp().value==='45');
  fire(inp(),'focusin');set(inp(),'9999');await tick();fire(inp(),'focusout');await tick();ok('blur clamps an out-of-range value to the max (240)',inp().value==='240');}
 ok('ledger lists seat (+) and clear (−) events',q('.lchip.in').length>=1&&q('.lchip.out').length>=1);
+{const seatedA3=()=>q('.lchip.seated').find(b=>b.textContent.startsWith('A3')),activityA3=()=>q('.lchip.in').find(b=>b.textContent.startsWith('A3'));
+ seatedA3().click();await tick();
+ ok('ledger: clicking a table cross-highlights its other references (same label) in the panel',seatedA3().classList.contains('pick')&&!!activityA3()&&activityA3().classList.contains('pick')&&!q('.lchip.pick').some(b=>!b.textContent.startsWith('A3')));}
 const tp=()=>panel('Turnover');
 ok('turnover panel: 9 interval rows',!!tp()&&tp().querySelectorAll('.ttab .tin').length===9);
 pb(tp(),'30m').click();await tick();ok('interval chip 30m active, rows realign',pb(tp(),'30m').classList.contains('on')&&tp().querySelectorAll('.ttab .tin').length===9);
@@ -180,6 +199,7 @@ ok('staff = row of cards, not data rows',q('.cards .scard').length>=3&&!q('.card
  const pickOcc=async(skip)=>{const r=q('.grow').filter(x=>x.querySelector('.gbar.slot')).find(x=>!skip.includes(x.querySelector('.glabel').textContent.split(' ')[0]));const l=r.querySelector('.glabel');l.click();await tick();return l.textContent.split(' ')[0]};
  const hb=q('.panel .helpb').find(b=>b.getAttribute('aria-label')==='About Fast seating');hb.click();await tick();
  ok('ⓘ help: popover states the purpose',!!q('.helppop')[0]&&/Seat a party now/i.test(q('.helppop')[0].textContent));hb.click();await tick();ok('ⓘ help: toggles closed',!q('.helppop').length);
+ hb.click();await tick();w.document.dispatchEvent(new w.Event('scroll',{bubbles:true}));await tick();ok('ⓘ help: closes on scroll (so it never drifts off its ⓘ)',!q('.helppop').length);
  ok('ⓘ help on many containers (panels, gantt, drawer)',q('.helpb').length>=8);
  ok('title rows never clip: h3 is flex with visible overflow',(()=>{const s=w.getComputedStyle(q('.phead h3')[0]);return s.display==='flex'&&s.overflow!=='hidden'})());
  const t1=await pickOcc([]);
@@ -204,4 +224,85 @@ ok('staff = row of cards, not data rows',q('.cards .scard').length>=3&&!q('.card
  ok('canvas tags: party label · name · size under seated tables',q('.cv .ttag').length>=1&&[...q('.cv .ttag')].some(g=>/\S+-\S+-\d+ · .+ (×\d+|\d+\/\d+)/.test(g.textContent)));
  q('.cv g[data-tid]')[0].dispatchEvent(new w.Event('pointerover',{bubbles:true}));await tick();ok('hover card on a canvas table',!!q('.hcard')[0]&&/server/.test(q('.hcard')[0].textContent));
  w.document.body.dispatchEvent(new w.Event('pointerover',{bubbles:true}));await tick();}
+// ---- priority seating: P/V require a reason, R removed from the manual picker, queue shows badge+reason
+{const fp=()=>panel('Fast seating'),chip=t=>[...fp().querySelectorAll('button.chip')].find(b=>b.textContent.trim()===t);
+ ok('priority picker: no R chip (system-only, set by Book), still has W/P/V',!chip('R')&&!!chip('W')&&!!chip('P')&&!!chip('V'));
+ chip('P').click();await tick();
+ const addq=()=>[...fp().querySelectorAll('button')].find(b=>b.textContent.trim()==='Add to queue');
+ ok('Priority flag shows a required reason field and disables Add to queue until filled',addq().disabled&&!!fp().querySelector('input[placeholder^="Reason"]'));
+ set(fp().querySelector('input[placeholder^="Reason"]'),'Kitchen mixed up the order, comping the wait');await tick();
+ ok('reason filled -> Add to queue enables',!addq().disabled);
+ set([...fp().querySelectorAll('input')].find(i=>i.placeholder==='Name (optional)'),'Jordan');await tick();
+ addq().click();await tick();
+ btn('Reserve').click();await tick(); // the sidebar Queue is compact (top 4 only); Reserve view shows it in full
+ const qentry=()=>[...panel('Queue').querySelectorAll('.entry')].find(e=>e.textContent.includes('Jordan'));
+ ok('queue entry: PRIORITY badge + the reason are both visible (never opaque why someone jumped the line)',/PRIORITY/.test(qentry().textContent)&&/comping the wait/.test(qentry().textContent));
+ [...qentry().querySelectorAll('button')].find(b=>b.textContent.trim()==='Remove').click();await tick();
+ chip('W').click();await tick();}
+// ---- layout mode: naming/capacity/add/delete locked outside it
+{btn('Gantt').click();await tick();
+ let picked=false;for(const lbl of q('.glabel')){lbl.click();await tick();if(panel('Table')){picked=true;break}}
+ ok('picked a single table for the lock/unlock check',picked);
+ btn('Canvas').click();await tick(); // FloorNav (incl. ＋ Add Table) is now co-located with the canvas, not a global bar
+ const insp=()=>panel('Table'),nameInp=()=>insp().querySelector('input'),capMinus=()=>[...insp().querySelectorAll('button')].find(b=>b.textContent.trim()==='−'),capPlus=()=>[...insp().querySelectorAll('button')].find(b=>b.textContent.trim()==='＋'),del=()=>[...insp().querySelectorAll('button')].find(b=>b.textContent.includes('Delete')),modeBtn=()=>[...q('button')].find(b=>/Service Mode|Layout Mode/.test(b.textContent)),addTbl=()=>btn('＋ Add Table');
+ ok('Service Mode (default): rename/capacity/delete/Add Table are all locked',nameInp().disabled&&capMinus().disabled&&capPlus().disabled&&del().disabled&&addTbl().disabled&&/Service Mode/.test(modeBtn().textContent));
+ modeBtn().click();await tick();
+ ok('Layout Mode: rename/capacity/delete/Add Table unlock',!nameInp().disabled&&!capMinus().disabled&&!del().disabled&&!addTbl().disabled&&/Layout Mode/.test(modeBtn().textContent));
+ addTbl().click();await tick();
+ set([...q('.modal input')].find(i=>i.placeholder==='Label'),'ZZ-TEST');
+ [...q('.modal button')].find(b=>b.textContent.trim()==='Add').click();await tick();
+ ok('table added while unlocked (new selection -> Inspector shows it)',insp()?.querySelector('h3')?.textContent.includes('ZZ-TEST'));
+ modeBtn().click();await tick();
+ ok('back to Service Mode: locked again',nameInp().disabled&&capMinus().disabled&&addTbl().disabled);}
+// ---- collapsible main-view containers (Canvas/Gantt/Audit) + Reserve's Load panel
+{btn('Canvas').click();await tick();
+ const cv=()=>panel('Floor canvas'),cvToggle=()=>cv().querySelector('.phead button');
+ ok('Canvas is a real collapsible Panel (toggle present, no drawer-move button)',!!cv()&&!!cvToggle()&&!cv().querySelector('.phead button[title="Move to drawer"]'));
+ cvToggle().click();await tick();ok('collapsing Canvas hides the svg/toolbar',!panel('Floor canvas').querySelector('svg'));
+ cvToggle().click();await tick();ok('expanding Canvas restores it',!!panel('Floor canvas').querySelector('svg'));
+ btn('Gantt').click();await tick();
+ const ga=()=>panel('Gantt'),gaToggle=()=>ga().querySelector('.phead button');
+ gaToggle().click();await tick();ok('Gantt collapses',!panel('Gantt').querySelector('.gscroll'));
+ gaToggle().click();await tick();ok('Gantt re-expands',!!panel('Gantt').querySelector('.gscroll'));
+ btn('Audit').click();await tick();
+ const au=()=>panel('Audit log'),auToggle=()=>au().querySelector('.phead button');
+ auToggle().click();await tick();ok('Audit log collapses',!panel('Audit log').querySelector('.alist'));
+ auToggle().click();await tick();ok('Audit log re-expands',!!panel('Audit log').querySelector('.alist'));
+ btn('Reserve').click();await tick();
+ const ld=()=>panel('Load'),ldToggle=()=>ld().querySelector('.phead button');
+ ok('Reserve\'s Load panel is collapsible too',!!ld()&&!!ldToggle());
+ ldToggle().click();await tick();ok('Load panel collapses',!panel('Load').querySelector('.lcell'));
+ ldToggle().click();await tick();ok('Load panel re-expands',!!panel('Load').querySelector('.lcell'));}
+// ---- Add/Merge Group: no reason to enable it for a single selected table
+{btn('Gantt').click();await tick();
+ let picked=false;for(const lbl of q('.glabel')){lbl.click();await tick();if(panel('Table')){picked=true;break}}
+ const linkBtn=()=>[...panel('Table').querySelectorAll('button')].find(b=>/Add\/Merge Group/.test(b.textContent));
+ ok('single-table selection: Add/Merge Group is disabled (nothing to merge with)',picked&&!!linkBtn()&&linkBtn().disabled);}
+// ---- panel size picker (⇲): fixed snap fractions, not a free pixel drag
+{btn('Canvas').click();await tick();
+ const cv=()=>panel('Floor canvas'),szBtn=()=>cv().querySelector('.phead button[title="Panel size"]');
+ ok('Canvas has a size picker (⇲)',!!szBtn());
+ szBtn().click();await tick();
+ const half=()=>[...cv().querySelectorAll('.chip')].find(b=>b.title==='Half'),full=()=>[...cv().querySelectorAll('.chip')].find(b=>b.title.startsWith('Full'));
+ ok('size picker reveals fixed fraction chips, not a slider/drag handle',!!half()&&!!full()&&!cv().querySelector('input[type=range]'));
+ half().click();await tick();
+ ok('picking ½ sets --panel-size (CSS, not JS, decides what that means for this panel)',cv().style.getPropertyValue('--panel-size')==='0.5');
+ full().click();await tick();
+ ok('Full resets the fraction to 1 (today\'s default size, unchanged)',cv().style.getPropertyValue('--panel-size')==='1');}
+// ---- real venue floors (from the gist) are wired up alongside the demo floors/tables, untouched
+{const fnav=()=>[...q('button')].filter(b=>/^(Main|Patio|Main Dining Room|Bar|Upstairs) \(\d+\)$/.test(b.textContent.trim()));
+ const texts=fnav().map(b=>b.textContent.trim());
+ // the fixture layers the old demo floors (Main/Patio, test-only) alongside the 4 real venue floors, so 'Patio' legitimately appears twice here with different counts (4 vs 7) — that's a known test-fixture-only quirk, not a production bug (createSeed() ships only the 4 real floors, see the unit test).
+ // 'Main (N)': N>=13, not ===13 — an earlier test (layout mode) added a ZZ-TEST table to it, same as the real demo floor always does in normal use
+ ok('6 floor buttons total (2 demo fixture floors + 4 real venue floors), each with its real table count',texts.length===6&&texts.some(t=>/^Main \(\d+\)$/.test(t)&&+t.match(/\d+/)[0]>=13)&&texts.includes('Patio (4)')&&texts.includes('Main Dining Room (30)')&&texts.includes('Bar (18)')&&texts.includes('Patio (7)')&&texts.includes('Upstairs (11)'));
+ fnav().find(b=>b.textContent.startsWith('Upstairs')).click();await tick();
+ ok('switching to Upstairs shows its tables on canvas, unsectioned (sections deferred)',q('.cv g[data-tid]').length===11);
+ fnav().find(b=>b.textContent.startsWith('Main')&&!b.textContent.includes('Dining')).click();await tick();}
+// ---- Split view: Canvas+Gantt share one row-flowing container (no redundant .primary wrapper around the tab bar/receipts/views)
+{btn('Split').click();await tick();
+ const views=q('.views')[0];
+ ok('no redundant .primary wrapper div left (not to be confused with unrelated .btn.primary styling); Canvas+Gantt both live in one .views container',!q('div.primary').length&&!!views&&views.contains(panel('Floor canvas'))&&views.contains(panel('Gantt')));
+ const cs=w.getComputedStyle(views);
+ ok('.views is a wrapping flex row (side-by-side until it wraps), not a forced vertical stack',cs.display==='flex'&&cs.flexWrap==='wrap');
+ btn('Canvas').click();await tick();}
 console.log('errors:',errs.length?errs:'none');process.exit(0);

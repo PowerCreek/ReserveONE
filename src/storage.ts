@@ -5,8 +5,8 @@ const KEY='host-seating-planner:v1';
 /** Migrates old labels (HSW-7) to prefix-type-id (HS-W-7). Idempotent. */
 export const relabel=(s:any)=>/-[WPRV]-\d+$/.test(s.party_label)?s:{...s,party_label:String(s.party_label).replace(/^(.*)([WPRV])-(\d+)$/,'$1-$2-$3').replace(/^-/,'')};
 export interface Drawer{ids:string[];active:string;open:boolean}
-export interface Prefs{grid:number;zoom:number;pan:{x:number;y:number};floorId:string;size:number;ptype:string;view:string;gz:number;rf:string;sound:boolean;gint:number;gan:number;ui:Record<string,{c?:boolean;p?:boolean}>;drawer:Drawer}
-export const defaultPrefs=(d:Data):Prefs=>({grid:40,zoom:1,pan:{x:0,y:0},floorId:d.floors[0].id,size:2,ptype:'W',view:'canvas',gz:30,rf:'active',sound:false,gint:5,gan:20,ui:{},drawer:{ids:['ntop','book'],active:'ntop',open:true}});
+export interface Prefs{grid:number;zoom:number;pan:{x:number;y:number};floorId:string;size:number;ptype:string;view:string;gz:number;rf:string;sound:boolean;gint:number;gan:number;ui:Record<string,{c?:boolean;p?:boolean}>;drawer:Drawer;layoutMode:boolean}
+export const defaultPrefs=(d:Data):Prefs=>({grid:40,zoom:1,pan:{x:0,y:0},floorId:d.floors[0].id,size:2,ptype:'W',view:'canvas',gz:30,rf:'active',sound:false,gint:5,gan:20,ui:{},drawer:{ids:['ntop','book'],active:'ntop',open:true},layoutMode:false});
 export function load():{data:Data;prefs:Prefs;sim?:SimState}{
   const sim=readSim();if(sim){setOffset(sim.offset);return{data:sim.data,prefs:{...defaultPrefs(sim.data),...sim.prefs},sim}}
   try{const j=JSON.parse(localStorage.getItem(KEY)||'null');

@@ -10,8 +10,9 @@ import {rangeOf,queueOrder} from '../turnover';
 import {Tally} from './Tally';
 const cls=(c:string)=>c==='HOT_GREEN'?'ready':c==='WARM_AMBER'?'tight':c==='CAUTION_WAIT'?'wait':'none';
 function useBase(){
-  const A=useApp(),{data,floorId,now,seq}=A;
-  const units=useMemo(()=>buildUnits(data.tables,data.assocs).filter(u=>u.floor_id===floorId),[data.tables,data.assocs,floorId]);
+  const A=useApp(),{data,now,seq}=A;
+  // all floors are the same establishment — predict/seat across every table, not just whichever floor the canvas happens to be showing
+  const units=useMemo(()=>buildUnits(data.tables,data.assocs),[data.tables,data.assocs]);
   const holds=useMemo(()=>holdsFrom(data.reservations,now,data.events),[data.reservations,data.events,now]);
   const plan=useMemo(()=>planSequence(data,seq,units,now,holds),[data,seq,units,now,holds]);
   const items=plan.items,pred={items:plan.preds,standings:plan.standings};

@@ -28,7 +28,7 @@ function integrity(d:Data):Data{
   return as===d.assocs&&rs===d.reservations&&sl===d.slots?d:{...d,assocs:as,reservations:rs,slots:sl};
 }
 export interface Status{msg:string;tone:'ok'|'warn'|'info';k:number}
-export type UiMap=Record<string,{c?:boolean;p?:boolean}>;
+export type UiMap=Record<string,{c?:boolean;p?:boolean;w?:number}>;
 export interface App{
   data:Data;mutate:(fn:(d:Data)=>Data,push?:boolean,actor?:Actor)=>void;undo:()=>void;redo:()=>void;canUndo:boolean;canRedo:boolean;
   sel:string[];setSel:(s:string[])=>void;floorId:string;setFloorId:(f:string)=>void;
@@ -43,6 +43,7 @@ export interface App{
   view:string;setView:(v:string)=>void;gz:number;setGz:(n:number)=>void;rf:string;setRf:(s:string)=>void;activeR:string|null;setActiveR:(s:string|null)=>void;
   size:number;setSize:(n:number)=>void;ptype:string;setPtype:(t:string)=>void;
   seq:number[];setSeq:(s:number[])=>void;activeQ:string|null;setActiveQ:(s:string|null)=>void;now:number;
+  layoutMode:boolean;setLayoutMode:(b:boolean)=>void;
 }
 const Ctx=createContext<App>(null as unknown as App);
 export const useApp=()=>useContext(Ctx);
@@ -55,6 +56,7 @@ export function Provider({children}:{children:ReactNode}){
   const [view,setView]=useState(p.view),[gz,setGz]=useState(p.gz),[rf,setRf]=useState(p.rf),[activeR,setActiveR]=useState<string|null>(null);
   const [sound,setSound]=useState(!!p.sound),[gint,setGint]=useState(p.gint),[gan,setGan]=useState(p.gan),[ui,setUi]=useState<UiMap>(p.ui||{});
   const [drawer,setDrawer]=useState<Drawer>(p.drawer),[editRes,setEditRes]=useState<string|null>(null);
+  const [layoutMode,setLayoutMode]=useState(!!p.layoutMode);
   const [rcpt,setRcpt]=useState<Receipt|null>(null),[pv,setPv]=useState<string[]>([]);
   const [lref,setLref]=useState<{ids:string[];k:number}|null>(null),[locOpen,setLocOpen]=useState(false);
   const [sim,setSim]=useState<{on:boolean;snap:Data|null}>({on:!!init.sim,snap:init.sim?.snapshot??null}),[simOff,setSimOff]=useState(getOffset());
@@ -75,20 +77,20 @@ export function Provider({children}:{children:ReactNode}){
     if(activeQ&&!data.queue.some(q=>q.id===activeQ&&q.status==='WAITING'))setActiveQ(null);
     if(activeR&&!data.reservations.some(r=>r.id===activeR&&(r.status==='BOOKED'||r.status==='ARRIVED')))setActiveR(null)},[data,sel,activeQ,activeR]);
   const latest=useRef<[Data,Prefs]>(null as any);
-  latest.current=[data,{grid,zoom,pan,floorId:fid,size,ptype,view,gz,rf,sound,gint,gan,ui,drawer}];
+  latest.current=[data,{grid,zoom,pan,floorId:fid,size,ptype,view,gz,rf,sound,gint,gan,ui,drawer,layoutMode}];
   const simRef=useRef(sim);simRef.current=sim;
   /** Real data -> real key; while simulating -> separate sim key (the real key keeps the pre-simulation state). */
   const persist=()=>{const [d,pf]=latest.current;simRef.current.on?writeSim({data:d,snapshot:simRef.current.snap!,offset:getOffset(),prefs:pf}):write(d,pf)};
   const enterSim=()=>{const snap:Data=JSON.parse(JSON.stringify(data));write(data,latest.current[1]);setSim({on:true,snap})};
   const exitSim=(keep:boolean)=>{if(!keep&&sim.snap)dispatch({t:'reset',data:sim.snap});setOffset(0);setSimOff(0);clearSim();setSim({on:false,snap:null});setNow(Date.now());if(keep)write(data,latest.current[1])};
   const advanceClock=(min:number)=>{setOffset(getOffset()+min*60000);setSimOff(getOffset());setNow(Date.now())};
-  useEffect(()=>{const t=setTimeout(()=>persist(),250);return()=>clearTimeout(t)},[data,grid,zoom,pan,fid,size,ptype,view,gz,rf,sound,gint,gan,ui,drawer]);
+  useEffect(()=>{const t=setTimeout(()=>persist(),250);return()=>clearTimeout(t)},[data,grid,zoom,pan,fid,size,ptype,view,gz,rf,sound,gint,gan,ui,drawer,layoutMode]);
   useEffect(()=>{const f=()=>persist(),v=()=>{if(document.visibilityState==='hidden')f()};
     window.addEventListener('pagehide',f);document.addEventListener('visibilitychange',v);
     return()=>{window.removeEventListener('pagehide',f);document.removeEventListener('visibilitychange',v)}},[]);
   useAlerts(data,now,flash,sound,mutate);
   const v:App={data,mutate,undo:()=>dispatch({t:'undo',at:Date.now()}),redo:()=>dispatch({t:'redo',at:Date.now()}),canUndo:!!hs.past.length,canRedo:!!hs.future.length,
     sel,setSel,floorId:fid,setFloorId:setFloor,status,flash,setStatus,log,hl,focusTable,grid,setGrid,zoom,setZoom,pan,setPan,sound,setSound,day,setDay,today:dayKey(now),
-    gint,setGint,gan,setGan,ui,setUi,drawer,setDrawer,editRes,setEditRes,sim:sim.on,simOffset:simOff,enterSim,exitSim,advanceClock,lref,setLref,locOpen,setLocOpen,rcpt,setRcpt,receipt,pv,setPv,view,setView,gz,setGz,rf,setRf,activeR,setActiveR,size,setSize,ptype,setPtype,seq,setSeq,activeQ,setActiveQ,now};
+    gint,setGint,gan,setGan,ui,setUi,drawer,setDrawer,editRes,setEditRes,sim:sim.on,simOffset:simOff,enterSim,exitSim,advanceClock,lref,setLref,locOpen,setLocOpen,rcpt,setRcpt,receipt,pv,setPv,view,setView,gz,setGz,rf,setRf,activeR,setActiveR,size,setSize,ptype,setPtype,seq,setSeq,activeQ,setActiveQ,now,layoutMode,setLayoutMode};
   return <Ctx.Provider value={v}>{children}</Ctx.Provider>;
 }
