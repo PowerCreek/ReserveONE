@@ -1,6 +1,6 @@
 // Desk (wave 4): the one seam between the engine and every panel. Writes are commands as data (`act`), reads are view models (`stand`).
 // The UI renders a view and dispatches a Cmd; it never builds patches, events or domain rules itself.
-import type {Id, Patch, PType, Want} from './model.ts'
+import type {Id, Patch, Pref, PrefMark, PType, Want} from './model.ts'
 import type {Carve} from './service.ts'
 import type {HostEvent, ServiceEvent, SimEvent} from './sim.ts'
 import type {BusItem, Bucket, Option, Placed, Quote, Rung} from './engine.ts'
@@ -11,7 +11,7 @@ import type {World} from './model.ts'
 export type Cmd =
   | {do: 'lease'; party: Id; spot: Id; step: string} // one click at the stand: the spot is leased to the party (led there); it settles into a seat by itself
   | {do: 'release'; party: Id} // hand a lease back (the party wants something else): tables free, party at the door
-  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number} // a leased party: confirm its lease now; else seat directly
+  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number; from?: 'door'} // from door: a size-only fast seat takes the party at the door that `StandView.bySize` names (it leaves the door list) instead of minting a fresh one // a leased party: confirm its lease now; else seat directly
   | {do: 'decline'; party: Id; spot: Id; step: string} // the party said no to this spot; it leaves the party's offers
   | {do: 'hear'; party: Id; feat: string} // the host asked about a qualifier
   | {do: 'tell'; table: Id}
@@ -26,6 +26,8 @@ export type Cmd =
   | {do: 'extend'; table: Id; min: number} // camper: push the seated party's turn time out
   | {do: 'clear'; table: Id} // force clear: the party left; slot completed, tables free (merged links dissolve)
   | {do: 'reassign'; table: Id; staff: Id} // move a seated table to another server (tallies follow the covers)
+  | {do: 'pref'; staff: Id; pref: Pref} // set (add or replace by id) a server preference
+  | {do: 'unpref'; staff: Id; id: string}
   | {do: 'staff'; id: Id; to: 'duty' | 'skip'} // toggle on duty, or skip one turn of the rotation
 export type Told = SimEvent | HostEvent | ServiceEvent
 /** A command's result: patches to commit, events to narrate, one line for the log (`says` = the guest's words, when they answer). */
@@ -33,7 +35,7 @@ export type Outcome = {ok: true; patches: Patch[]; events: Told[]; msg: string; 
 /** One party at the door, next first (policy.queue.tier, then waited). */
 export interface DoorRow {party: Id; label: string; name: string; size: number; kind: PType; waitedMin: number}
 /** A ladder rung the host can seat in one step, with who would serve it. */
-export interface Offer extends Rung {server: Id | null}
+export interface Offer extends Rung {server: Id | null; prefs: PrefMark[]} // prefs = what server preferences did to this pick
 export interface ReqRow {party: Id; table: Id; reason: string; stage: Stage; options: Option[]}
 /** A seated table and whether its server knows (area seen, told, or still pending a tell). */
 /** A leased spot: the party is led there and settles until `until`; `concern` = it raised a table-change request meanwhile (the lease waits for the host). */
@@ -42,6 +44,7 @@ export interface SeatedRow {party: Id; table: Id; area: Id; server: Id | null; a
 /** Everything the host stand shows, derived from the world. `focus` = the party in focus (the asked one when still at the door, else the next). */
 export interface StandView {
   door: DoorRow[]
+  bySize: Record<number, Id> // party size -> the door party a fast seat of that size takes (first in door order)
   focus: Id | null
   wants: Want[] // recorded for the focus party (said, or heard)
   denied: string[] // asked about, the party had no want
@@ -66,7 +69,9 @@ export interface LedgerChip {spot: Id; label: string; covers?: number; at?: numb
 export interface Move {table: Id; label: string; kind: 'in' | 'out'; covers: number}
 export interface Activity {start: number; end: number; net: number; moves: Move[]} // seat (+) and clear (-) per interval, newest first
 export interface SectionRow {section: Id; name: string; occ: number; turns: number; need: number; under: boolean}
-export interface ServerRow {staff: Id; name: string; rank: number; tally: number; seated: number; tables: number; weight: number; active: boolean; sections: SectionRow[]} // seated = covers at their tables now
+/** One preference as the panels show it: set = established, nothing tested it yet; then the latest outcome on a seating (met / enforced / overridden, with why); bogged = the unit counts as bogged down now. */
+export interface PrefRow {pref: Pref; state: 'set' | PrefMark['state']; why: string; at: number | null}
+export interface ServerRow {staff: Id; name: string; rank: number; tally: number; seated: number; tables: number; weight: number; active: boolean; sections: SectionRow[]; prefs: PrefRow[]; bogged: boolean} // seated = covers at their tables now
 /** One predictive read (Gemini-era overlays): brick = a merge or lease strands a due reservation; pressure = a turn deluge or drought ahead; imbalance = servers' projected covers diverge; punctual = late grace shrinks at peak load; reclaim = joined tables could split to seat waiting parties. */
 export interface Insight {id: 'brick' | 'pressure' | 'imbalance' | 'punctual' | 'reclaim'; level: 'info' | 'warn' | 'crit'; msg: string; tables: Id[]; staff: Id[]; at?: number}
 export interface BoardOpt {ivMin?: number; pastMin?: number; aheadMin?: number} // interval for turnover/activity/ticks (default 15), gantt window around now (default 60 back, 180 ahead)

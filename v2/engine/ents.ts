@@ -1,7 +1,9 @@
 // Entity lookups shared by every engine function (C5: components decide what an entity is).
 import {having} from '../contracts/index.ts'
-import type {Ent, Entity, Id, PType, Policy, World} from '../contracts/index.ts'
+import type {Components, Ent, Entity, Id, PType, Policy, World} from '../contracts/index.ts'
 export type Pty = Ent<'party'> & Entity
+/** A lease carries the pref marks of the pick made when it was leased, until its slot records them (engine-local: `lease.prefs` is not in model.ts yet). */
+export type Lease = Components['lease']
 export const isTable = (e?: Entity): e is Ent<'table'> => !!e && 'table' in e
 export const partyOf = (w: World, id?: Id): Pty | undefined => {
   const e = w.ents[id ?? '']

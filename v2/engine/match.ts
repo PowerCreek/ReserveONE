@@ -10,18 +10,20 @@ import {partyOf} from './ents.ts'
 import type {Pty} from './ents.ts'
 import {set} from './patch.ts'
 import {MIN} from './time.ts'
+import {taker} from './rotate.ts'
+import {anyPrefs, lean} from './prefs.ts'
 type Spot = Ent<'spot'>
 /** Never a candidate: blocked for an event, or leased to a party being led there. */
 const OUT: TStatus[] = ['blocked_private', 'leased']
 /** Everything match and ladder read: the party, what the host knows it wants, the spots and their fits (best first). */
-export interface Env {p: Policy; w: World; now: number; party: Pty; wants: Want[]; by: Record<Id, Spot>; fits: Fit[]; merges: Fit[]; holds: Hold[]; free: (s: Spot) => number; turn: number; keep: (taken: Id[]) => Id[]}
+export interface Env {p: Policy; w: World; now: number; party: Pty; wants: Want[]; by: Record<Id, Spot>; fits: Fit[]; merges: Fit[]; holds: Hold[]; free: (s: Spot) => number; turn: number; keep: (taken: Id[]) => Id[]; lean: (s: Spot) => number} // lean = the would-be server's prefs on the spot (engine/prefs.ts)
 /** The host only knows what was volunteered (`said`) or asked and recorded (`heard`). */
 export const known = (e: Entity): Want[] => (e.wants?.list ?? []).filter(x => x.said || e.wants?.heard.includes(x.feat))
 const has = (s: Spot, x: Want) => (s.spot.feats ?? []).includes(x.feat)
 const meets = (s: Spot, x: Want) => has(s, x) !== !!x.avoid
 const weight = (p: Policy, x: Want) => p.host.score.level[x.level] * (p.host.whys[x.why]?.mult ?? 1) * p.host.score.accord[x.accord]
 const gain = (p: Policy, s: Spot, x: Want) => (has(s, x) ? weight(p, x) * (x.avoid ? p.host.score.avoid : 1) : 0)
-const score = (e: Env, s: Spot, squeezes: Id[]) => e.wants.reduce((n, x) => n + gain(e.p, s, x), 0) - e.p.host.score.slack * (s.spot.capacity - e.party.party.size) - e.p.host.score.squeeze * squeezes.length
+const score = (e: Env, s: Spot, squeezes: Id[]) => e.wants.reduce((n, x) => n + gain(e.p, s, x), 0) - e.p.host.score.slack * (s.spot.capacity - e.party.party.size) - e.p.host.score.squeeze * squeezes.length + e.lean(s)
 const rst = (e: Env) => e.p.seat.resetMin * MIN
 const push = (e: Env) => (at: number, h: Hold) => (at + e.turn > h.start && at < h.end + rst(e) ? h.end + rst(e) : at)
 const when = (e: Env, s: Spot) => Math.max(e.now, e.holds.filter(h => s.spot.tables.includes(h.table)).sort((a, b) => a.start - b.start).reduce(push(e), e.free(s)))
@@ -33,8 +35,9 @@ const fitOf = (e: Env) => (s: Spot): Fit => {
   return {spot: s.id, score: score(e, s, squeezes), met: met.map(x => x.feat), missed: missed.map(miss), waitMin, ready: waitMin <= 0, squeezes}
 }
 const best = (e: Env) => (a: Fit, b: Fit) => b.score - a.score || a.waitMin - b.waitMin || e.by[a.spot].spot.tables.length - e.by[b.spot].spot.tables.length || e.by[a.spot].spot.capacity - e.by[b.spot].spot.capacity || a.spot.localeCompare(b.spot)
+const leanOf = (p: Policy, w: World, now: number, party: Pty) => (anyPrefs(w) ? lean(p, w, taker(p, w, now, party.id), party.party.size) : () => 0)
 const base = (p: Policy, w: World, now: number, party: Pty): Env =>
-  ({p, w, now, party, wants: known(party), by: {}, fits: [], merges: [], holds: holds(p, w, now, party.id), free: freeAt(p, w, now), turn: (avgTurn(p, w) + p.seat.resetMin) * MIN, keep: keeper(p, w, now, party.id)})
+  ({p, w, now, party, wants: known(party), by: {}, fits: [], merges: [], holds: holds(p, w, now, party.id), free: freeAt(p, w, now), turn: (avgTurn(p, w) + p.seat.resetMin) * MIN, keep: keeper(p, w, now, party.id), lean: leanOf(p, w, now, party)})
 /** Fits for one party: needs are hard filters (a spot without a needed feature, or with an avoided one, is not a candidate). Merges (adjacent free pairs) are scored too, but only offered when no single spot is ready. */
 export const env = (p: Policy, w: World, now: number, id: Id, within?: Id[]): Env | undefined => {
   const party = partyOf(w, id)

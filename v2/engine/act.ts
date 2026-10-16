@@ -1,6 +1,6 @@
 // Desk writes (wave 4): every host/manager command as data, one dispatch row per `cmd.do`, each composed from existing engine functions (C3, E1).
 import {having, partsOf} from '../contracts/index.ts'
-import type {Carve, Cmd, Components, Decision, Desk, Entity, Id, Outcome, Patch, Policy, PType, Rung, SeatReq, Task, Told, World} from '../contracts/index.ts'
+import type {Carve, Cmd, Components, Decision, Desk, Entity, Id, Outcome, Patch, Policy, Pref, PrefOn, PType, Rung, SeatReq, Task, Told, World} from '../contracts/index.ts'
 import {hostOf, nextNum, partyLabel, partyOf} from './ents.ts'
 import type {Pty} from './ents.ts'
 import {seat} from './seat.ts'
@@ -20,6 +20,7 @@ import {add, set} from './patch.ts'
 import {expand} from './spots.ts'
 import {freeUp} from './free.ts'
 import {MIN} from './time.ts'
+import {bySize, door} from './desk.ts'
 interface Ctx {p: Policy; w: World; now: number}
 type Of<K extends Cmd['do']> = Extract<Cmd, {do: K}>
 type Row<K extends Cmd['do']> = (c: Ctx, cmd: Of<K>) => Outcome
@@ -66,8 +67,11 @@ const confirmed = (c: Ctx, e: Leased): Outcome => {
   const d = confirm(c.p, c.w, c.now, e)
   return d.ok ? {...d, patches: [...d.patches, ...unclaim(c.w, e.id)], events: [{ev: 'seated', party: e.id, table: e.lease.tables[0], by: hostOf(c.w)}]} : lift(d)
 }
-/** A leased party confirms its lease; anyone else (queue and book quick seats, walk-ins) is seated directly. */
-const seatRow: Row<'seat'> = (c, cmd) => {
+/** A size-only fast seat from the door takes the first door party of that size (StandView.bySize); none = a fresh walk-in. */
+const fromDoor = (c: Ctx, cmd: Of<'seat'>): Of<'seat'> => (cmd.from === 'door' && !cmd.party && cmd.size ? {...cmd, party: bySize(door(c.p, c.w, c.now))[cmd.size]} : cmd)
+/** A leased party confirms its lease; anyone else (queue and book quick seats, walk-ins, door fast seats) is seated directly. */
+const seatRow: Row<'seat'> = (c, given) => {
+  const cmd = fromDoor(c, given)
   const e = partyOf(c.w, cmd.party)
   return e?.lease ? confirmed(c, e as Leased) : direct(c, cmd)
 }
@@ -192,7 +196,33 @@ const staffRow: Row<'staff'> = (c, cmd) => {
   const edit = duty[cmd.to]
   return s && edit ? done([set(cmd.id, {staff: {...s, ...edit(s)}})], [], `${s.name}: ${cmd.to}`) : fail(s ? `Unknown staff change ${cmd.to}` : `No staff ${cmd.id}`)
 }
-const rows: {[K in Cmd['do']]: Row<K>} = {seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow, extend: extendRow, clear: clearRow, reassign: reassignRow}
+// ---- pref / unpref: a server's soft preferences (engine/prefs.ts reads them at every pick)
+const SHAPES = ['rect', 'booth', 'stool']
+const listOf = (what: string, ids: (p: Policy) => string[]) => (p: Policy, v: unknown) =>
+  (Array.isArray(v) && v.length ? v.filter(x => !ids(p).includes(x)).map(x => `Unknown ${what} ${x}`)[0] : `${what} needs a non-empty list`)
+const range = (what: string) => (_p: Policy, v: unknown) => (Array.isArray(v) && v.length === 2 && v.every(Number.isFinite) && v[0] <= v[1] ? undefined : `${what} needs [min, max]`)
+const ON: Record<keyof PrefOn, (p: Policy, v: unknown) => string | undefined> = {
+  area: listOf('area', p => Object.keys(p.service.areas)), feats: listOf('feature', p => Object.keys(p.host.feats)), shape: listOf('shape', () => SHAPES), size: range('size'), cap: range('cap'),
+}
+const onErr = (p: Policy, on: PrefOn) => (Object.keys(on) as (keyof PrefOn)[]).map(k => (ON[k] ? ON[k](p, on[k]) : `Unknown preference key ${k}`)).find(Boolean)
+const prefErr = (c: Ctx, cmd: Of<'pref'>) => {
+  const x: Partial<Pref> = cmd.pref ?? {}
+  return why([[!c.w.ents[cmd.staff]?.staff, `No staff ${cmd.staff}`], [!x.id, 'A preference needs an id'], [!['avoid', 'prefer'].includes(x.kind!), `Unknown preference kind ${x.kind}`],
+    [!['firm', 'yield'].includes(x.give!), `Unknown give ${x.give} (firm or yield)`], [!Object.keys(x.on ?? {}).length, 'A preference needs at least one of area, feats, shape, size, cap']]) ?? onErr(c.p, x.on!)
+}
+/** Add, or replace in place by id. */
+const placed = (ps: Pref[], x: Pref) => (ps.some(q => q.id === x.id) ? ps.map(q => (q.id === x.id ? x : q)) : [...ps, x])
+const prefRow: Row<'pref'> = (c, cmd) => {
+  const err = prefErr(c, cmd)
+  const s = c.w.ents[cmd.staff]?.staff
+  return err ? fail(err) : done([set(cmd.staff, {staff: {...s!, prefs: placed(s!.prefs ?? [], {...cmd.pref, at: c.now})}})], [], `${s!.name}: ${cmd.pref.kind} "${cmd.pref.note || cmd.pref.id}" set`)
+}
+const unprefRow: Row<'unpref'> = (c, cmd) => {
+  const s = c.w.ents[cmd.staff]?.staff
+  const has = !!s?.prefs?.some(x => x.id === cmd.id)
+  return has ? done([set(cmd.staff, {staff: {...s!, prefs: s!.prefs!.filter(x => x.id !== cmd.id)}})], [], `${s!.name}: preference ${cmd.id} dropped`) : fail(s ? `${s.name} has no preference ${cmd.id}` : `No staff ${cmd.staff}`)
+}
+const rows: {[K in Cmd['do']]: Row<K>} = {pref: prefRow, unpref: unprefRow, seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow, extend: extendRow, clear: clearRow, reassign: reassignRow}
 /** Run one host/manager command: patches to commit, events to narrate, one log line; unknown or invalid input -> {ok: false, err}. */
 export const act: Desk['act'] = (p, w, now, cmd) => {
   const row = rows[cmd?.do as Cmd['do']] as Row<Cmd['do']> | undefined

@@ -89,3 +89,12 @@ Order: E6, U8a, U8b in parallel (disjoint files).
 | E6 lease | `v2/engine/**` (not `board.test.ts` expectations beyond the leased state), `v2/ui/stand.ts` `stand.test.ts` `events.ts` `act.ts`, `v2/test/flow.test.ts` | `npm run v2:check && npm run v2:test` |
 | U8a floor views | `v2/ui/floor.ts` `draw.ts` `geo.ts` `iso.ts` (new) + `floor.test.ts` `iso.test.ts` | `npm run v2:check && node --test "v2/ui/floor*.test.ts" "v2/ui/iso*.test.ts" && npm run v2:build` |
 | U8b dashboard | `v2/ui/board.ts` (new) `board.test.ts` `shell.ts` `index.ts` `panels.test.ts` | `npm run v2:check && node --test "v2/ui/board*.test.ts" "v2/ui/panels.test.ts" && npm run v2:build` |
+
+## WAVE 8 LANES (prefs, zones, grid, door fast seat; contracts landed: model `Pref` `PrefOn` `PrefMark` `staff.prefs` `slot.prefs` `zone`; policy `prefs`, `sim.grid`; `Pick.prefs`; desk Cmd `pref|unpref`, `seat.from`, `Offer.prefs`, `StandView.bySize`, `PrefRow`, `ServerRow.prefs|bogged`)
+Order: V4 and E8 in parallel; then U10a and U10b in parallel (U10a/U10b also take the unfinished U9 scope).
+| lane | owned paths | acceptance |
+| --- | --- | --- |
+| V4 venue | `v2/venue.ts` `v2/crew.ts` `v2/venue.test.ts`, `policy.sim.door` value | `node --test v2/venue.test.ts` (+ `v2:check` once E8 lands) |
+| E8 engine prefs + door seat | `v2/engine/**` | `npm run v2:check && node --test "v2/engine/**/*.test.ts"` |
+| U10a floor | `v2/ui/floor.ts` `draw.ts` `iso.ts` `geo.ts` `card.ts` (new) + their tests | `npm run v2:check && node --test "v2/ui/floor*.test.ts" "v2/ui/iso*.test.ts" "v2/ui/card*.test.ts" && npm run v2:build` |
+| U10b panels | `v2/ui/board.ts` `staff.ts` `queue.ts` `stand.ts` `runner.ts` `index.ts` `shell.ts` `tone.ts` `app.css` `prefs.ts` (new) + their tests, `v2/test/**` (not dom.ts), `engine/ask.ts` legacy `where` branch only | `npm run v2:check && npm run v2:test && npm run v2:build` |

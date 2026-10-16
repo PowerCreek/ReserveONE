@@ -10,6 +10,12 @@ export type Level = 'need' | 'strong' | 'soft' // how binding a preference is; n
 export type Accord = 'all' | 'most' | 'one' // consensus: how much of the party shares the want
 /** A qualifier: the party wants (or avoids) a feature, at a level, for a reason (policy.host.whys), with a degree of consensus. */
 export interface Want {feat: string; level: Level; why: string; accord: Accord; avoid?: boolean; said?: boolean} // said = volunteered, else the host must ask
+/** What a server preference is about; every given key must match (a table's area, any of its feats or shape, a party size range, a table capacity range). */
+export interface PrefOn {area?: Id[]; feats?: string[]; shape?: string[]; size?: [min: number, max: number]; cap?: [min: number, max: number]}
+/** A server's soft preference, always ranked below the rotation: `avoid` keeps tables matching `on` away from them, `prefer` steers matching tables to them first. `give`: firm = held unless every other eligible unit is bogged down too (or none can take it); yield = "I'll do it if nobody can" (held whenever anyone else can take it). */
+export interface Pref {id: string; kind: 'avoid' | 'prefer'; on: PrefOn; give: 'firm' | 'yield'; note: string; at: number}
+/** What a preference did at one seating: met = satisfied at no cost, enforced = it moved the table to someone else (or to this server), overridden = the rotation's obligation won (all bogged, nobody else could), with why. */
+export interface PrefMark {staff: Id; pref: string; state: 'met' | 'enforced' | 'overridden'; why: string}
 export type Ask = 'open' | 'offered' | 'granted' | 'declined'
 export interface Components {
   floor: {name: string; active: boolean; level?: number} // level = storey (0 ground, 1 roof; default 0); floors on one level share one coordinate frame (stitched side by side), so `pos` places a table in its level's frame
@@ -21,12 +27,13 @@ export interface Components {
   party: {num: number; label: string; prefix: string; kind: PType; name: string; size: number; here?: number}
   reservation: {at: number; durationMin: number; table: Id | null; status: 'BOOKED' | 'ARRIVED' | 'SEATED' | 'NO_SHOW' | 'QUEUED'; phone: string; notes: string}
   queue: {since: number; quotedMin: number; status: 'WAITING' | 'SEATED'; from: Id | null}
-  slot: {table: Id; party: Id; seatedAt: number; turnAt: number; endedAt?: number; status: 'ACTIVE' | 'LAPSED' | 'COMPLETED'; told?: {by: Id; at: number}} // told = the host told this table's server (needed where policy.service.areas[area].seen is false)
-  staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number; weight?: number; area?: Id; crew?: string[]} // weight = rotation participants this unit counts as (default 1; a bartender pair = 2); area = the only area it serves (default any); crew = a pair's names
+  slot: {table: Id; party: Id; seatedAt: number; turnAt: number; endedAt?: number; status: 'ACTIVE' | 'LAPSED' | 'COMPLETED'; told?: {by: Id; at: number}; prefs?: PrefMark[]} // told = the host told this table's server (needed where policy.service.areas[area].seen is false)
+  staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number; weight?: number; area?: Id; crew?: string[]; prefs?: Pref[]} // weight = rotation participants this unit counts as (default 1; a bartender pair = 2); area = the only area it serves (default any); crew = a pair's names
   event: {name: string; tables: Id[]; start: number; end: number; locked: Id[]; reclaimed: boolean}
   spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]; last?: boolean} // derived by engine.spots; last = a merge through a last-resort table
+  zone: {label: string; kind: 'area' | 'walkway' | 'aisle' | 'lobby' | 'stairs' | 'door' | 'wall'} // a demarcated part of the building (with `pos`): drawn as dashed outlines and labels in the floor views; `door` and `stairs` mark the way in and up
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
-  lease: {spot: Id; tables: Id[]; at: number; until: number; step: string} // party: the tables leased to it while it is led and settles; at `until` (policy.host.clock.leaseMin) it is seated unless it raised a concern
+  lease: {spot: Id; tables: Id[]; at: number; until: number; step: string; prefs?: PrefMark[]} // party: the tables leased to it while it is led and settles; at `until` (policy.host.clock.leaseMin) it is seated unless it raised a concern
   wants: {list: Want[]; heard: string[]} // party qualifiers; `heard` = feat ids the host recorded at intake
   offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'; declined?: Id[]} // ladder proposal to a party; declined = spots the party already said no to
   request: {reason: string; stage: 'arrived' | 'seated'; table: Id; at: number; status: Ask; spot: Id | null} // re-seat request after the host led the party

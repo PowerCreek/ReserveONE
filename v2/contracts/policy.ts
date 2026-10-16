@@ -7,9 +7,10 @@ import type {ServiceCfg} from './service.ts'
 export interface Policy {
   seat: {resetMin: number; quantumMin: number; cadenceMin: number; fitSlackMin: number; turnMin: [number, number]; turnDefault: number; lapsedClearMin: number; lateGraceMin: number; selfSeat: string[]} // selfSeat: table shapes guests take first come, first served (bar stools): the host never offers or seats them
   queue: {tier: Record<PType, number>} // lower = served first
-  rotation: {idleCapMin: number; idleWeight: number} // score = -tally + idle*idleWeight - skip
+  rotation: {idleCapMin: number; idleWeight: number}
+  prefs: {bogged: number; prefer: number; slack: number} // bogged = covers above the floor's mean (per weight) that marks a unit bogged down; prefer = rotation score bonus for a unit that prefers the tables (never more than one seating's worth, so the rotation stays primary); slack = match penalty per spare seat on a table whose server avoids that fit // score = -tally + idle*idleWeight - skip
   alerts: {prepMin: number; warnMin: number; busBase: number; busDemand: number; busRank: number}
-  sim: {walkPxPerSec: number; dwellSec: {seat: number; serve: number; clear: number}; door: [x: number, y: number]; floor: [w: number, h: number]; autoSeat: boolean} // autoSeat: the sim host seats the queue head by itself (default off: the player seats); door = spawn point (the `door` entity is seeded from it); floor = canvas size
+  sim: {walkPxPerSec: number; dwellSec: {seat: number; serve: number; clear: number}; door: [x: number, y: number]; floor: [w: number, h: number]; grid: number; autoSeat: boolean} // grid = floor cell size in policy px: table footprints and centres sit on whole cells // autoSeat: the sim host seats the queue head by itself (default off: the player seats); door = spawn point (the `door` entity is seeded from it); floor = canvas size
   plan: {horizonMin: number; slackMin: number; anticipate: number} // temporal plan: reservations due within horizonMin are placed ahead (tables free by then, merges included); slackMin = lateness tolerated; anticipate = how much of a server's planned covers counts against them in the rotation (0 = ignore)
   merge: {max: number} // most tables a merge (tables pushed together) may join; which tables touch is venue data (`adj`)
   board: {limits: Record<string, {warn: number; crit: number}>; insight: {horizonMin: number; imbalanceCovers: number; delugeTurns: number; droughtMin: number; peakQueue: number; peakGraceMin: number}} // dashboard: kpi tone limits by kpi id; insight thresholds (Gemini-era predictive overlays): horizon for projections, cover spread that flags an imbalance, turns per interval that is a deluge, minutes with no turn that is a drought, queue length that is peak load, the late grace used at peak
@@ -24,8 +25,9 @@ export const defaultPolicy: Policy = {
   seat: {resetMin: 5, quantumMin: 5, cadenceMin: 3, fitSlackMin: 5, turnMin: [45, 90], turnDefault: 60, lapsedClearMin: 5, lateGraceMin: 15, selfSeat: ['stool']},
   queue: {tier: {P: 0, V: 1, W: 2, R: 2}},
   rotation: {idleCapMin: 600, idleWeight: 0.001},
+  prefs: {bogged: 6, prefer: 2, slack: 1},
   alerts: {prepMin: 30, warnMin: 15, busBase: 30.5, busDemand: 10, busRank: 5},
-  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [24, 260], floor: [960, 720], autoSeat: false},
+  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [32, 472], floor: [960, 720], grid: 16, autoSeat: false},
   plan: {horizonMin: 150, slackMin: 5, anticipate: 1},
   merge: {max: 4},
   board: {

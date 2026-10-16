@@ -2,6 +2,7 @@
 import {defaultPolicy, defaultService} from './contracts/index.ts'
 import type {Carve, Entity, Id} from './contracts/index.ts'
 import {partition} from './engine/partition.ts'
+import {POSTS} from './venue.ts'
 const NAMES = ['Ana', 'Ben', 'Cy', 'Dot']
 const COLORS = ['#0ea5e9', '#f59e0b', '#10b981', '#a855f7']
 const PAIRS: [area: string, crew: [string, string]][] = [['bar', ['Eli', 'Fay']], ['roof', ['Gus', 'Hal']]]
@@ -26,13 +27,13 @@ export const carve = (es: Entity[]): Entity[] => {
 }
 const unit = (role: 'host' | 'server' | 'busser', x: number, y: number) => ({role, x, y, speed: walk, task: null, backlog: [], party: null})
 const staff = (name: string, extra: object = {}) => ({name, active: true, sections: [], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 40, ...extra})
-const servers = (): Entity[] => NAMES.map((n, i) => ({id: `sv${i + 1}`, body: unit('server', 925, 40 + i * 40), staff: staff(n, {sections: [`sec_m${i + 1}`]})}))
-const pairs = (): Entity[] => PAIRS.map(([area, c], i) => ({id: `bt_${area}`, body: unit('server', 900, 220 + i * 40), staff: staff(c.join(' & '), {weight: 2, area, crew: c})}))
+const servers = (): Entity[] => NAMES.map((n, i) => ({id: `sv${i + 1}`, body: unit('server', ...POSTS.servers[i]!), staff: staff(n, {sections: [`sec_m${i + 1}`]})}))
+const pairs = (): Entity[] => PAIRS.map(([area, c], i) => ({id: `bt_${area}`, body: unit('server', ...POSTS.pairs[i]!), staff: staff(c.join(' & '), {weight: 2, area, crew: c})}))
 const sections = (): Entity[] => [...NAMES.map((n, i) => ({id: `sec_m${i + 1}`, section: {name: `${n}'s chunk`, color: COLORS[i]!}})), {id: 'sec_grotto', section: {name: 'Grotto', color: '#ef4444'}}]
 const carves = (): Record<Id, Carve> => Object.fromEntries(Object.entries(defaultService.areas).map(([id, a]) => [id, a.carve[0]!]))
-/** Host, busser, 4 floor servers, 2 bartender pairs, sections, the `service` singleton and the door spawn point. */
+/** Host (at the stand in the lobby), busser, 4 floor servers, 2 bartender pairs (parked per venue POSTS, clear of tables), sections, the `service` singleton and the door spawn point. */
 export const crew = (): Entity[] => [
-  {id: 'host', body: unit('host', 30, 215)}, {id: 'bus1', body: unit('busser', 925, 480)},
+  {id: 'host', body: unit('host', ...POSTS.host)}, {id: 'bus1', body: unit('busser', ...POSTS.bus)},
   ...servers(), ...pairs(), ...sections(),
   {id: 'service', service: {override: null, carve: carves()}},
   {id: 'door', pos: {floor: 'rf1', x: dx, y: dy, w: 0, h: 0}},

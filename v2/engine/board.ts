@@ -1,6 +1,6 @@
 // Dashboard read model (wave 5): the service at a glance, derived from world + policy only (E1, E2). Stages first, one fold in `board`.
 import {having, partsOf} from '../contracts/index.ts'
-import type {Activity, Bar, Board, BoardOpt, Desk, Ent, Entity, Gantt, Id, Kpi, Lane, LedgerChip, Move, Policy, SectionRow, ServerRow, SpotState, TStatus, Tick, World} from '../contracts/index.ts'
+import type {Activity, Bar, Board, BoardOpt, Desk, Ent, Entity, Gantt, Id, Kpi, Lane, LedgerChip, Move, Policy, Pref, PrefMark, PrefRow, SectionRow, ServerRow, SpotState, TStatus, Tick, World} from '../contracts/index.ts'
 import {expand, spots} from './spots.ts'
 import {turnover} from './turnover.ts'
 import {bus} from './bus.ts'
@@ -15,6 +15,7 @@ import {MIN, midnight} from './time.ts'
 import {stand} from './desk.ts'
 import {insights} from './insight.ts'
 import {readout} from './readout.ts'
+import {bogged} from './prefs.ts'
 type Slot = Ent<'slot'>
 type Res = Ent<'party' | 'reservation'>
 type Opt = Required<BoardOpt>
@@ -112,15 +113,24 @@ const section = (c: Ctx) => (s: Ent<'section'>): SectionRow => {
   const st = sectionStats(c.p, c.w, c.now, s)
   return {section: s.id, name: s.section.name, occ: st.occ, turns: st.turns, need: st.need, under: st.under}
 }
-const server = (c: Ctx, rk: Id[]) => (s: Ent<'staff'>): ServerRow => {
+/** Every pref mark recorded on a seating, with when. */
+type Mk = {m: PrefMark; at: number}
+const marksOf = (c: Ctx): Mk[] => c.slots.flatMap(s => (s.slot.prefs ?? []).map(m => ({m, at: s.slot.seatedAt})))
+/** A pref's latest outcome since it was set, else 'set'. */
+const prefRow = (ms: Mk[], id: Id) => (x: Pref): PrefRow => {
+  const hit = ms.filter(k => k.m.staff === id && k.m.pref === x.id && k.at >= x.at).sort((a, b) => b.at - a.at)[0]
+  return {pref: x, state: hit?.m.state ?? 'set', why: hit?.m.why ?? '', at: hit?.at ?? null}
+}
+interface Srv {rk: Id[]; ms: Mk[]; bog: Record<Id, boolean>}
+const server = (c: Ctx, v: Srv) => (s: Ent<'staff'>): ServerRow => {
   const mine = active(c).filter(x => c.w.ents[x.slot.table]?.table?.waiter === s.id)
-  return {staff: s.id, name: s.staff.name, rank: rk.indexOf(s.id) + 1, tally: s.staff.tally, seated: covers(c, mine), tables: new Set(mine.map(x => x.slot.table)).size,
-    weight: s.staff.weight ?? 1, active: s.staff.active, sections: having(c.w, 'section').filter(x => s.staff.sections.includes(x.id)).map(section(c))}
+  return {staff: s.id, name: s.staff.name, rank: v.rk.indexOf(s.id) + 1, tally: s.staff.tally, seated: covers(c, mine), tables: new Set(mine.map(x => x.slot.table)).size,
+    weight: s.staff.weight ?? 1, active: s.staff.active, sections: having(c.w, 'section').filter(x => s.staff.sections.includes(x.id)).map(section(c)), prefs: (s.staff.prefs ?? []).map(prefRow(v.ms, s.id)), bogged: !!v.bog[s.id]}
 }
 const servers = (c: Ctx): ServerRow[] => {
   const rk = rotate(c.p, c.w, c.now).map(r => r.staff)
   const pos = (id: Id) => (rk.includes(id) ? rk.indexOf(id) : rk.length)
-  return having(c.w, 'staff').sort((a, b) => pos(a.id) - pos(b.id)).map(server(c, rk))
+  return having(c.w, 'staff').sort((a, b) => pos(a.id) - pos(b.id)).map(server(c, {rk, ms: marksOf(c), bog: bogged(c.p, c.w, c.now)}))
 }
 
 // ---- kpis: [id, label, measure, value, hint]; tone from the measure against one threshold table

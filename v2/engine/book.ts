@@ -1,17 +1,18 @@
 import {having} from '../contracts/index.ts'
 import type {Decision, Ent, Id, Patch, Pick, Policy, SeatReq, Task, World} from '../contracts/index.ts'
 import {center, nextNum, partyLabel} from './ents.ts'
-import type {Pty} from './ents.ts'
+import type {Lease, Pty} from './ents.ts'
 import {MIN} from './time.ts'
 import {add, set} from './patch.ts'
-import {serverFor} from './rotate.ts'
-/** Tables leased to the party already carry the server it was led for; any other seating asks the rotation. */
-const pickOf = (p: Policy, w: World, now: number, ts: Ent<'table'>[], who?: Pty): Pick =>
-  (ts.length && ts.every(t => t.table.status === 'leased') && ts[0].table.waiter ? {staff: ts[0].table.waiter, fallback: false} : serverFor(p, w, now, ts.map(t => t.id), who?.id))
+import {serverOf} from './rotate.ts'
+const marked = (l?: Lease) => (l?.prefs ? {prefs: l.prefs} : {})
+/** Tables leased to the party already carry the server it was led for (and the lease the pref marks of that pick); any other seating asks the rotation. */
+const pickOf = (p: Policy, w: World, now: number, ts: Ent<'table'>[], req: SeatReq, who?: Pty): Pick =>
+  (ts.length && ts.every(t => t.table.status === 'leased') && ts[0].table.waiter ? {staff: ts[0].table.waiter, fallback: false, ...marked(who?.lease)} : serverOf(p, w, now, ts.map(t => t.id), who?.id, req.size))
 interface B {p: Policy; w: World; now: number; req: SeatReq; who?: Pty; ts: Ent<'table'>[]; pk: Pick; num: number; pid: Id; label: string}
 const brief = (p: Policy, w: World, now: number, req: SeatReq, who: Pty | undefined, ts: Ent<'table'>[]): B => {
   const num = who?.party.num ?? nextNum(w)
-  return {p, w, now, req, who, ts, num, pk: pickOf(p, w, now, ts, who), pid: who?.id ?? `pty${num}`, label: who?.party.label ?? partyLabel(req.prefix ?? '', req.kind, num)}
+  return {p, w, now, req, who, ts, num, pk: pickOf(p, w, now, ts, req, who), pid: who?.id ?? `pty${num}`, label: who?.party.label ?? partyLabel(req.prefix ?? '', req.kind, num)}
 }
 const tables = (b: B): Patch[] => b.ts.map(t => set(t.id, {table: {...t.table, status: 'occupied', waiter: b.pk.staff}}))
 /** Seating several tables that no link group covers pushes them together: a `merged` link, dissolved when they clear. */
@@ -19,7 +20,7 @@ const linked = (b: B): Patch[] => {
   const ids = b.ts.map(t => t.id)
   return ids.length > 1 && !having(b.w, 'link').some(l => l.link.members.some(m => ids.includes(m))) ? [add({id: `link-${ids.join('+')}`, link: {members: ids, merged: true}})] : []
 }
-const slot = (b: B): Patch => add({id: `slot-${b.num}-${b.now}`, slot: {table: b.ts[0].id, party: b.pid, seatedAt: b.now, turnAt: b.now + (b.req.durationMin ?? b.who?.reservation?.durationMin ?? b.p.seat.turnDefault) * MIN, status: 'ACTIVE'}})
+const slot = (b: B): Patch => add({id: `slot-${b.num}-${b.now}`, slot: {table: b.ts[0].id, party: b.pid, seatedAt: b.now, turnAt: b.now + (b.req.durationMin ?? b.who?.reservation?.durationMin ?? b.p.seat.turnDefault) * MIN, status: 'ACTIVE', ...(b.pk.prefs ? {prefs: b.pk.prefs} : {})}})
 const staff = (b: B): Patch[] => having(b.w, 'staff').filter(s => s.id === b.pk.staff || s.staff.skip).map(s => set(s.id, {staff: {...s.staff, skip: 0, ...(s.id === b.pk.staff ? {tally: s.staff.tally + b.req.size, lastSeatedAt: b.now} : {})}}))
 const fresh = (b: B): Patch => add({id: b.pid, party: {num: b.num, label: b.label, prefix: b.req.prefix ?? '', kind: b.req.kind, name: b.label, size: b.req.size, here: b.req.size}})
 const known = (e: Pty): Patch => set(e.id, {party: {...e.party, here: e.party.here || e.party.size}, ...(e.queue && {queue: {...e.queue, status: 'SEATED' as const}}), ...(e.reservation && {reservation: {...e.reservation, status: 'SEATED' as const}})})

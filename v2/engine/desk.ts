@@ -1,6 +1,6 @@
 // Desk read model (wave 4): everything the host stand shows, derived from the world (E2). The stand renders this; it computes nothing itself.
 import {having, partsOf} from '../contracts/index.ts'
-import type {Desk, DoorRow, Ent, Entity, Id, LeaseRow, Offer, Policy, ReqRow, SeatedRow, World} from '../contracts/index.ts'
+import type {Desk, DoorRow, Ent, Entity, Id, LeaseRow, Offer, Policy, ReqRow, Rung, SeatedRow, World} from '../contracts/index.ts'
 import type {Pty} from './ents.ts'
 import {line} from './queue.ts'
 import {where} from './ask.ts'
@@ -18,7 +18,9 @@ const since = (e: Pty) => e.queue?.since ?? e.reservation?.at ?? 0
 const row = (now: number) => (e: Pty): DoorRow =>
   ({party: e.id, label: e.party.label, name: e.party.name, size: e.party.size, kind: e.party.kind, waitedMin: Math.max(0, Math.floor((now - since(e)) / MIN))})
 /** The line (policy.queue.tier, then waited) minus parties the host already placed (leased or seated). */
-const door = (p: Policy, w: World, now: number): DoorRow[] => line(p, w).filter(e => !where(w, e.id)).map(row(now))
+export const door = (p: Policy, w: World, now: number): DoorRow[] => line(p, w).filter(e => !where(w, e.id)).map(row(now))
+/** Party size -> the first door party of that size (what a size-only fast seat from the door takes). */
+export const bySize = (rows: DoorRow[]): Record<number, Id> => Object.fromEntries([...rows].reverse().map(r => [r.size, r.party]))
 /** Recorded wants (said or heard), feats asked about with no want, feats still to ask. */
 const intakeOf = (p: Policy, e?: Entity) => {
   const wants = e ? known(e) : []
@@ -26,9 +28,10 @@ const intakeOf = (p: Policy, e?: Entity) => {
   const has = (f: string) => wants.some(x => x.feat === f)
   return {wants, denied: heard.filter(f => !has(f)), unasked: e ? Object.keys(p.host.feats).filter(f => !has(f) && !heard.includes(f)) : []}
 }
-/** Ladder rungs (declined spots already left out by the ladder), each with who would serve it; spot-bearing rungs first. */
+/** Ladder rungs (declined spots already left out by the ladder), each with who would serve it and what server prefs did to that pick; spot-bearing rungs first. */
+const served = (p: Policy, w: World, now: number, id: Id) => (r: Rung): Offer => { const k = r.spot ? serverFor(p, w, now, partsOf(w, r.spot), id) : undefined; return {...r, server: k?.staff ?? null, prefs: k?.prefs ?? []} }
 const offers = (p: Policy, w: World, now: number, id: Id): Offer[] =>
-  ladder(p, w, now, id).map(r => ({...r, server: r.spot ? serverFor(p, w, now, partsOf(w, r.spot), id).staff : null}))
+  ladder(p, w, now, id).map(served(p, w, now, id))
     .sort((a, b) => Number(!a.spot) - Number(!b.spot))
 const turns: Record<'true' | 'false', (p: Policy, w: World, now: number) => Id[]> = {true: () => [], false: (p, w, now) => rotate(p, w, now).map(r => r.staff)}
 const requests = (p: Policy, w: World, now: number): ReqRow[] => having(w, 'party', 'request').filter(e => e.request.status === 'open')
@@ -46,5 +49,5 @@ export const stand: Desk['stand'] = (p, w, now, focus) => {
   const at = door(p, w, now)
   const f = (at.find(r => r.party === focus) ?? at[0])?.party ?? null
   const rest = {rotation: turns[String(holdsOn(p, w, now)) as 'true'](p, w, now), mode: modeAt(p, w, now), outlook: outlook(p, w, now), requests: requests(p, w, now), leased: leased(w), seated: seated(p, w)}
-  return {door: at, focus: f, ...intakeOf(p, w.ents[f ?? '']), offers: f ? offers(p, w, now, f) : [], ...rest}
+  return {door: at, bySize: bySize(at), focus: f, ...intakeOf(p, w.ents[f ?? '']), offers: f ? offers(p, w, now, f) : [], ...rest}
 }

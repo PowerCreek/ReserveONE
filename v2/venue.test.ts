@@ -48,7 +48,7 @@ test('bar and roof each have a bartender pair of weight 2', () => {
 test('singleton service entity, host, busser and door are present', () => {
   assert.deepEqual(w.ents.service!.service, {override: null, carve: {main: 'chunk', grotto: 'whole', patio: 'tops', bar: 'level', roof: 'level'}})
   assert.deepEqual(['host', 'busser'].map(r => having(w, 'body').filter(e => e.body.role === r).length), [1, 1])
-  assert.deepEqual(w.ents.door!.pos, {floor: 'rf1', x: 24, y: 260, w: 0, h: 0})
+  assert.deepEqual(w.ents.door!.pos, {floor: 'rf1', x: defaultPolicy.sim.door[0], y: defaultPolicy.sim.door[1], w: 0, h: 0})
   assert.equal(ents.filter(e => e.id === 'service').length, 1)
 })
 const main = (ids: string[]) => ids.map(n => w.ents[`rf_${n}`]!.table!)
@@ -71,7 +71,7 @@ test('every level is laid out without overlaps (floors on one level share its fr
   assert.ok(ts.every(t => adj(t.id).every(o => adj(o).includes(t.id) && w.ents[o]!.pos!.floor === t.pos.floor)))
   assert.deepEqual(['17', '19', '23', '9', '12', '1', '24'].map(n => adj(`rf_${n}`)), [['rf_18'], ['rf_18', 'rf_20'], ['rf_22'], ['rf_10'], ['rf_11'], [], []])
   assert.deepEqual(['g1', 'g2', 'g4', 'b14', 'b15', 'b21', 'b20', 'b22', 'r1', 'r2', 'r4', 'r5', 'r7', 'r8', 'r9'].map(n => adj(`rf_${n}`)),
-    [['rf_g2'], ['rf_g1', 'rf_g3'], ['rf_g5'], ['rf_b15'], ['rf_b14', 'rf_b16'], ['rf_b20'], ['rf_b21'], [], ['rf_r2'], ['rf_r1', 'rf_r3', 'rf_r5'], ['rf_r3', 'rf_r7'], ['rf_r2', 'rf_r6'], ['rf_r4', 'rf_r6'], [], []])
+    [['rf_g2'], ['rf_g1', 'rf_g3'], ['rf_g5'], ['rf_b15'], ['rf_b14', 'rf_b16'], ['rf_b20'], ['rf_b21'], [], ['rf_r2', 'rf_r5'], ['rf_r1', 'rf_r3', 'rf_r6'], ['rf_r3'], ['rf_r1', 'rf_r6'], ['rf_r3', 'rf_r6'], [], []])
 })
 test('labels are the owner\'s: T1-T24, G, B, P, R; floors are named and stacked on two levels', () => {
   const by = (a: string) => labels(inArea(a))
@@ -81,27 +81,77 @@ test('labels are the owner\'s: T1-T24, G, B, P, R; floors are named and stacked 
   assert.deepEqual(having(w, 'floor').map(f => [f.id, f.floor.name, f.floor.level]), [['rf1', 'Main Dining Room', 0], ['rf2', 'Bar', 0], ['rf3', 'Patio', 0], ['rf4', 'Roof', 1]])
   assert.deepEqual(['r1', 'r8', 'r9', 'r10', 'r_bar'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.feat!.tags.includes('hightop')]), [[4, false], [6, true], [4, true], [2, true], [10, false]])
 })
-test('level 0 is one frame: the turned bar sits right of the walkway along T4/T15/T16/T24, the patio below T17-T24; the roof stacks over it', () => {
-  const p = (n: string) => w.ents[`rf_${n}`]!.pos!
-  const at = (a: string) => having(w, 'table', 'area', 'pos').filter(t => t.area.id === a)
-  const cx = (n: string) => p(n).x + p(n).w / 2
+const p = (n: string) => w.ents[`rf_${n}`]!.pos!
+const at = (a: string) => having(w, 'table', 'area', 'pos').filter(t => t.area.id === a)
+const cx = (n: string) => p(n).x + p(n).w / 2
+const cy = (n: string) => p(n).y + p(n).h / 2
+const wall = Math.max(...nums([17, 18, 19, 20, 21, 22, 23, 24]).map(n => p(n).y + p(n).h)) // main's bottom wall (T17's)
+const G = defaultPolicy.sim.grid
+const zones = having(w, 'zone', 'pos')
+const zone = (label: string) => zones.find(z => z.zone.label === label)!.pos
+type Box = {x: number; y: number; w: number; h: number}
+const holds = (o: Box, i: Box) => i.x >= o.x && i.y >= o.y && i.x + i.w <= o.x + o.w && i.y + i.h <= o.y + o.h
+const crosses = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+test('level 0 is one frame: the bar sits right of the walkway along T4/T15/T16/T24, the patio below T17-T24 and clear of the bar', () => {
   const walk = Math.max(...['4', '15', '16', '24'].map(n => p(n).x + p(n).w))
   assert.deepEqual(new Set(['b4', 'b5', 'b6', 'b7', 'b8'].map(n => p(n).x)).size, 1, 'B4-B8 form one column')
   assert.ok(['b4', 'b20', 'b16'].every(n => p(n).x > walk) && at('bar').every(t => t.pos.x >= p('b16').x), 'the B20/B4-B8/B16 column faces main across the walkway')
   assert.ok(['b20', 'b4', 'b5', 'b6', 'b7', 'b8', 'b16'].every((n, i, a) => i === 0 || p(a[i - 1]!).y < p(n).y), 'B20 heads the column, B16 ends it')
-  const wall = Math.max(...nums([17, 18, 19, 20, 21, 22, 23, 24]).map(n => p(n).y + p(n).h))
   assert.ok(at('patio').every(t => t.pos.y > wall && t.pos.x + t.pos.w < p('b4').x), 'patio in front of main, clear of the bar')
+})
+test('roof (owner): R1-R4 on T17\'s line, R5-R7 across from R1-R3, R9/R10 between R7 and the bar, R8 centred on the bar an aisle off, R10 above and left of R8', () => {
+  const [bar, r8, r9, r10, r7] = ['r_bar', 'r8', 'r9', 'r10', 'r7'].map(p)
   assert.deepEqual(['r1', 'r2', 'r3', 'r4'].map(n => p(n).y), Array(4).fill(p('17').y), 'R1-R4 on T17-T24\'s line')
   assert.ok(['r1', 'r2', 'r3', 'r4'].every((n, i, a) => i === 0 || cx(a[i - 1]!) < cx(n)), 'R1-R4 left to right')
-  assert.deepEqual([['r5', 'r2'], ['r6', 'r3'], ['r7', 'r4'], ['r9', 'r2']].map(([a, b]) => p(a!).x === p(b!).x), [true, true, true, true])
-  assert.ok(Math.abs(cx('r10') - cx('r1')) <= 1, 'R10 in R1\'s rank')
-  assert.ok(p('r9').y < p('r5').y && p('r5').y < p('r2').y && p('r10').y === p('r9').y + (p('r9').h - p('r10').h) / 2, 'R5-R7 one aisle in, R9/R10 two')
-  assert.ok(cx('r_bar') > p('b4').x && cx('r_bar') < Math.max(...at('bar').map(t => t.pos.x + t.pos.w)) && p('r8').x > p('r4').x, 'R8 and the roof bar on the right, the bar over the ground-floor bar')
+  assert.deepEqual([['r5', 'r1'], ['r6', 'r2'], ['r7', 'r3']].map(([a, b]) => p(a!).x === p(b!).x && p(a!).y + p(a!).h < p(b!).y), [true, true, true], 'R5-R7 one aisle above R1-R3, same columns')
+  assert.ok([r9!, r10!].every(r => r.x >= r7!.x + r7!.w && r.x + r.w <= bar!.x), 'R9 and R10 between R7 and the roof bar')
+  assert.equal(cy('r8'), cy('r_bar'), 'R8 centred along the bar\'s length')
+  assert.ok(bar!.x - (r8!.x + r8!.w) >= 2 * G, 'an aisle between R8 and the bar')
+  assert.ok(r10!.y + r10!.h < r8!.y && cx('r10') < cx('r8'), 'R10 across the aisle above R8, to its left')
+  const [stairs, walkTop, corner] = ['Stairs down', 'Top walk', 'Stair corner'].map(zone)
+  assert.ok(stairs!.x <= p('r5').x && stairs!.y + stairs!.h <= p('r5').y && stairs!.y <= r9!.y, 'the stairs arrive top-left, above R5')
+  assert.ok(walkTop!.x === stairs!.x + stairs!.w && walkTop!.x + walkTop!.w === r9!.x && walkTop!.y === r9!.y, 'from the stairs the top walk runs right to R9, the first table')
+  assert.ok(corner!.x <= r7!.x && corner!.x + corner!.w >= r7!.x + r7!.w && corner!.y + corner!.h <= r7!.y && corner!.y >= walkTop!.y + walkTop!.h, 'a corner (wall) above R7, below the walk')
+})
+test('the door is on the bottom wall in the lower-left corner, the lobby just inside it, the stairs above the lobby; the policy door and the crew agree', () => {
+  const [door, lobby, stairs, swall] = ['Front door', 'Lobby', 'Stairs to the roof', 'Stair wall'].map(zone)
+  const [dx, dy] = defaultPolicy.sim.door
+  assert.equal(door!.y, wall, 'door on T17\'s wall, facing out')
+  assert.ok(door!.x + door!.w <= p('17').x && door!.x <= Math.min(...having(w, 'table', 'pos').filter(t => w.ents[t.pos.floor]!.floor!.level === 0).map(t => t.pos.x)), 'lower-left corner')
+  assert.ok(holds({...door!, y: door!.y - 1, h: door!.h + 1}, {x: dx, y: dy, w: 0, h: 0}), 'policy.sim.door is the door')
+  assert.ok(lobby!.y + lobby!.h === door!.y && lobby!.x <= door!.x && lobby!.x + lobby!.w <= p('17').x && lobby!.w >= 6 * G, 'lobby (about two tables wide) just inside the door, left of T17')
+  assert.ok(stairs!.y + stairs!.h <= lobby!.y && stairs!.x === lobby!.x && stairs!.x + stairs!.w < lobby!.x + lobby!.w, 'stairs behind the stand, their foot reached right, up, then left')
+  assert.ok(swall!.y === stairs!.y + stairs!.h && swall!.y + swall!.h === lobby!.y, 'a wall between lobby and stairs')
+  const host = having(w, 'body').find(b => b.body.role === 'host')!.body
+  assert.ok(holds(lobby!, {x: host.x, y: host.y, w: 0, h: 0}), 'host at the stand in the lobby')
+  const ts = having(w, 'table', 'pos')
+  assert.deepEqual(having(w, 'body').filter(b => ts.some(t => holds(t.pos, {x: b.body.x, y: b.body.y, w: 0, h: 0}))).map(b => b.id), [], 'crew parked clear of tables')
+})
+test('patio: P1 about in line with T17 and the door\'s approach (below the door) is empty', () => {
+  const door = zone('Front door')
+  assert.ok(Math.abs(p('p1').x - p('17').x) <= G, `P1 ${p('p1').x} vs T17 ${p('17').x}`)
+  const gap = {x: door.x, y: door.y, w: door.w, h: defaultPolicy.sim.floor[1] - door.y}
+  assert.deepEqual(having(w, 'table', 'pos').filter(t => w.ents[t.pos.floor]!.floor!.level === 0 && crosses(gap, t.pos)).map(t => t.id), [])
+  assert.ok(!zones.some(z => z.zone.kind === 'area' && crosses(gap, z.pos)), 'no area outline over the approach')
+})
+test('every table sits on whole grid cells: footprint and centre', () => {
+  const off = having(w, 'table', 'pos').filter(({pos: q}) => [q.x, q.y, q.w, q.h].some(v => v % G !== 0) || [q.x + q.w / 2, q.y + q.h / 2].some(v => (2 * v) % G !== 0) || q.w < G || q.h < G)
+  assert.deepEqual(off.map(t => t.id), [])
+})
+test('zones mark each part, labelled as a host says them, and each area zone holds its tables on its floor', () => {
+  assert.deepEqual(zones.map(z => [z.zone.label, z.zone.kind]).sort(), [['Banquette aisle', 'aisle'], ['Bar', 'area'], ['Booth aisle', 'aisle'], ['Front door', 'door'], ['Grotto', 'area'], ['Lobby', 'lobby'], ['Main dining', 'area'], ['Patio', 'area'], ['Roof', 'area'],
+    ['Stair corner', 'wall'], ['Stair wall', 'wall'], ['Stairs down', 'stairs'], ['Stairs to the roof', 'stairs'], ['Top walk', 'walkway'], ['Walkway', 'walkway']])
+  const area = {main: 'Main dining', grotto: 'Grotto', bar: 'Bar', patio: 'Patio', roof: 'Roof'}
+  Object.entries(area).forEach(([a, label]) => assert.ok(at(a).every(t => holds(zone(label), t.pos) && zones.find(z => z.zone.label === label)!.pos.floor === t.pos.floor), label))
+  assert.equal(w.ents[zones.find(z => z.zone.label === 'Stairs down')!.pos.floor]!.floor!.level, 1)
+  const walkway = zone('Walkway')
+  assert.ok(walkway.x >= Math.max(...['4', '15', '16', '24'].map(n => p(n).x + p(n).w)) && walkway.x + walkway.w <= p('b4').x, 'walkway between main and the bar')
+  assert.deepEqual(['Booth aisle', 'Banquette aisle', 'Walkway', 'Lobby', 'Stairs to the roof', 'Front door'].flatMap(l => at('main').concat(at('grotto'), at('bar')).filter(t => crosses(zone(l), t.pos)).map(t => `${l}:${t.id}`)), [], 'aisles, lobby, stairs and door are clear of tables')
 })
 test('merge options come from those runs: any connected set up to policy.merge.max, across the aisle on the roof, never across floors or into the grotto from the main floor', () => {
   const ids = merges(defaultPolicy, w).map(s => s.id)
   assert.ok(['m:rf_17+rf_18+rf_19', 'm:rf_18+rf_19+rf_20+rf_21', 'm:rf_10+rf_11+rf_12', 'm:rf_g1+rf_g2+rf_g3', 'm:rf_b14+rf_b15+rf_b16', 'm:rf_b20+rf_b21'].every(i => ids.includes(i)))
-  assert.ok(['m:rf_r2+rf_r5', 'm:rf_r2+rf_r3+rf_r5+rf_r6', 'm:rf_r1+rf_r2+rf_r5', 'm:rf_r2+rf_r3+rf_r4'].every(i => ids.includes(i)))
+  assert.ok(['m:rf_r1+rf_r5', 'm:rf_r1+rf_r2+rf_r5+rf_r6', 'm:rf_r1+rf_r2+rf_r5', 'm:rf_r2+rf_r3+rf_r4', 'm:rf_r3+rf_r7'].every(i => ids.includes(i)))
   assert.ok(!ids.some(i => /rf_(1|2|3|4|5|6|7|8|24|b22|b1|p1|r8|r9|r10|r_bar)(\+|$)/.test(i)), 'booths, quads, stools, patio, high tables and bar do not merge')
   assert.ok(!ids.some(i => i.split('+').length > defaultPolicy.merge.max))
   assert.ok(!ids.includes('m:rf_17+rf_18+rf_19+rf_20+rf_21'))

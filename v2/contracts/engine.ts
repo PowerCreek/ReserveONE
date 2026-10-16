@@ -1,5 +1,5 @@
 // Engine public API (E1-E3): every function is pure, `(policy, world, now, ...args) => output`. Mutation is expressed as Patch[].
-import type {Ent, Heat, Id, Level, PType, Patch, Want, World} from './model.ts'
+import type {Ent, Heat, Id, Level, PType, Patch, PrefMark, Want, World} from './model.ts'
 import type {Policy} from './policy.ts'
 import type {HostEvent, SimOut} from './sim.ts'
 import type {Hold} from './service.ts'
@@ -11,7 +11,7 @@ export type Decision = {ok: true; patches: Patch[]; msg: string; tone: 'ok' | 'w
 export interface Quote {size: number; ahead: number; ready: boolean; none: boolean; waitMin: number; lo: number; hi: number; label: string; at: number | null}
 export interface Bucket {start: number; end: number; now: boolean; proj: boolean; inCovers: number; inParties: number; outCovers: number; outParties: number; net: number}
 export interface Ranked {staff: Id; score: number}
-export interface Pick {staff: Id | null; fallback: boolean; by?: Hold['by'] | 'fallback'} // by = which hold or rotation chose the server
+export interface Pick {staff: Id | null; fallback: boolean; by?: Hold['by'] | 'fallback'; prefs?: PrefMark[]} // by = which hold or rotation chose the server
 export interface BusItem {table: Id; staff: Id | null; waitedMin: number; priority: number}
 export interface Alert {kind: 'late' | 'lapsed' | 'event' | 'section'; ref: Id; level: 'info' | 'warn' | 'crit'; msg: string}
 /** One upcoming reservation as planned: the spot it will sit at (a table, or tables pushed together) and when that spot is free; spot null = nothing will be free in time. */

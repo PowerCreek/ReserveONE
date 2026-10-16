@@ -3,9 +3,9 @@
 import {having, partsOf} from '../contracts/index.ts'
 import type {Components, Decision, Ent, HostEvent, Id, Patch, Policy, SimEvent, TStatus, World} from '../contracts/index.ts'
 import {center, hostOf, isTable} from './ents.ts'
-import type {Pty} from './ents.ts'
+import type {Lease, Pty} from './ents.ts'
 import {expand} from './spots.ts'
-import {serverFor} from './rotate.ts'
+import {serverOf} from './rotate.ts'
 import {seat} from './seat.ts'
 import {walk} from './book.ts'
 import {add, apply, del, set} from './patch.ts'
@@ -22,9 +22,9 @@ export const concern = (e: Pty) => ['open', 'offered'].includes(e.request?.statu
 /** Lease the spot to the party: its tables leased with the server who would serve them, the party's lease, its guest walking there. */
 export const hold = (p: Policy, w: World, now: number, who: Pty, spot: Id, step: string): Patch[] => {
   const ts = tablesOf(w, spot)
-  const waiter = serverFor(p, w, now, ts.map(t => t.id), who.id).staff
-  const lease = {spot, tables: ts.map(t => t.id), at: now, until: now + p.host.clock.leaseMin * MIN, step}
-  return [...mark(ts, 'leased', waiter), set(who.id, {lease}), ...walk(who, center(w, ts[0]?.id ?? spot), [])]
+  const pk = serverOf(p, w, now, ts.map(t => t.id), who.id)
+  const lease: Lease = {spot, tables: ts.map(t => t.id), at: now, until: now + p.host.clock.leaseMin * MIN, step, ...(pk.prefs ? {prefs: pk.prefs} : {})}
+  return [...mark(ts, 'leased', pk.staff), set(who.id, {lease}), ...walk(who, center(w, ts[0]?.id ?? spot), [])]
 }
 /** Move a lease to another spot (an arrived-stage swap): the old tables free, the new ones leased with the same server, the guest walks over. */
 export const shift = (w: World, e: Leased, to: Ent<'spot'>): Patch[] => {
