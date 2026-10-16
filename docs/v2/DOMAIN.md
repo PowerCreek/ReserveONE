@@ -47,6 +47,21 @@ host service
   - acknowledge the reason before the fix; name what is gained and missed -> Rung.say, Option.say (templates in policy)
   - comp or care when no table fits -> policy: host.responses.explain
   - guest sentiment trend per party -> comp: mood.score; ev: mood
+- service modes (who serves a seating; see contracts/service.ts)
+  - day mode: sectioned (servers hold sections/tops) or rotation (no holds, seatings rotate across the crew) -> fn: modeAt; policy: service.modes
+    - mode by time of day (rotation ~11:00-15:00) -> policy: service.schedule; manual override -> comp: service.override
+  - area of a table: main, grotto, patio, bar, upstairs -> comp: area; policy: service.areas
+    - main floor: sections as contiguous chunks, servers stay inside -> policy: service.areas.main.carve; comp: table.section; fn: assign
+    - grotto: one whole section, or piecemeal tops like the patio -> policy: service.areas.grotto.carve; comp: service.carve
+    - patio tops dealt piecemeal, balanced across the whole crew -> comp: assign; fn: assign
+    - bar, upstairs: held by a bartender pair per level -> comp: staff.area, staff.crew; policy: service.areas.bar.carve
+  - assignment unit: a server (weight 1) or a bartender pair (weight 2 in rotation, not one slot per level) -> comp: staff.weight; fn: rotate
+    - standing holder of each table in the active mode -> fn: holds; ev: seated (server named)
+    - server pick: hold in sectioned, weighted tally among units whose area fits in rotation -> fn: serverFor
+  - awareness: main-floor servers see new seatings and act unprompted -> policy: service.areas.main.seen; fn: knows
+    - grotto, patio, bar, upstairs: servers cannot see who is seated where -> policy: service.areas.*.seen
+    - host tells the server; a server not told does not start service -> HostTask `tell`; fn: tell, knows; comp: slot.told; ev: told
+  - sandbox: the sim host seats nothing until the player acts -> policy: sim.autoSeat
 - free play (no rubric, grades or expected outcomes)
   - scenario = starter setup: seed (room, crew, busy tables) + timed arrivals, placements and requests -> type Scenario (contracts/scenario.ts); data in v2/scenarios/*.ts; registry v2/scenarios/index.ts
   - the player acts as host and may do anything: greet, ask, quote, offer, seat, reply, ignore -> ui lane (runner plays the starter's steps at their minute, then the sandbox runs on)

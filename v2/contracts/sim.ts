@@ -16,7 +16,7 @@ export type SimEvent =
   | {ev: 'stuck'; unit: Id; task: Task; why: string}
 export interface SimOut {patches: Patch[]; events: SimEvent[]}
 /** Host-service tasks and events: separate unions so existing exhaustive tables over Task/SimEvent stay valid; the sim layer handles `Task | HostTask`. */
-export type HostTask = {do: 'greet'; party: Id} | {do: 'lead'; party: Id; table: Id} | {do: 'reply'; party: Id; response: string}
+export type HostTask = {do: 'greet'; party: Id} | {do: 'lead'; party: Id; table: Id} | {do: 'reply'; party: Id; response: string} | {do: 'tell'; table: Id; server: Id} // tell: the host tells a server about the seating at `table` (`engine.tell`)
 export type HostEvent =
   | {ev: 'greeted'; party: Id; by: Id}
   | {ev: 'heard'; party: Id; feat: string; level: Level}
@@ -28,3 +28,5 @@ export type HostEvent =
   | {ev: 'replied'; party: Id; reason: string; response: string; move: 'swap' | 'offer' | 'stay'; mood: number}
   | {ev: 'moved'; party: Id; from: Id; to: Id}
   | {ev: 'mood'; party: Id; delta: number; why: string}
+/** Service-mode events: a separate union (like HostEvent) so existing exhaustive describers stay valid; the ui log handles `SimEvent | HostEvent | ServiceEvent`. */
+export type ServiceEvent = {ev: 'told'; party: Id; table: Id; server: Id; by: Id} // host told the server; slot.told is set

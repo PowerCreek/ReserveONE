@@ -1,6 +1,7 @@
 // Entity/component vocabulary (C5). Entity = {id, ...components}; behaviour lives in functions keyed by component name.
 // Times are epoch ms. Sizes are covers. A "spot" is a seatable thing: one table or a link group (v1 "Unit").
 import type {Task} from './sim.ts'
+import type {Carve} from './service.ts'
 export type Id = string
 export type TStatus = 'available' | 'occupied' | 'lapsed' | 'blocked_private'
 export type PType = 'W' | 'P' | 'R' | 'V' // walk-in, priority (late res), reservation, VIP
@@ -19,8 +20,8 @@ export interface Components {
   party: {num: number; label: string; prefix: string; kind: PType; name: string; size: number; here?: number}
   reservation: {at: number; durationMin: number; table: Id | null; status: 'BOOKED' | 'ARRIVED' | 'SEATED' | 'NO_SHOW' | 'QUEUED'; phone: string; notes: string}
   queue: {since: number; quotedMin: number; status: 'WAITING' | 'SEATED'; from: Id | null}
-  slot: {table: Id; party: Id; seatedAt: number; turnAt: number; endedAt?: number; status: 'ACTIVE' | 'LAPSED' | 'COMPLETED'}
-  staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number}
+  slot: {table: Id; party: Id; seatedAt: number; turnAt: number; endedAt?: number; status: 'ACTIVE' | 'LAPSED' | 'COMPLETED'; told?: {by: Id; at: number}} // told = the host told this table's server (needed where policy.service.areas[area].seen is false)
+  staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number; weight?: number; area?: Id; crew?: string[]} // weight = rotation participants this unit counts as (default 1; a bartender pair = 2); area = the only area it serves (default any); crew = a pair's names
   event: {name: string; tables: Id[]; start: number; end: number; locked: Id[]; reclaimed: boolean}
   spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]} // derived by engine.spots
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
@@ -28,6 +29,9 @@ export interface Components {
   offer: {spot: Id; step: string; gives: string[]; lacks: string[]; at: number; status: 'open' | 'accepted' | 'declined' | 'lapsed'} // ladder proposal to a party
   request: {reason: string; stage: 'arrived' | 'seated'; table: Id; at: number; status: Ask; spot: Id | null} // re-seat request after the host led the party
   mood: {score: number} // guest sentiment, starts 0; changes are `mood` events
+  area: {id: Id} // table: its area (policy.service.areas id); absent = main
+  assign: {staff: Id} // table: a top dealt piecemeal to this server (carve `tops`); ignored while the active mode has no holds
+  service: {override: string | null; carve: Record<Id, Carve>} // singleton entity `service`: manual mode override (null = follow the schedule) and the chosen carve per area
   body: {role: 'guest' | 'host' | 'server' | 'busser'; x: number; y: number; speed: number; task: Task | null; backlog: Task[]; party: Id | null} // sim unit
 }
 export type Entity = {id: Id} & Partial<Components>

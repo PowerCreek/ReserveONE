@@ -2,6 +2,7 @@
 import type {Ent, Heat, Id, Level, PType, Patch, Want, World} from './model.ts'
 import type {Policy} from './policy.ts'
 import type {HostEvent, SimOut} from './sim.ts'
+import type {Hold} from './service.ts'
 export type Decide<A extends unknown[], R> = (p: Policy, w: World, now: number, ...a: A) => R
 export interface SeqItem {size: number; spot: Id | null; tables: Id[]; label: string; waitMin: number; at: number; code: Heat; ready: boolean}
 export interface Look {depth: number; code: Heat; msg: string; at: number | null}
@@ -10,7 +11,7 @@ export type Decision = {ok: true; patches: Patch[]; msg: string; tone: 'ok' | 'w
 export interface Quote {size: number; ahead: number; ready: boolean; none: boolean; waitMin: number; lo: number; hi: number; label: string; at: number | null}
 export interface Bucket {start: number; end: number; now: boolean; proj: boolean; inCovers: number; inParties: number; outCovers: number; outParties: number; net: number}
 export interface Ranked {staff: Id; score: number}
-export interface Pick {staff: Id | null; fallback: boolean}
+export interface Pick {staff: Id | null; fallback: boolean; by?: Hold['by'] | 'fallback'} // by = which hold or rotation chose the server
 export interface BusItem {table: Id; staff: Id | null; waitedMin: number; priority: number}
 export interface Alert {kind: 'late' | 'lapsed' | 'event' | 'section'; ref: Id; level: 'info' | 'warn' | 'crit'; msg: string}
 export interface Engine {
@@ -43,4 +44,14 @@ export interface Coach {
   options: Decide<[party: Id], Option[]> // responses offered for the open request (policy.host.options)
   respond: Decide<[party: Id, response: string], Reply> // apply a response row: patches (move/offer), events, mood delta
 }
-export type HostEngine = Engine & Coach
+
+// Service modes (wave 3). `modeAt` and `assign` are new; `serverFor` and `rotate` keep their signatures but read the mode (sectioned: holds; rotation: cover tally / weight among units whose `area` fits).
+export interface Service {
+  modeAt: Decide<[], string> // active mode id: `service.override`, else the schedule row for the local minute of day (policy.service)
+  holds: Decide<[], Hold[]> // standing holder of every table under the active mode (rotation: the table's waiter or null)
+  assign: Decide<[mode?: string], Patch[]> // deal the crew: contiguous `table.section` chunks (main), whole or `assign` tops (grotto, patio), levels to bartender pairs; balanced by weight, idempotent; rotation = no patches
+  knows: Decide<[table: Id], boolean> // the table's server knows of its seating: area `seen`, or the active slot is `told`
+  tell: Decide<[table: Id], Decision> // host action: set `slot.told`; refuses with a reason when the area is seen, nothing is seated, or no server holds the table
+}
+// Partial until the engine lane lands it; that lane then makes it `Service` (ui `ask` already reads every HostEngine key).
+export type HostEngine = Engine & Coach & Partial<Service>
