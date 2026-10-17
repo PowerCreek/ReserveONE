@@ -1,11 +1,12 @@
 // Strategy timeline: one row per table, grouped by section (else area), tables of one run kept together; bars on a ~2.5 h axis for
-// seated-until, the planned reservation (StratView.lanes), holds and their gates (ui.strat.holds), and pairs that can link (StratView.pairs).
+// seated-until, the planned reservation (StratView.lanes), holds and their gates (the world's `hold` components, strategyheld.ts), and pairs that can link (StratView.pairs).
 import type {App, World} from '../contracts/index.ts'
 import type {Lane, Pair, StratHold, StratView} from '../contracts/strategy.ts' // contracts/index re-exports two `Lane`s (desk, strategy): import this one directly
 import {policyOf} from './ask.ts'
 import {ref} from './links.ts'
 import {esc} from './render.ts'
-import {H, MIN, TURN, hhmm, stratOf} from './strategykit.ts'
+import {holdAt, lockSay, worldHolds} from './strategyheld.ts'
+import {H, MIN, TURN, hhmm} from './strategykit.ts'
 import {help} from './tone.ts'
 const BAR: Record<string, {cls: string; say: string}> = {
   seated: {cls: 'bg-rose-500 dark:bg-rose-400', say: 'Seated until it frees'},
@@ -35,9 +36,11 @@ const runKey = (labels: Record<string, string>) => (l: Lane) => [...l.run, l.tab
 const order = (ls: Lane[]) => ((ls2 = ls.map(l => [l.table, l.label] as const), k = runKey(Object.fromEntries(ls2))) => [...ls].sort((a, b) => nat(k(a), k(b)) || nat(a.label, b.label)))()
 const groups = (app: App, ls: Lane[]) => Object.entries(order(ls).reduce<Record<string, Lane[]>>((m, l) => ((g = groupOf(app, app.store.state.world)(l)) => ({...m, [g]: [...(m[g] ?? []), l]}))(), {}))
 const links = (l: Lane, labels: Record<string, string>) => (l.run.length ? `<span class="text-slate-500 dark:text-slate-400" title="Links with ${esc(l.run.map(t => labels[t] ?? t).join(', '))}"><span aria-hidden="true">⇔</span><span class="sr-only">links with ${esc(l.run.map(t => labels[t] ?? t).join(', '))}</span></span>` : '')
+/** The lock marker on a held table's label. */
+const lock = (app: App, l: Lane) => ((h = holdAt(app, l.table)) => (h ? `<span data-lock title="${esc(lockSay(app, h))}" class="text-amber-700 dark:text-amber-300"><span aria-hidden="true">🔒</span><span class="sr-only">${esc(lockSay(app, h))}</span></span>` : ''))()
 const row = (app: App, v: StratView, labels: Record<string, string>) => (l: Lane) => ((now = app.store.state.now) =>
-  `<li data-tid="${esc(l.table)}" data-lane class="grid grid-cols-[6.5rem_1fr] items-center gap-2"><div class="flex items-center gap-1 truncate text-xs">${ref(l.table, l.label)}${links(l, labels)}</div>` +
-  `<div class="relative h-6 rounded bg-slate-100 dark:bg-slate-900">${seated(l)}${planned(now)(l)}${held(v.lanes, stratOf(app).holds, now)(l)}${paired(v.pairs)(l)}</div></li>`)()
+  `<li data-tid="${esc(l.table)}" data-lane class="grid grid-cols-[6.5rem_1fr] items-center gap-2"><div class="flex items-center gap-1 truncate text-xs">${ref(l.table, l.label)}${links(l, labels)}${lock(app, l)}</div>` +
+  `<div class="relative h-6 rounded bg-slate-100 dark:bg-slate-900">${seated(l)}${planned(now)(l)}${held(v.lanes, worldHolds(app.store.state.world).filter(h => h.until > now), now)(l)}${paired(v.pairs)(l)}</div></li>`)()
 const TICKS = [0, 30, 60, 90, 120, 150]
 const axis = (now: number) => `<div aria-hidden="true" class="grid grid-cols-[6.5rem_1fr] gap-2 text-xs text-slate-600 dark:text-slate-300"><span>Table</span><div class="relative h-4">${TICKS.map(m => `<span class="absolute -translate-x-1/2 tabular-nums" style="left:${pct(m)}">${m ? `+${m}m` : hhmm(now)}</span>`).join('')}</div></div>`
 const legend = `<ul aria-label="Legend" class="mb-2 flex flex-wrap gap-3 text-xs">${Object.entries(BAR).map(([k, b]) => `<li data-legend="${k}" class="flex items-center gap-1"><span aria-hidden="true" class="inline-block h-3 w-5 rounded-sm ${b.cls}"></span>${b.say}</li>`).join('')}</ul>`

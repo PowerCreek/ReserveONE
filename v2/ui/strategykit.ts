@@ -11,17 +11,17 @@ declare module '../contracts/kernel.ts' {
   interface UiState {strat?: Strat; sv?: number} // sv = the tab's change counter (bumped by ui.strat / ui.rev / ui.tab)
 }
 /** The hold being drafted in the Levers panel (`forMin` / `atMin` = minutes from now). */
-export interface Draft {tables: Id[]; size: number; forMin: number; gate: 'none' | 'free' | 'at'; gtab: Id; atMin: number; why: string}
+export interface Draft {tables: Id[]; size: number; forMin: number; custom: boolean; gate: 'none' | 'free' | 'at'; gtab: Id; atMin: number; why: string; party: Id}
 export interface Strat extends StratCtl {draft: Draft}
 export const MIN = 60000
 /** The timeline's horizon (minutes) and the length drawn for a planned reservation's turn. */
 export const H = 150
 export const TURN = 75
-export const blankDraft = (): Draft => ({tables: [], size: 2, forMin: 30, gate: 'none', gtab: '', atMin: 30, why: ''})
+export const blankDraft = (): Draft => ({tables: [], size: 2, forMin: 30, custom: false, gate: 'none', gtab: '', atMin: 30, why: '', party: ''})
 const blank = (): Strat => ({guess: 'none', behind: [], holds: [], draft: blankDraft()})
 export const stratOf = (app: App): Strat => (app.store.state.ui.strat ??= blank())
-/** The plain StratCtl handed to the engine (the draft stays in the UI). */
-export const ctlOf = (app: App): StratCtl => ((c: Strat) => ({guess: c.guess, ...(c.at ? {at: c.at} : {}), behind: [...c.behind], holds: c.holds}))(JSON.parse(JSON.stringify(stratOf(app))))
+/** The plain StratCtl handed to the engine: saved holds are world state (the engine reads them), the draft stays in the UI. */
+export const ctlOf = (app: App): StratCtl => ((c: Strat) => ({guess: c.guess, ...(c.at ? {at: c.at} : {}), behind: [...c.behind], holds: []}))(JSON.parse(JSON.stringify(stratOf(app))))
 /** The one strategy read: remembered per (world signature, minute, ctl); undefined when the engine has no strategist yet. */
 export const viewOf = (app: App): StratView | undefined => ((c = ctlOf(app)) => memo(app, policyOf(app), 'strategy', [c], () => ask(app, 'strategy', c)))()
 export const hhmm = (at: number) => new Date(at).toISOString().slice(11, 16)

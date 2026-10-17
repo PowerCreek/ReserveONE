@@ -7,6 +7,7 @@ import {ask} from './ask.ts'
 import {bk, dest, goes, keep, land, landed} from './bookask.ts'
 import {esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
+import {overrides} from './strategyheld.ts'
 import {HEAT, btn, card, help, primary} from './tone.ts'
 import {qrows, queueHead, waitForms, waitlist} from './bookq.ts'
 const SIZES = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -48,7 +49,7 @@ const line = (d?: ReturnType<typeof dest>, none = '') => (d ? (d.ok ? `Goes to $
 const seatBtn = (act: string, label: string, d: ReturnType<typeof dest> | undefined, none: string, extra = '') => `<div class="grid gap-1"><button type="button" data-act="${act}" ${extra} ${d?.ok ? '' : 'disabled'} class="${d?.ok ? primary : `${btn} opacity-60`}">${esc(label)}</button><p data-dest class="${help}">${esc(line(d, none))}</p></div>`
 const fast = (app: App) => {
   const v = doorView(app)
-  return `<div class="grid gap-2 sm:grid-cols-2">${seatBtn('seatdoor', doorLabel(app, v), doorDest(app, v), 'Nobody is waiting at the door.', `data-takes="${esc(taker(app, v) ?? '')}"`)}${seatBtn('quick', `Seat walk-in (new) x${uiOf(app).size}`, dest(app, {do: 'seat', size: uiOf(app).size}), '')}</div>${landed(app)}`
+  return `<div class="grid gap-2 sm:grid-cols-2">${seatBtn('seatdoor', doorLabel(app, v), doorDest(app, v), 'Nobody is waiting at the door.', `data-takes="${esc(taker(app, v) ?? '')}"`)}${seatBtn('quick', `Seat walk-in (new) x${uiOf(app).size}`, dest(app, {do: 'seat', size: uiOf(app).size}), '')}</div>${overrides(app)}${landed(app)}`
 }
 /** Fast-seat marker for the door party the Seat button would take (the queue rows and the stand's door cards). */
 export const fastMark = '<span data-fastmark title="Seat from the door (Fast seating, Queue tab) will take this party" class="inline-flex items-center gap-1 rounded bg-indigo-100 px-1 text-xs font-semibold text-indigo-950 dark:bg-indigo-950 dark:text-indigo-50"><span aria-hidden="true">⇢</span>Seat from the door takes them</span>'

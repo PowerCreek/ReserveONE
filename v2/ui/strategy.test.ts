@@ -64,8 +64,8 @@ test('assumptions: the guess, the door party and the parties behind reach the pl
   await go('[data-move="4"] [data-act="strat-use"]')
   assert.deepEqual([uiOf(app).size, uiOf(app).tab], [4, 'queue'])
 })
-test('levers: a hold with a gate is created, passed to the planner, drawn on its tables, then removed', async () => {
-  const {el, calls, go} = await mount()
+test('levers: a hold with a gate is saved to the world through the desk, drawn on its tables, then released', async () => {
+  const {el, app, calls, go} = await mount()
   await go('[data-act="tab"][data-id="strategy"]')
   assert.ok(el.querySelector<HTMLButtonElement>('[data-act="strat-hold"]')!.disabled)
   await go('[data-act="strat-pick"][data-tid="t1"]')
@@ -78,12 +78,13 @@ test('levers: a hold with a gate is created, passed to the planner, drawn on its
   why.value = 'R-1 at 8'
   why.dispatchEvent(new window.Event('input', {bubbles: true}))
   await go('[data-act="strat-hold"]')
-  const h = calls.at(-1)!.holds[0]!
-  assert.deepEqual([h.tables, h.size, h.gate, h.why], [['t1'], 3, {kind: 'free', table: 't2'}, 'R-1 at 8'])
-  assert.match(el.querySelector('[data-hold="sh1"]')!.textContent!, /T1.*for 3.*when T2 frees \(opens in 40m\).*waiting.*R-1 at 8/)
+  const h = app.store.state.world.ents.t1!.hold!
+  assert.deepEqual([h.size, h.gate, h.why], [3, {kind: 'free', table: 't2'}, 'R-1 at 8'])
+  assert.match(el.querySelector(`[data-hold="${h.id}"]`)!.textContent!, /T1.*for a 3.*when T2 frees \(opens in 40m\).*R-1 at 8.*Release/)
   assert.ok(el.querySelector('[data-lane][data-tid="t1"] [data-bar="gate"]') && el.querySelector('[data-lane][data-tid="t1"] [data-bar="hold"]'))
-  await go('[data-act="strat-unhold"][data-id="sh1"]')
-  assert.deepEqual([el.querySelectorAll('[data-hold]').length, el.querySelectorAll('[data-bar="hold"]').length], [0, 0])
+  assert.deepEqual(calls.at(-1)!.holds, []) // saved holds are world state; ctl.holds carries drafts only
+  await go(`[data-act="strat-unhold"][data-id="${h.id}"]`)
+  assert.deepEqual([app.store.state.world.ents.t1!.hold, el.querySelectorAll('[data-hold]').length, el.querySelectorAll('[data-bar="hold"]').length], [undefined, 0, 0])
 })
 test('risks and share render; a table label opens its card on the Sim tab', async () => {
   const {el, app, go} = await mount()

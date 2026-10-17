@@ -2,6 +2,7 @@
 // The UI renders a view and dispatches a Cmd; it never builds patches, events or domain rules itself.
 import type {Id, Patch, Pref, PrefMark, PType, Want} from './model.ts'
 import type {Carve} from './service.ts'
+import type {Gate} from './strategy.ts'
 import type {HostEvent, ServiceEvent, SimEvent} from './sim.ts'
 import type {BusItem, Bucket, Option, Placed, Quote, Rung} from './engine.ts'
 import type {Policy} from './policy.ts'
@@ -11,7 +12,9 @@ import type {World} from './model.ts'
 export type Cmd =
   | {do: 'lease'; party: Id; spot: Id; step: string} // one click at the stand: the spot is leased to the party (led there); it settles into a seat by itself
   | {do: 'release'; party: Id} // hand a lease back (the party wants something else): tables free, party at the door
-  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number; from?: 'door'} // from door: a size-only fast seat takes the party at the door that `StandView.bySize` names (it leaves the door list) instead of minting a fresh one // a leased party: confirm its lease now; else seat directly
+  | {do: 'seat'; party?: Id; spot?: Id; step?: string; size?: number; from?: 'door'; force?: boolean} // from door: a size-only fast seat takes the party at the door that `StandView.bySize` names (it leaves the door list) instead of minting a fresh one // a leased party: confirm its lease now; else seat directly
+  | {do: 'hold'; tables: Id[]; size: number; until: number; gate?: Gate; why: string; party?: Id} // keep tables clear for a party of `size` until `until` (ms), once `gate` opens: written as a `hold` component on each table
+  | {do: 'unhold'; id: string} // drop a saved hold from all its tables
   | {do: 'decline'; party: Id; spot: Id; step: string} // the party said no to this spot; it leaves the party's offers
   | {do: 'hear'; party: Id; feat: string} // the host asked about a qualifier
   | {do: 'tell'; table: Id}

@@ -9,11 +9,12 @@ import type {Hold} from './holds.ts'
 import {avgTurn, freeAt} from './avail.ts'
 import {bump, pickIn, rankStaff} from './rotate.ts'
 import {secsOf} from './ents.ts'
+import {holdOn} from './held.ts'
 import {MIN} from './time.ts'
 /** floor: only that floor; skip: ignore this party's own reservation hold; busy: tables already promised (sim claims). */
 export interface Opt {floor?: Id; skip?: Id; busy?: Id[]; merge?: boolean}
 type Spot = Ent<'spot'>
-interface Ctx {p: Policy; w: World; now: number; pool: Spot[]; pairs: Spot[]; holds: Hold[]; need: number; rst: number; keep: (taken: Id[]) => Id[]; reach: Record<Id, number>}
+interface Ctx {p: Policy; w: World; now: number; pool: Spot[]; pairs: Spot[]; holds: Hold[]; need: number; rst: number; keep: (taken: Id[]) => Id[]; reach: Record<Id, number>; held: (s: Spot, size: number) => boolean}
 interface Run {free: Record<Id, number>; last: number; ss: Ent<'staff'>[]; out: SeqItem[]}
 interface Cand {s: Spot; at: number; pos: number; sq: number; reach: number}
 const pool = (p: Policy, w: World, o: Opt) => (all: Spot[]) => all.filter(s => s.spot.status !== 'blocked_private' && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)) && s.spot.floor === (o.floor ?? s.spot.floor) && !s.spot.tables.some(t => o.busy?.includes(t)))
@@ -22,7 +23,7 @@ const reaches = (pairs: Spot[]) => pairs.flatMap(s => s.spot.tables).reduce<Reco
 const ctx = (p: Policy, w: World, now: number, o: Opt): Ctx => {
   const standing = new Set(having(w, 'link').filter(l => !l.link.merged).flatMap(l => l.link.members))
   const pairs = o.merge === false ? [] : pool(p, w, o)(mergesOf(p, w, t => !standing.has(t.id))) // tables still occupied join too: a merge can be quoted for when they turn over
-  return {p, w, now, pool: pool(p, w, o)(spots(w)), pairs, holds: holds(p, w, now, o.skip), need: (avgTurn(p, w) + p.seat.resetMin) * MIN, rst: p.seat.resetMin * MIN, keep: keeper(p, w, now, o.skip), reach: reaches(pairs)}
+  return {p, w, now, pool: pool(p, w, o)(spots(w)), pairs, holds: holds(p, w, now, o.skip), need: (avgTurn(p, w) + p.seat.resetMin) * MIN, rst: p.seat.resetMin * MIN, keep: keeper(p, w, now, o.skip), reach: reaches(pairs), held: (on => (s: Spot, size: number) => !!on(s.spot.tables, size, o.skip))(holdOn(p, w, now))}
 }
 const push = (c: Ctx) => (at: number, h: Hold) => (at + c.need > h.start && at < h.end + c.rst ? h.end + c.rst : at)
 const shift = (c: Ctx, s: Spot, at: number) => c.holds.filter(h => s.spot.tables.includes(h.table)).sort((a, b) => a.start - b.start).reduce(push(c), at)
@@ -36,7 +37,7 @@ const timed = (c: Ctx, run: Run, rk: Ranked[]) => {
 }
 /** A single table is preferred: merges (smallest first) only join when no single fit is ready now; waiting merges (tables still turning over) only when no merge is ready either, so a quote can name them. */
 const cands = (c: Ctx, run: Run, rk: Ranked[], size: number): Cand[] => {
-  const timeds = (ss: Spot[]) => ss.filter(s => s.spot.capacity >= size).map(timed(c, run, rk))
+  const timeds = (ss: Spot[]) => ss.filter(s => s.spot.capacity >= size && !c.held(s, size)).map(timed(c, run, rk))
   const one = timeds(c.pool)
   const two = one.some(x => x.at <= c.now) ? [] : timeds(c.pairs)
   const ready = two.filter(x => x.at <= c.now)

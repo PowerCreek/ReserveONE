@@ -1,4 +1,4 @@
-// Seating strategy (lane E-S): plan turns ahead. Pure read `engine.strategy(policy, world, now, ctl)`; the host's levers are `StratCtl` data (kept in ui state, never in the world).
+// Seating strategy (lane E-S): plan turns ahead. Pure read `engine.strategy(policy, world, now, ctl)`; the host's levers are `StratCtl` data; saved holds are world state (`hold` component, Cmd `hold`/`unhold`) that every placement path honours.
 // Reservations rank first, then the priority queue, walk-ins are the opportunistic filler (see docs/v2/PROCEDURES.md). Everything is advisory: it ranks and warns, it never seats.
 // Units: Lane.freeIn, Lane.next.at, Pair.at, Move.turn and Risk.at are minutes from now; StratHold.until and Gate.at are absolute ms (same clock as `now`); Lane.seated is guests.
 import type {Id} from './model.ts'
@@ -7,8 +7,13 @@ export type Guess = 'none' | '2top' | '3-4top' | '5-6top' | 'large'
 /** A condition on the floor's future that a hold waits for: a table frees (turns), or a clock minute. */
 export type Gate = {kind: 'free'; table: Id} | {kind: 'at'; at: number}
 /** A lever: keep `tables` clear (a hold) for `size` guests until `until`, once `gate` (if any) opens; `why` is the host's reason. */
-export interface StratHold {id: string; tables: Id[]; size: number; until: number; gate?: Gate; why: string}
-/** Everything the host sets in the panel. `behind` = sizes of parties known to be waiting behind the one at the door (a 2nd host called them), `at` = the party being addressed now (its size, if known). */
+export interface StratHold {id: string; tables: Id[]; size: number; until: number; gate?: Gate; why: string; party?: Id}
+/** A saved hold, on each held table (same `id` across its tables): live while `until` > now and its gate has opened. Exclusive: only the named `party`, or a reservation booked on these tables, may sit there; `seat {force: true}` overrides; `size` is informational (planning, display). `by` = who set it. */
+export interface TableHold {id: string; size: number; until: number; gate?: Gate; why: string; by?: Id; party?: Id}
+declare module './model.ts' {
+  interface Components {hold: TableHold}
+}
+/** Everything the host sets in the panel; `holds` = unsaved drafts only (saved holds are read from the world). `behind` = sizes of parties known to be waiting behind the one at the door (a 2nd host called them), `at` = the party being addressed now (its size, if known). */
 export interface StratCtl {guess: Guess; at?: number; behind: number[]; holds: StratHold[]}
 /** One table's expected future in the horizon: when it is free (0 = now), what is planned at it, and its row neighbours (`run` = the string of adjacent tables it can link into). */
 export interface Lane {table: Id; label: string; freeIn: number; seated: number; next: {party: Id; label: string; size: number; at: number} | null; run: Id[]; section: Id | null}

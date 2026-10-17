@@ -1,10 +1,11 @@
-import type {Engine, Heat, Id, Policy, SeatReq, SeqItem, World} from '../contracts/index.ts'
+import type {Decision, Engine, Heat, Id, Policy, SeatReq, SeqItem, World} from '../contracts/index.ts'
 import {isTable, partyOf} from './ents.ts'
 import type {Pty} from './ents.ts'
 import {expand} from './spots.ts'
 import {plan} from './fit.ts'
 import {refuse} from './seatcheck.ts'
 import {book} from './book.ts'
+import {heldWhy, released} from './held.ts'
 type Aim = {ids: Id[]} | {err: string}
 const tell: Record<Heat, (n: number, it: SeqItem) => string> = {
   NO_TABLE: n => `No ${n}-top fits`,
@@ -27,6 +28,11 @@ export const seat: Engine['seat'] = (p, w, now, req) => {
   const who = partyOf(w, req.party ?? req.queue ?? req.reservation)
   const to = aim(p, w, now, req, who)
   const ts = 'ids' in to ? to.ids.map(i => w.ents[i]).filter(isTable) : []
-  const err = 'err' in to ? to.err : refuse(p, ts, req.size, who?.lease?.tables)
-  return err ? {ok: false, err} : book(p, w, now, req, who, ts)
+  const ids = ts.map(t => t.id)
+  const over = who?.lease?.tables.every(t => ids.includes(t)) ? undefined : heldWhy(p, w, now, ids, req.size, who?.id) // a lease was checked when it was made
+  const err = 'err' in to ? to.err : refuse(p, ts, req.size, who?.lease?.tables) ?? (req.force ? undefined : over)
+  return err ? {ok: false, err} : freed(p, w, now, ids, book(p, w, now, req, who, ts), req.force ? over : undefined)
 }
+/** Seating there releases the holds it satisfied; a forced seat over a hold says so (warn, so the log keeps it). */
+const freed = (p: Policy, w: World, now: number, ids: Id[], d: Decision, over?: string): Decision =>
+  d.ok ? {...d, patches: [...released(p, w, now, ids), ...d.patches], ...(over ? {msg: `${d.msg} (over a hold: ${over})`, tone: 'warn' as const} : {})} : d

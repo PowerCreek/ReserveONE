@@ -44,7 +44,7 @@ test('joint: a 2 at the door with a 6 behind leaves the A+B merge for the 6', ()
 })
 test('gated hold: C kept for a 5 once D frees; a 4 goes elsewhere, waits for a hold-free table, or takes C at a cost', () => {
   const hold: StratHold = {id: 'h1', tables: ['c'], size: 5, until: N + mins(90), gate: {kind: 'free', table: 'd'}, why: 'a 5 with D'}
-  const clock: StratHold = {id: 'h2', tables: ['f'], size: 2, until: N + mins(30), gate: {kind: 'at', at: N - mins(1)}, why: 'regular'}
+  const clock: StratHold = {id: 'h2', tables: ['f'], size: 4, until: N + mins(30), gate: {kind: 'at', at: N - mins(1)}, why: 'regular'}
   const v = go([tbl('c', 4), ...busy(tbl('d', 4), 20), tbl('f', 4)], {holds: [hold, clock]})
   assert.deepEqual([v.live, v.waiting], [['h2'], ['h1']])
   assert.deepEqual([v.moves[4]?.tables, v.moves[4]?.cost], [['f'], 0])

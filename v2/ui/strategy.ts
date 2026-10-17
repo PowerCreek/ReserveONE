@@ -2,7 +2,9 @@
 // they repaint on `ui.sv` and draw only while the tab shows. Procedures behind it: docs/v2/PROCEDURES.md.
 import type {App} from '../contracts/index.ts'
 import {panel} from './render.ts'
+import {uiOf} from './state.ts'
 import {assume, moves} from './strategybar.ts'
+import {forceActs} from './strategyheld.ts'
 import {holdActs, levers} from './strategyhold.ts'
 import {askActs, shown, stratOf} from './strategykit.ts'
 import {timeline} from './strategyline.ts'
@@ -13,7 +15,7 @@ const box = (attr: string, h: string, say: string) => `<div class="${card}" titl
 const HELP = {
   bar: 'What you know about who comes next: a guess, the party at the door, and parties a second host saw behind it. Suggestions follow; Use sets the fast-seat size, it never seats.',
   line: 'The next 2.5 hours per table: seated until it frees, planned reservations, holds and their gates, and neighbours that free together and can link. Click a table to open its card.',
-  hold: 'Keep tables clear for a party you expect: pick tables, size, how long, and an optional gate (when a table frees, or at a time). Holds shape the plan only.',
+  hold: 'Keep tables clear for a party you expect: pick tables, a size or a named party, how long, and an optional gate (when a table frees, or at a time). A saved hold blocks every other party until it ends.',
   risk: 'Cautions on the plan: reservations about to be squeezed, sizes locked out, overloaded sections, late parties.',
   share: 'Covers now and planned per server, so earnings stay level across the rotation.',
 }
@@ -26,5 +28,6 @@ export const strategy = (app: App) => {
   stratOf(app)
   sv(app)
   Object.entries({...askActs, ...holdActs}).forEach(([n, f]) => app.act(n, f))
+  Object.entries(forceActs).forEach(([n, f]) => app.act(n, (a, ev) => (f(a, ev), uiOf(a).rev++))) // the override lives on the Queue's fast seat (ui.rev panels)
   PANELS.forEach(([attr, f]) => app.binder(panel(app, attr, shown(app, f))))
 }

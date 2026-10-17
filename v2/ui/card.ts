@@ -11,6 +11,7 @@ import {serverOf} from './draw.ts'
 import {hms} from './geo.ts'
 import {arg, esc} from './render.ts'
 import {uiOf} from './state.ts'
+import {heldLine} from './strategyheld.ts'
 /** `x`, `y` = px offset inside the floor panel (from the clicked table); none = the panel's top-right corner. */
 export interface CardUi {table: Id; x?: number; y?: number}
 declare module '../contracts/kernel.ts' {
@@ -82,7 +83,7 @@ const body = (c: Ctx, u: CardUi) =>
   `<div data-card="${esc(c.t.id)}" data-status="${c.t.table.status}" role="dialog" aria-label="Table ${esc(c.t.table.label)}" tabindex="-1" class="${BOX} ${where(u)}"${at(u)}>` +
   `<div class="mb-1 flex items-center gap-2">${ref(c.t.id, c.t.table.label, 'text-base font-bold')}<span class="${MUTED}">${c.t.table.capacity} seats</span><span class="rounded-full px-2 py-0.5 text-[11px] font-medium ${PILL[c.t.table.status]}">${esc(c.t.table.status.replace('_', ' '))}</span>` +
   `<button type="button" data-act="card-close" aria-label="Close" class="ml-auto rounded px-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700">✕</button></div>` +
-  `<div class="space-y-0.5">${partyLine(c)}<p class="${MUTED}">server ${serverRef(c)}</p>${joined(c)}</div>` +
+  `<div class="space-y-0.5">${partyLine(c)}<p class="${MUTED}">server ${serverRef(c)}</p>${joined(c)}${heldLine(c.app, c.t.id)}</div>` +
   `<div data-card-acts class="mt-2 flex flex-wrap items-center gap-1.5">${ACTIONS[c.t.table.status](c)}</div></div>`
 /** The open card's HTML (empty when none, or when its table is gone). */
 export const cardHtml = (app: App) => ((u = uiOf(app).card, c = u && ctxOf(app, u.table)) => (u && c ? body(c, u) : ''))()
