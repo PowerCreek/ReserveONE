@@ -4,6 +4,8 @@ import {having} from '../contracts/index.ts'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {click, rig} from './rig.ts'
+import {ask} from './ask.ts'
+import {uiOf} from './state.ts'
 const text = (el: Element, sel: string) => el.querySelector(sel)!.textContent!
 test('tabs show one pane at a time through data-show', async () => {
   const {el, app} = rig()
@@ -93,4 +95,32 @@ test('header shows the service mode chip and the staff tab carries the assignmen
   await settle()
   assert.match(text(el, 'header [data-mode]'), /(Sectioned|Rotation) (schedule|manual)/)
   assert.equal(el.querySelectorAll('[data-show="ui.on.staff"] [data-assign] [data-act="svcmode"]').length, 3)
+})
+test('fast seating from the door list: the button names the door party it takes, both lists mark it, a click seats it (it leaves the door); off seats a fresh walk-in', async () => {
+  const {el, app} = rig()
+  load(app, 'lunch')
+  await settle()
+  const door = () => (ask(app, 'stand')?.door ?? []).map(r => r.party)
+  const head = ask(app, 'stand')!.door[0]
+  uiOf(app).size = head.size
+  uiOf(app).rev++
+  await settle()
+  assert.equal(text(el, '[data-act="quick"]'), `Seat ${head.name} x${head.size} from the door`)
+  assert.equal(el.querySelector('[data-act="fromdoor"]')!.getAttribute('aria-checked'), 'true')
+  assert.ok(el.querySelector(`[data-queue] li[data-party="${head.party}"] [data-fastmark]`), 'queue row marked')
+  assert.ok(el.querySelector(`[data-stand] [data-id="${head.party}"] [data-fastmark]`), 'stand door card marked')
+  assert.equal(el.querySelectorAll('[data-stand] [data-fastmark]').length, 1)
+  const before = door().length
+  click(el, '[data-act="quick"]')
+  assert.ok(!door().includes(head.party) && door().length === before - 1, 'the door party was consumed')
+  assert.equal(having(app.store.state.world, 'slot').find(s => s.slot.party === head.party)?.slot.status, 'ACTIVE')
+  await settle()
+  click(el, '[data-act="fromdoor"]')
+  await settle()
+  assert.equal(el.querySelector('[data-act="fromdoor"]')!.getAttribute('aria-checked'), 'false')
+  assert.equal(text(el, '[data-act="quick"]'), `Seat a new walk-in x${head.size}`)
+  assert.equal(el.querySelectorAll('[data-fastmark]').length, 0)
+  const n = door().length
+  click(el, '[data-act="quick"]')
+  assert.equal(door().length, n) // a fresh walk-in: nobody leaves the door list
 })

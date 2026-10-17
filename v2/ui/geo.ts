@@ -34,10 +34,29 @@ export const hull = (bs: Box[]): Box | undefined => {
   return bs.length ? {x: x0, y: y0, w: x1 - x0, h: y1 - y0} : undefined
 }
 /** A viewBox over `b` plus margin `m`, grown about its centre to aspect `a` (w/h) and at least `min` wide (a small floor zooms at most W/min). */
-export const fitBox = (b: Box, m: number, a: number, min = 0) => {
+export const fitBox = (b: Box, m: number, a: number, min = 0): Box => {
   const w = Math.max(b.w + 2 * m, (b.h + 2 * m) * a, min)
-  return [b.x + b.w / 2 - w / 2, b.y + b.h / 2 - w / a / 2, w, w / a].map(Math.round).join(' ')
+  return {x: Math.round(b.x + b.w / 2 - w / 2), y: Math.round(b.y + b.h / 2 - w / a / 2), w: Math.round(w), h: Math.round(w / a)}
 }
+export const boxStr = (b: Box) => [b.x, b.y, b.w, b.h].map(n => +n.toFixed(2)).join(' ')
+/** 2D camera over the fitted box: pan (frame px, added to the fitted origin) and zoom (1 = the fit; >1 magnifies about the fit's centre). */
+export interface Cam {x: number; y: number; z: number}
+export const CAM: Cam = {x: 0, y: 0, z: 1}
+export const ZOOMS = [0.5, 4] as const // camera zoom range
+export const clampZ = (z: number) => Math.min(ZOOMS[1], Math.max(ZOOMS[0], z))
+/** The visible box: the fit scaled by 1/z about its centre, then panned. */
+export const seen = (fit: Box, c: Cam): Box => ((w = fit.w / c.z, h = fit.h / c.z) => ({x: fit.x + fit.w / 2 - w / 2 + c.x, y: fit.y + fit.h / 2 - h / 2 + c.y, w, h}))()
+/** Zoom to `z` keeping the frame point at fraction (fx, fy) of the visible box still (the cursor's spot stays under the cursor). */
+export const zoomAt = (fit: Box, c: Cam, z: number, fx = 0.5, fy = 0.5): Cam => {
+  const [v, n] = [seen(fit, c), seen(fit, {...c, z: clampZ(z)})]
+  return {x: c.x + (v.x + fx * v.w) - (n.x + fx * n.w), y: c.y + (v.y + fy * v.h) - (n.y + fy * n.h), z: clampZ(z)}
+}
+const mod = (a: number, n: number) => ((a % n) + n) % n
+/** Grid rays along one axis, relative to the visible origin `offset`: the first sits at -(offset mod cell), then one every `cell` across `span` (O(span / cell) lines; panning by d shifts them by -d, by a whole cell returns the same set). */
+export const rays = (offset: number, span: number, cell: number): number[] =>
+  ((first = -mod(offset, cell)) => Array.from({length: Math.floor((span - first) / cell) + 1}, (_, i) => first + i * cell))()
+/** Which grid line a ray is in frame terms (its index from the frame origin): every 4th draws a shade stronger. */
+export const lineNo = (offset: number, rel: number, cell: number) => Math.round((offset + rel) / cell)
 /** Storeys present, ascending; a world without floors has the ground only. */
 export const levels = (w: World) => {
   const ls = having(w, 'floor').map(f => levelOf(w, f.id))

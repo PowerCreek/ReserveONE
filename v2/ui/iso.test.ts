@@ -70,3 +70,12 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   await settle()
   assert.ok(f().querySelector('[data-floors]'))
 })
+test('zones outline each slab with their names; insight tables ring their top face; blocks open the table card', () => {
+  const c = {...ctx(), w: {...world(), ents: {...world().ents, z1: {id: 'z1', zone: {label: 'Lobby', kind: 'lobby' as const}, pos: {floor: 'g', x: 0, y: 500, w: 80, h: 60}}}}, alerts: {near: {level: 'crit' as const, msg: 'x'}, far: {level: 'warn' as const, msg: 'y'}}}
+  const svg = isoSvg(c, ISO)
+  assert.match(svg, /data-izone="lobby"><title>Lobby<\/title><polygon[^>]*stroke-dasharray="5 4"[^]*>Lobby<\/text>/)
+  assert.ok(svg.indexOf('data-izone') > svg.indexOf('data-slab="g"') && svg.indexOf('data-izone') < svg.indexOf('data-tid=')) // on the slab, under the blocks
+  assert.match(svg, /data-tid="near" data-act="tcard"[^]*?data-insight="crit"[^>]*stroke-rose-600/)
+  assert.match(svg, /data-tid="far" data-act="tcard"[^]*?data-insight="warn"[^>]*stroke-amber-500/)
+  assert.doesNotMatch(isoSvg(ctx(), ISO), /data-insight/)
+})

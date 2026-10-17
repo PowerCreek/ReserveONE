@@ -1,7 +1,8 @@
 // Isometric floor view (U2): every level of the same world stacked in one 3D frame. Pure string builders; classes are literals here or in tone.ts, data colours come from entity data.
 import {having} from '../contracts/index.ts'
 import type {Components, Ent, Hold, Id, World} from '../contracts/index.ts'
-import {STAFF, serverOf, titleOf} from './draw.ts'
+import {ALERT, STAFF, serverOf, titleOf} from './draw.ts'
+import type {Alerts} from './draw.ts'
 import {H, W, floorOf, hull, levelName, levelOf, levels} from './geo.ts'
 import type {Box} from './geo.ts'
 import {esc} from './render.ts'
@@ -47,7 +48,7 @@ const prism = (b: Box, z: number, h: number, cls: string, fill?: string) => {
 const txt = (p: P3, cls: string, s: unknown, anchor = 'middle', dx = 0) => `<text x="${(sx(p) + dx).toFixed(1)}" y="${sy(p).toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
 // Palettes: each colours a table by one of its facts and names that fact for the legend.
 type T = Ent<'table' | 'pos'> & {area?: Components['area']; feat?: Components['feat']}
-export interface Ctx {w: World; holds: Hold[]; areas: Record<Id, {label: string}>}
+export interface Ctx {w: World; holds: Hold[]; areas: Record<Id, {label: string}>; alerts?: Alerts; pick?: Id}
 interface Paint {key: string; name: string; cls: string; fill?: string; ink: string}
 const INK = 'fill-slate-900 dark:fill-slate-50', WHITE = 'fill-white'
 const NONE = 'fill-slate-200 stroke-slate-500 dark:fill-slate-700 dark:stroke-slate-400'
@@ -71,14 +72,23 @@ const tall = (t: T) => (t.table.shape === 'stool' ? 8 : 16)
 const zOf = (o: Iso, lv: number) => lv * GAPS[o.gap]!
 const shownLevels = (w: World, o: Iso) => levels(w).filter(lv => !o.hide[lv])
 const tablesAt = (w: World, lv: number): T[] => having(w, 'table', 'pos').filter(t => levelOf(w, t.pos.floor) === lv)
-/** A floor's slab: its tables' box, padded, just under the level's plane; its name sits off the slab's left corner, drawn after the level's blocks so none hides it. */
+const zonesAt = (w: World, lv: number) => having(w, 'zone', 'pos').filter(z => levelOf(w, z.pos.floor) === lv)
+/** A floor's slab: its tables' and zones' box, padded, just under the level's plane; its name sits off the slab's left corner, drawn after the level's blocks so none hides it. */
 const padded = (w: World, o: Iso, lv: number) => (f: Ent<'floor'>) =>
-  ((b = hull(tablesAt(w, lv).filter(t => t.pos.floor === f.id).map(t => turned(o.turn)(t.pos)))) => b && {x: b.x - PAD, y: b.y - PAD, w: b.w + 2 * PAD, h: b.h + 2 * PAD})()
+  ((b = hull([...tablesAt(w, lv), ...zonesAt(w, lv)].filter(t => t.pos.floor === f.id).map(t => turned(o.turn)(t.pos)))) => b && {x: b.x - PAD, y: b.y - PAD, w: b.w + 2 * PAD, h: b.h + 2 * PAD})()
+/** Zones on the slab: dashed outlines on the level's plane, names at their (turned) top-left corner. */
+const ZLINE: Record<string, string> = {door: 'stroke-emerald-600 dark:stroke-emerald-400', stairs: 'stroke-violet-500 dark:stroke-violet-400', lobby: 'stroke-sky-500 dark:stroke-sky-400'}
+const ZNAME = 'fill-slate-500 stroke-slate-50 stroke-[3px] text-[9px] font-semibold uppercase tracking-wider [paint-order:stroke] dark:fill-slate-400 dark:stroke-slate-900'
+const zone = (o: Iso, lv: number) => (z: Ent<'zone' | 'pos'>) => {
+  const [b, zz] = [turned(o.turn)(z.pos), zOf(o, lv) + 0.5]
+  return `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${corners(b, zz).map(pt).join(' ')}" fill="none" stroke-width="1" stroke-dasharray="5 4" class="${ZLINE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
+    txt([b.x + 4, b.y + 10, zz], ZNAME, z.zone.label, 'start') + '</g>'
+}
 const slab = (w: World, o: Iso, lv: number) => (f: Ent<'floor'>) =>
   ((p = padded(w, o, lv)(f)) => (p ? `<g data-slab="${esc(f.id)}">${prism(p, zOf(o, lv) - LIFT, LIFT, `${SLAB[lv % SLAB.length]} stroke-1`)}</g>` : ''))()
-/** Where a floor's name goes, in preference order: off a slab corner (frame point, text anchor, screen dx, lift). */
+/** Where a floor's name goes, in preference order: off a slab corner (or the middle of its left edge) (frame point, text anchor, screen dx, lift). */
 const CORNER: {at: (p: Box) => [number, number]; anchor: string; dx: number; dz: number}[] = [
-  {at: p => [p.x, p.y + p.h], anchor: 'end', dx: -8, dz: -4}, {at: p => [p.x + p.w, p.y + p.h], anchor: 'middle', dx: 0, dz: -22},
+  {at: p => [p.x, p.y + p.h], anchor: 'end', dx: -8, dz: -4}, {at: p => [p.x, p.y + p.h / 2], anchor: 'end', dx: -8, dz: -4}, {at: p => [p.x + p.w, p.y + p.h], anchor: 'middle', dx: 0, dz: -22},
   {at: p => [p.x + p.w, p.y], anchor: 'start', dx: 8, dz: -4}, {at: p => [p.x, p.y], anchor: 'middle', dx: 0, dz: 12},
 ]
 const CLEAR = 60 // frame px a name needs from the level's other slabs
@@ -94,9 +104,12 @@ const name = (o: Iso, lv: number, all: (Box | undefined)[]) => (f: Ent<'floor'>,
   const c = p && cornerOf(p, all.filter((b, k): b is Box => !!b && k !== i))
   return p && c ? txt([...c.at(p), zOf(o, lv) - LIFT + c.dz], NAME, f.floor.name, c.anchor, c.dx) : ''
 }
+/** An insight (warn / crit) or the open card rings the block's top face. */
+const ringOf = (c: Ctx, t: T) => ((a = c.alerts?.[t.id]) => (a ? {cls: ALERT[a.level], tag: ` data-insight="${a.level}"`} : c.pick === t.id ? {cls: 'stroke-sky-500', tag: ' data-picked'} : undefined))()
+const ring3 = (c: Ctx, t: T, b: Box, z: number) => ((r = ringOf(c, t)) => (r ? `<polygon${r.tag} points="${corners(b, z).map(pt).join(' ')}" fill="none" stroke-width="3" class="${r.cls}"/>` : ''))()
 const block = (c: Ctx, o: Iso, lv: number) => (t: T) => {
   const [b, paint, z] = [turned(o.turn)(t.pos), PAINT[o.pal](c)(t), zOf(o, lv)]
-  return `<g data-tid="${esc(t.id)}"><title>${titleOf(c.w, c.holds)(t)}</title>${prism(b, z, tall(t), `${paint.cls} stroke-1`, paint.fill)}` +
+  return `<g data-tid="${esc(t.id)}" data-act="tcard" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title>${prism(b, z, tall(t), `${paint.cls} stroke-1`, paint.fill)}${ring3(c, t, b, z + tall(t))}` +
     txt([b.x + b.w / 2, b.y + b.h / 2, z + tall(t) - 4], `${paint.ink} ${t.table.shape === 'stool' ? 'text-[8px]' : 'text-[12px]'} font-bold`, t.table.label) + '</g>'
 }
 const near = (o: Iso) => (t: T) => ((b = turned(o.turn)(t.pos)) => b.x + b.w / 2 + b.y + b.h / 2)()
@@ -110,12 +123,12 @@ const level = (c: Ctx, o: Iso, fx: Fx[]) => (lv: number) => {
   const us = o.units ? having(c.w, 'body').filter(b => levelOf(c.w, floorOf(c.w, b.id)) === lv) : []
   const ps = o.pings ? fx.filter(f => levelOf(c.w, f.floor) === lv) : []
   const fs = having(c.w, 'floor').filter(f => levelOf(c.w, f.id) === lv)
-  return `<g data-level="${lv}" class="${OPC[o.op[lv] ?? 100] ?? 'opacity-100'}">${fs.map(slab(c.w, o, lv)).join('')}${ts.map(block(c, o, lv)).join('')}${fs.map(name(o, lv, fs.map(padded(c.w, o, lv)))).join('')}` +
+  return `<g data-level="${lv}" class="${OPC[o.op[lv] ?? 100] ?? 'opacity-100'}">${fs.map(slab(c.w, o, lv)).join('')}${zonesAt(c.w, lv).map(zone(o, lv)).join('')}${ts.map(block(c, o, lv)).join('')}${fs.map(name(o, lv, fs.map(padded(c.w, o, lv)))).join('')}` +
     us.map(unit(o, zOf(o, lv))).join('') + ps.map(ring(o, zOf(o, lv))).join('') + '</g>'
 }
 /** The viewBox over every shown level's slabs, from plane to block tops, plus a margin for labels. */
 const view = (w: World, o: Iso) => {
-  const pts = shownLevels(w, o).flatMap(lv => tablesAt(w, lv).flatMap(t => [zOf(o, lv) - LIFT - 30, zOf(o, lv) + 30].flatMap(z => corners(turned(o.turn)(t.pos), z))))
+  const pts = shownLevels(w, o).flatMap(lv => [...tablesAt(w, lv), ...zonesAt(w, lv)].flatMap(t => [zOf(o, lv) - LIFT - 30, zOf(o, lv) + 30].flatMap(z => corners(turned(o.turn)(t.pos), z))))
   const [xs, ys] = [pts.map(sx), pts.map(sy)]
   const [x0, y0] = [Math.min(...xs) - SIDE, Math.min(...ys) - PAD * 2]
   return pts.length ? [x0, y0, Math.max(...xs) + SIDE - x0, Math.max(...ys) + PAD * 2 - y0].map(Math.round).join(' ') : `0 0 ${W} ${H}`

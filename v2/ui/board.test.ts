@@ -4,6 +4,7 @@ import type {Board, Desk, HostEngine} from '../contracts/index.ts'
 import {real} from '../test/real.ts'
 import {settle} from '../test/dom.ts'
 import {run} from './act.ts'
+import {ask} from './ask.ts'
 import {TONE} from './board.ts'
 import {load, step, uiOf} from './index.ts'
 import {click} from './rig.ts'
@@ -12,7 +13,8 @@ const busy = () => {
   const {el, app} = real()
   const calls: Board[] = []
   const board = (app.services.engine as HostEngine).board!
-  app.provide('engine', {board: (...a: Parameters<Desk['board']>) => (calls.push(board(...a)), calls.at(-1)!)} as never)
+  // dashboard reads only (they carry the window options); the floor's insight outlines (lane U10a) read on their own
+  app.provide('engine', {board: (...a: Parameters<Desk['board']>) => ((r = board(...a)) => (a[3]?.ivMin && calls.push(r), r))()} as never)
   load(app, 'rush')
   uiOf(app).rate = 0 // the preset's arrivals off: a long queue only slows the steps
   ;[2, 4, 2, 3].forEach(size => run(app, {do: 'seat', size}))
@@ -90,4 +92,56 @@ test('a table pick highlights its chip, bar and server everywhere; a second clic
   el.ownerDocument.dispatchEvent(new (el.ownerDocument.defaultView!.KeyboardEvent)('keydown', {key: 'Escape'}))
   await settle()
   assert.equal(uiOf(app).board.pick, '')
+})
+test('Insights: worst first with level word + icon; a table chip traces the table (and opens its card), a server chip traces the server card', async () => {
+  const {el, app, calls} = busy()
+  await open(el)
+  const ins = calls.at(-1)!.insights
+  const items = [...el.querySelectorAll('[data-binsights] [data-insight]')]
+  assert.ok(ins.length > 0, 'the rush has insights')
+  assert.deepEqual(items.map(x => [x.getAttribute('data-insight'), x.getAttribute('data-level')]), ins.map(x => [x.id, x.level]))
+  assert.match(items[0].textContent!, /^[▲!i](Act now|Watch|Note)/)
+  const opened: string[] = []
+  app.provide('card', {open: (_a: unknown, t: string) => void opened.push(t)})
+  const t = ins.find(x => x.tables.length)!.tables[0]
+  click(el, `[data-binsights] [data-act="btrace"][data-tid="${t}"]`)
+  await settle()
+  assert.deepEqual([uiOf(app).board.pick, opened], [t, [t]])
+  assert.ok(el.querySelector(`[data-glabels] [data-tid="${t}"][data-picked]`), 'traced on the timeline')
+  const s = ins.find(x => x.staff.length)!.staff[0]
+  click(el, `[data-binsights] [data-act="bwho"][data-who="${s}"]`)
+  await settle()
+  assert.ok(el.querySelector(`[data-servers] [data-server="${s}"][data-picked]`), 'server card traced')
+})
+test('task readout: one monospace line on the Dashboard toolbar and above the floor; a click focuses the stand on the party it names', async () => {
+  const {el, app} = busy()
+  run(app, {do: 'join', size: 2, name: 'Quaid'})
+  await open(el)
+  const bar = el.querySelector('[data-btool] [data-act="readout"]')!
+  assert.match(bar.textContent!, /^Next▸WALK-IN \(2\) → \S+/)
+  assert.ok(bar.className.includes('font-mono'))
+  uiOf(app).stand!.party = ''
+  tap(el, '[data-btool] [data-act="readout"]')
+  await settle()
+  const id = Object.values(app.store.state.world.ents).find(e => e.party?.name === 'Quaid')!.id
+  assert.deepEqual([uiOf(app).tab, uiOf(app).stand!.party], ['sim', id])
+  assert.equal(el.querySelector(`[data-stand] [role="radio"][data-id="${id}"]`)!.getAttribute('aria-checked'), 'true')
+  assert.match(el.querySelector('[data-next] [data-act="readout"]')!.textContent!, /WALK-IN \(2\)/)
+})
+test('Servers cards: preference chips with state, bogged badge, quick add / remove via presets', async () => {
+  const {el, app} = busy()
+  await open(el)
+  const ben = app.store.state.world.ents.sv2 ? 'sv2' : ''
+  click(el, `[data-servers] [data-act="pref-quick"][data-who="${ben}"]`)
+  await settle()
+  click(el, `[data-servers] [data-server="${ben}"] [data-act="pref-preset"][data-preset="no-grotto"]`)
+  await settle()
+  assert.equal(app.store.state.world.ents[ben].staff!.prefs![0].id, 'no-grotto')
+  const chip = el.querySelector(`[data-servers] [data-server="${ben}"] [data-pref="no-grotto"]`)!
+  assert.match(chip.textContent!, /Avoids Grotto/)
+  assert.ok(chip.querySelector('[data-pstate]'))
+  click(el, `[data-servers] [data-server="${ben}"] [data-act="unpref"]`)
+  await settle()
+  assert.deepEqual(app.store.state.world.ents[ben].staff!.prefs, [])
+  assert.equal(el.querySelectorAll('[data-servers] [data-bogged]').length, ask(app, 'board', {})!.servers.filter(s => s.bogged).length)
 })

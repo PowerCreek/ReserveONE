@@ -1,5 +1,5 @@
 // Host service: a led party raises a re-seat reason (DOMAIN: re-seat requests). Pure, policy-driven (E1).
-import type {Coach, Ent, Entity, HostEvent, Id, Policy, Stage, World} from '../contracts/index.ts'
+import type {Coach, Ent, HostEvent, Id, Policy, Stage, World} from '../contracts/index.ts'
 import type {ReasonDef} from '../contracts/index.ts'
 import {partyOf, slotOf} from './ents.ts'
 import {isMerge, partsOf} from '../contracts/index.ts'
@@ -19,14 +19,8 @@ const leased = (w: World, id: Id): Seat | undefined => {
   const l = w.ents[id]?.lease
   return l ? {table: l.spot, stage: 'arrived'} : undefined
 }
-/** Legacy (ui/runner `place arrived` still writes it): an accepted offer with no slot and no lease = led there. Drop once the runner leases. */
-const accepted = (w: World, id: Id): Seat | undefined => {
-  const e: Entity | undefined = w.ents[id]
-  const table = e?.offer?.status === 'accepted' && !slotOf(w, id) ? e.offer.spot : undefined
-  return table ? {table, stage: 'arrived'} : undefined
-}
 /** Where a led party is: an ACTIVE slot = seated; else a lease = arrived (led, not seated); else not led. */
-export const where = (w: World, id: Id): Seat | undefined => seated(w, id) ?? leased(w, id) ?? accepted(w, id)
+export const where = (w: World, id: Id): Seat | undefined => seated(w, id) ?? leased(w, id)
 interface Q {reason: string; def?: ReasonDef; known: boolean; at?: Seat; open: boolean}
 const rules: [(q: Q) => boolean, (q: Q) => string][] = [
   [q => !q.known, () => 'no such party'],

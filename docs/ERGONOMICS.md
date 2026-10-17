@@ -28,3 +28,17 @@ Why this doc exists: the host-stand screen has ~15 containers (Canvas/Gantt, Ins
 ## When you change the layout
 
 Update this doc's "where does a new container belong" guidance if the decision tree stops matching reality, and bump `docs/HANDOFF.md`'s U10 pointer line if the mechanism (not just the content) changes.
+
+## Dashboard design policy (USWDS-adapted)
+
+v2 panels (`v2/ui/`) follow USWDS principles, tightened for a dense, high-intensity service dashboard read at a glance under pressure. Class literals live in `v2/ui/tone.ts`.
+
+- **Spacing:** an 8px scale (`gap-2`, `p-2`, `space-y-3` between cards); 4px half-steps (`gap-1`, `py-0.5`) only inside dense rows (chips, ledger, timeline labels). No arbitrary pixel gaps.
+- **Type:** compact scale: `text-xs` (12px) is the floor for any HTML text (SVG timeline labels may go to 10px, with the full value in a `<title>`); `text-sm` body; `text-lg` KPI values. Times, counts, covers and scores use `tabular-nums`; the task readout is monospace.
+- **Plain language:** labels say what the host does or sees ("Seat Patel x3 from the door", "Take off duty", "Skip a turn", "bogged down"), never internal ids. Every card has a heading and a one-line purpose (`help` class) under it.
+- **Status never by colour alone:** every tone pairs an icon or word with its colour (KPI `!`/`▲` marks, insight levels "Act now / Watch / Note", preference states ○ set ✓ met ● enforced ! overridden, ⚠ bogged down, ⇢ Fast seat takes them).
+- **Contrast:** text meets 4.5:1: `text-slate-600` on light (`dark:text-slate-300` on dark) for secondary text; no `slate-400` text on white; coloured chips use 900/950 text on 100 fills.
+- **Focus:** every control shows a visible focus ring (`focus-visible:outline-sky-500`, plus the base rule in `app.css` for buttons, links, inputs, selects); controls are at least 32px tall (`min-h-8`), dense chips 24px (`min-h-6`).
+- **Button roles:** `primary` (= `ctaSm`; `cta` for the one full-width next step) = the action the card exists for; `secondary` (= `btn`, pressed state `on`) = routine controls and toggles; `outline` (= `ghost`) = alternatives, unset presets, Close/No. One primary per card region.
+- **No clipped operational values:** KPI labels and hints wrap (`break-words`) instead of truncating; timeline bar labels shorten only inside the SVG, with the full value as the bar's title.
+- **One implementation, many entry points:** a concept shown in several panels renders from one component (server preferences: `v2/ui/prefs.ts` chip + editor in Staff, Dashboard Servers and stand offers; tables: one `tref` trace chip; the readout: one `readout`).

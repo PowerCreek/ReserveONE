@@ -3,11 +3,12 @@ import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {ZOOM, floorSvg, tabList} from './floor.ts'
+import {alertsOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
 import type {Entity} from '../contracts/index.ts'
-import {floorOf} from './geo.ts'
+import {floorOf, rays} from './geo.ts'
 test('empty world shows scenario picker; clicking a preset draws the floor', async () => {
   const {app, el} = rig()
   await settle()
@@ -72,21 +73,103 @@ test('floor paints the holder on each table, and fades section tints when the mo
   assert.match(off, /fill-opacity="\.05"/)
 })
 
-const real = () => ({nextParty: 1, ents: Object.fromEntries([...venue(defaultPolicy.sim.floor), {id: 'door', pos: {floor: 'rf1', x: 24, y: 260, w: 0, h: 0}}].map(e => [e.id, e]))}) // door as main.ts seeds it
+const DOOR = {x: defaultPolicy.sim.door[0], y: defaultPolicy.sim.door[1]}
+const real = () => ({nextParty: 1, ents: Object.fromEntries([...venue(defaultPolicy.sim.floor), {id: 'door', pos: {floor: 'rf1', ...DOOR, w: 0, h: 0}}].map(e => [e.id, e]))}) // door as main.ts seeds it, from policy
 const vb = (svg: string) => svg.match(/viewBox="([^"]+)"/)![1]!.split(' ').map(Number)
-const inside = ([x, y, w, h]: number[], t: {pos: {x: number; y: number; w: number; h: number}}) => t.pos.x >= x! && t.pos.y >= y! && t.pos.x + t.pos.w <= x! + w! && t.pos.y + t.pos.h <= y! + h!
-test('2D viewBox fits the shown floor, or the whole stitched level, at the frame aspect', () => {
+type B = {x: number; y: number; w: number; h: number}
+const inside = ([x, y, w, h]: number[], p: B) => p.x >= x! && p.y >= y! && p.x + p.w <= x! + w! && p.y + p.h <= y! + h!
+test('2D viewBox fits the shown floor (tables, zones and the door), or the whole stitched level, at the frame aspect', () => {
   const w = real()
   const [W, H] = defaultPolicy.sim.floor
   const tabs = tabList(w)
   assert.deepEqual(tabs.map(t => t.name), ['Ground: all', 'Main Dining Room', 'Bar', 'Patio', 'Roof'])
   const box = Object.fromEntries(tabs.map(t => [t.id, vb(floorSvg(w, [], t.id))]))
-  tabs.forEach(t => having(w, 'table', 'pos').filter(x => t.ids.includes(x.pos.floor)).forEach(x => assert.ok(inside(box[t.id]!, x), `${x.id} in ${t.id}`)))
+  const mine = (t: {ids: string[]}) => [...having(w, 'table', 'pos'), ...having(w, 'zone', 'pos')].filter(x => t.ids.includes(x.pos.floor)).map(x => x.pos)
+  const doorIn = (t: {ids: string[]}) => (t.ids.includes('rf1') ? [{...DOOR, w: 0, h: 0}] : [])
+  tabs.forEach(t => [...mine(t), ...doorIn(t)].forEach(p => assert.ok(inside(box[t.id]!, p), `${JSON.stringify(p)} in ${t.id}`)))
+  assert.ok(having(w, 'zone').length >= 10 && mine(tabs[1]!).length > having(w, 'table', 'pos').filter(x => x.pos.floor === 'rf1').length) // the main floor's zones count in its fit
   Object.values(box).forEach(b => assert.ok(Math.abs(b[2]! / b[3]! - W / H) < 0.01))
   ;['rf1', 'rf2', 'rf3', 'rf4'].forEach(id => assert.ok(box[id]![2]! < box['lv:0']![2]! || id === 'rf4', `${id} zooms in past the level`))
   assert.ok(box.rf2![2]! < W && box.rf3![2]! < W) // bar and patio fill the panel
-  const span = (ids: string[], a: 'x' | 'y', d: 'w' | 'h') => ((ps = having(w, 'table', 'pos').filter(x => ids.includes(x.pos.floor)).map(x => x.pos)) => Math.max(...ps.map(p => p[a] + p[d])) - Math.min(...ps.map(p => p[a])))()
-  tabs.forEach(t => assert.ok([Math.abs(box[t.id]![2]! - span(t.ids, 'x', 'w') - 88), Math.abs(box[t.id]![3]! - span(t.ids, 'y', 'h') - 88), Math.abs(box[t.id]![2]! - W / ZOOM)].some(d => d <= 1), `${t.id} is tight on one side (or at the zoom cap)`))
+  const span = (ps: B[], a: 'x' | 'y', d: 'w' | 'h') => Math.max(...ps.map(p => p[a] + p[d])) - Math.min(...ps.map(p => p[a]))
+  tabs.forEach(t => ((ps = [...mine(t), ...doorIn(t)]) => assert.ok([Math.abs(box[t.id]![2]! - span(ps, 'x', 'w') - 88), Math.abs(box[t.id]![3]! - span(ps, 'y', 'h') - 88), Math.abs(box[t.id]![2]! - W / ZOOM)].some(d => d <= 1), `${t.id} is tight on one side (or at the zoom cap)`))())
   const fit = vb(floorSvg(w, [{x: 2000, y: 2000, kind: 'seated', msg: '', ttl: 3, floor: 'rf2'}], 'rf2'))
   assert.ok(fit[0]! + fit[2]! >= 2000 && fit[1]! + fit[3]! >= 2000) // a ping on the floor stays in view
+})
+
+// ---- grid: rays across the visible box, offset by the camera
+const G = defaultPolicy.sim.grid
+const lines = (svg: string) => ((g = svg.slice(svg.indexOf('<g data-grid'), svg.indexOf('</g>', svg.indexOf('<g data-grid')))) =>
+  [...g.matchAll(/<line x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"[^>]*class="([^"]+)"/g)].map(m => ({x1: +m[1]!, y1: +m[2]!, x2: +m[3]!, y2: +m[4]!, cls: m[5]!})))()
+/** Vertical rays relative to the visible box's left edge. */
+const rel = (svg: string) => ((b = vb(svg)) => lines(svg).filter(l => l.x1 === l.x2).map(l => +(l.x1 - b[0]!).toFixed(2)))()
+const near = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]!) < 0.01)
+test('grid lines sit at -(offset mod cell) and repeat every cell: a 7 px pan moves them 7, a one-cell pan returns the same set', () => {
+  const w = real()
+  const at = (x: number, y = 0, z = 1) => floorSvg(w, [], 'rf1', undefined, {cam: {x, y, z}})
+  const [base, by7, byCell] = [at(0), at(7), at(G)]
+  const b = vb(base)
+  assert.ok(near([rel(base)[0]!], [-((b[0]! % G) + G) % G])) // first line at -(offset mod cell)
+  assert.ok(rel(base).every((x, i, xs) => i === 0 || Math.abs(x - xs[i - 1]! - G) < 0.01)) // one per cell
+  const m = (x: number) => +(((x % G) + G) % G).toFixed(2)
+  const wrap = (x: number) => (x <= -G + 0.001 ? x + G : x)
+  assert.ok(near([rel(by7)[0]!], [wrap(rel(base)[0]! - 7)]) && rel(by7).every(x => m(x) === m(rel(base)[0]! - 7))) // every line moved by 7
+  assert.deepEqual(rays(3, 100, G), [-3, 13, 29, 45, 61, 77, 93]) // the helper itself: first at -(3 mod 16)
+  assert.deepEqual(rays(10, 100, G), rays(3, 100, G).map(x => x - 7)) // pan 7: every ray 7 over
+  assert.deepEqual(rays(3 + G, 100, G), rays(3, 100, G)) // pan a cell: the same set
+  assert.ok(near(rel(byCell), rel(base))) // a whole cell: the same set
+  const ls = lines(base), [vx, vy, vw, vh] = b
+  assert.ok(ls.filter(l => l.x1 === l.x2).length <= Math.floor(vw! / G) + 2 && ls.filter(l => l.y1 === l.y2).length <= Math.floor(vh! / G) + 2) // bounded by the visible span
+  assert.ok(ls.every(l => (l.x1 === l.x2 ? l.y1 === vy && l.y2 === vy! + vh! : l.x1 === vx && l.x2 === vx! + vw!))) // full-length rays
+  const strong = ls.filter(l => l.x1 === l.x2 && /slate-400/.test(l.cls)).map(l => Math.round(l.x1 / G))
+  assert.ok(strong.length && strong.every(n => n % 4 === 0)) // every 4th line a shade stronger
+  const zoomed = vb(at(0, 0, 2))
+  assert.ok(Math.abs(zoomed[2]! - vw! / 2) < 0.01 && lines(at(0, 0, 2)).length < ls.length) // zoom halves the box; fewer lines
+  assert.doesNotMatch(floorSvg(w, [], 'rf1', undefined, {grid: false}), /data-grid/)
+})
+test('zones draw dashed with their labels on the shown floor: door points out, stairs show their flight', () => {
+  const w = real()
+  const main = floorSvg(w, [], 'rf1')
+  assert.deepEqual([...new Set([...main.matchAll(/data-zone="([^"]+)"/g)].map(m => m[1]))].sort(), ['aisle', 'area', 'door', 'lobby', 'stairs', 'walkway', 'wall'])
+  ;['Lobby', 'Front door', 'Stairs to the roof', 'Walkway', 'Booth aisle', 'Banquette aisle', 'Main dining', 'Grotto'].forEach(l => assert.match(main, new RegExp(`>${l}</text>`)))
+  assert.match(main, />UP</)
+  assert.match(main, /data-zone="door"[^]*?<polygon/) // the outward arrow
+  assert.ok(main.indexOf('data-zone=') < main.indexOf('data-tid=')) // under the tables
+  assert.doesNotMatch(main, />DOOR</) // the door zone replaces the old door mark
+  const roof = floorSvg(w, [], 'rf4')
+  assert.match(roof, />Stairs down</)
+  assert.match(roof, />DOWN</)
+  assert.doesNotMatch(roof, /Lobby/)
+  assert.doesNotMatch(floorSvg(w, [], 'rf2'), /data-zone="lobby"/)
+})
+test('insight tables get a warn or crit outline; info is not outlined', () => {
+  const w = real()
+  const svg = floorSvg(w, [], 'rf1', undefined, {alerts: alertsOf([
+    {id: 'brick', level: 'crit', msg: 'strands a booking', tables: ['rf_1'], staff: []}, {id: 'pressure', level: 'warn', msg: 'deluge', tables: ['rf_1', 'rf_2'], staff: []},
+    {id: 'reclaim', level: 'info', msg: 'split', tables: ['rf_3'], staff: []},
+  ])})
+  assert.deepEqual([...svg.matchAll(/data-insight="(\w+)" data-tid-alert="([^"]+)"/g)].map(m => [m[2], m[1]]), [['rf_1', 'crit'], ['rf_2', 'warn']])
+  assert.match(svg, /data-tid-alert="rf_1"><title>strands a booking<\/title><rect[^>]*stroke-rose-600/)
+  assert.match(svg, /data-tid-alert="rf_2"><title>deluge<\/title><rect[^>]*stroke-amber-500/)
+})
+test('camera: zoom buttons, fit, grid toggle and arrow keys move the 2D view', async () => {
+  const {app, el} = rig()
+  load(app, 'rush')
+  await settle()
+  const svg = () => el.querySelector('[data-floor] svg[data-plan]')!
+  const w0 = Number(svg().getAttribute('viewBox')!.split(' ')[2])
+  click(el, '[data-act="cam"][data-k="in"]')
+  await settle()
+  assert.equal(app.store.state.ui.cam!.z, 1.25)
+  assert.ok(Math.abs(Number(svg().getAttribute('viewBox')!.split(' ')[2]) - w0 / 1.25) < 0.01)
+  const x0 = Number(svg().getAttribute('viewBox')!.split(' ')[0])
+  svg().dispatchEvent(new el.ownerDocument.defaultView!.KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true}))
+  assert.equal(Number(svg().getAttribute('viewBox')!.split(' ')[0]), x0 + G) // live: the same svg moves one cell
+  click(el, '[data-act="cam"][data-k="fit"]')
+  await settle()
+  assert.deepEqual(app.store.state.ui.cam, {x: 0, y: 0, z: 1})
+  click(el, '[data-act="grid"]')
+  await settle()
+  assert.ok(!svg().querySelector('[data-grid]'))
+  assert.equal(el.querySelector('[data-act="grid"]')!.getAttribute('aria-pressed'), 'false')
 })

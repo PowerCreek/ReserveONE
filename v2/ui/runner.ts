@@ -1,6 +1,6 @@
 // Starter runner (U1, free play): plays `scenarios[id].steps` into the sim at their minute, then the sandbox runs on. No scoring, no expectations.
 import {defaultPolicy, having} from '../contracts/index.ts'
-import type {App, Decision, Entity, Id, Patch, Plugin, PType, Step} from '../contracts/index.ts'
+import type {App, Decision, Entity, Id, Outcome, Patch, Plugin, PType, Step} from '../contracts/index.ts'
 import {scenarios} from '../scenarios/index.ts'
 import {ask} from './ask.ts'
 import {locate} from './geo.ts'
@@ -38,13 +38,18 @@ const arrive: Doer<'arrive'> = (app, x, id) => {
   const ent = party(Number(id.slice(1)), x.kind, x.size, x.name, {...flows[x.kind](app.store.state.now, quoted), wants: {list: x.wants, heard: []}, mood: {score: 0}, body: walkIn(id)})
   return [{op: 'add', ent: here(ent, x.size)}]
 }
-const complain = (app: App, d?: Decision) => (d && !d.ok && note(app, 'warn', d.err), d?.ok ? d.patches : [])
-const unqueued = (e: Entity): Entity => Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'queue' && k !== 'reservation')) as Entity
+const complain = (app: App, d?: Decision | Outcome) => (d && !d.ok && note(app, 'warn', d.err), d?.ok ? d.patches : [])
 type Stager = (app: App, e: Entity, x: Do<'place'>, body: NonNullable<Entity['body']>) => Patch[]
-/** seated = the engine books the table; arrived = led there, not seated: out of the queue, an accepted offer on the table marks where. */
+/** A scripted `ask` at the arrived stage needs the lease still open then: it settles a minute after that ask at the earliest (the open request then holds it). */
+const holdFor = (app: App, x: Do<'place'>) => plan(uiOf(app).run?.id).filter(s => s.do === 'ask' && s.key === x.key && s.stage === 'arrived').map(s => (uiOf(app).run?.t0 ?? 0) + (s.at + 1) * MIN)
+const kept = (app: App, x: Do<'place'>, id: Id): Patch[] => {
+  const l = app.store.state.world.ents[id]?.lease
+  return l ? [{op: 'set', id, parts: {lease: {...l, until: Math.max(l.until, ...holdFor(app, x))}}}] : []
+}
+/** seated = the engine books the table; arrived = led there, not seated: leased through the desk (`act lease`), the guest already at the table. */
 const stages: Record<Do<'place'>['stage'], Stager> = {
   seated: (app, e, x, body) => (app.apply([{op: 'set', id: e.id, parts: {body}}]), complain(app, ask(app, 'seat', {size: e.party!.size, kind: e.party!.kind, party: e.id, tables: [x.table]}))), // at the table first: the seating then queues the guest's wait for service
-  arrived: (app, e, x, body) => [{op: 'del', id: e.id}, {op: 'add', ent: {...unqueued(e), body, offer: {spot: x.table, step: 'exact', gives: [], lacks: [], at: app.store.state.now, status: 'accepted'}}}],
+  arrived: (app, e, x, body) => (app.apply(complain(app, ask(app, 'act', {do: 'lease', party: e.id, spot: x.table, step: 'exact'}))), [{op: 'set', id: e.id, parts: {body}}, ...kept(app, x, e.id)]),
 }
 const place: Doer<'place'> = (app, x, id) => {
   const w = app.store.state.world

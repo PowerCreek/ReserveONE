@@ -5,6 +5,8 @@ import type {App, DoorRow, Id, LeaseRow, Offer, Placed, Policy, ReqRow, SeatedRo
 import {run} from './act.ts'
 import {ask, policyOf} from './ask.ts'
 import {crew, spotName} from './events.ts'
+import {mark} from './prefs.ts'
+import {fastMark, taker} from './queue.ts'
 import {arg, esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {card, choice, cta, ctaSm, ghost, ok} from './tone.ts'
@@ -15,14 +17,14 @@ declare module '../contracts/kernel.ts' {
 }
 const st = (app: App) => uiOf(app).stand!
 const world = (app: App) => app.store.state.world
-interface Ctx {w: World; p: Policy; v: StandView; now: number}
+interface Ctx {w: World; p: Policy; v: StandView; now: number; fast?: Id}
 
 // ---- pieces
 const pill = 'rounded-full bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700'
-const askCls = 'rounded-full bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600'
+const askCls = 'min-h-6 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-900 hover:bg-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600'
 const LV: Record<Want['level'], string> = {need: 'bg-rose-600 text-white', strong: 'bg-amber-500 text-white', soft: 'bg-slate-300 text-slate-800 dark:bg-slate-600 dark:text-slate-100'}
-const part = (title: string, body: string) => `<section><h3 class="mb-1 text-xs font-semibold uppercase text-slate-500">${title}</h3>${body}</section>`
-const muted = (s: string) => `<p class="text-xs text-slate-500">${s}</p>`
+const part = (title: string, body: string) => `<section><h3 class="mb-1 text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">${title}</h3>${body}</section>`
+const muted = (s: string) => `<p class="text-xs text-slate-600 dark:text-slate-300">${s}</p>`
 const act = (name: string, attrs: string, label: string, cls: string, extra = '') => `<button type="button" data-act="stand-${name}" ${attrs} class="${cls}"${extra}>${esc(label)}</button>`
 const ul = (rows: string[]) => `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${rows.join('')}</ul>`
 const feat = (c: Ctx, f: string) => c.p.host.feats[f]?.label ?? f
@@ -33,28 +35,29 @@ const KIND: Record<string, string> = {W: 'Walk-in', P: 'Priority', R: 'Reservati
 
 // ---- at the door: party cards as the radiogroup (selecting one focuses it; greeting is implicit)
 const partyCard = (c: Ctx) => (r: DoorRow) =>
-  `<button type="button" role="radio" aria-checked="${r.party === c.v.focus}" data-act="stand-focus" data-id="${esc(r.party)}" class="${choice(r.party === c.v.focus)}"><span class="font-semibold">${esc(r.label)} x${r.size} ${esc(r.name)}</span><span class="text-slate-500">${KIND[r.kind] ?? r.kind}, waiting ${r.waitedMin}m</span></button>`
-const door = (c: Ctx) => part(`At the door <span class="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] normal-case dark:bg-slate-700">${c.v.door.length}</span>`,
-  c.v.door.length ? `<div role="radiogroup" aria-label="Parties at the door" class="flex flex-wrap gap-2">${c.v.door.map(partyCard(c)).join('')}</div>` : muted('Nobody at the door.'))
+  `<button type="button" role="radio" aria-checked="${r.party === c.v.focus}" data-act="stand-focus" data-id="${esc(r.party)}" class="${choice(r.party === c.v.focus)}"><span class="font-semibold">${esc(r.label)} x${r.size} ${esc(r.name)}</span><span class="tabular-nums text-slate-600 dark:text-slate-300">${KIND[r.kind] ?? r.kind}, waiting ${r.waitedMin}m</span>${c.fast === r.party ? fastMark : ''}</button>`
+const door = (c: Ctx) => part(`At the door <span class="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs tabular-nums normal-case text-slate-900 dark:bg-slate-700 dark:text-slate-100">${c.v.door.length}</span>`,
+  c.v.door.length ? `<div role="radiogroup" aria-label="Parties at the door" class="flex max-h-60 flex-wrap gap-2 overflow-y-auto p-0.5">${c.v.door.map(partyCard(c)).join('')}</div>` : muted('Nobody at the door.'))
 
 // ---- intake: recorded wants, then an optional compact "Ask about" row
 const want = (c: Ctx) => (x: Want) => `<span class="rounded-full px-2 py-0.5 text-xs ${LV[x.level]}" title="${esc(x.accord)} of the party">${x.avoid ? 'avoid ' : ''}${esc(feat(c, x.feat))} | ${x.level} | ${esc(c.p.host.whys[x.why]?.label ?? x.why)}</span>`
-const known = (c: Ctx) => [...c.v.wants.map(want(c)), ...c.v.denied.map(f => `<span class="text-xs text-slate-500">asked: no ${esc(feat(c, f))}</span>`)].join(' ')
+const known = (c: Ctx) => [...c.v.wants.map(want(c)), ...c.v.denied.map(f => `<span class="text-xs text-slate-600 dark:text-slate-300">asked: no ${esc(feat(c, f))}</span>`)].join(' ')
 const asks = (c: Ctx) => c.v.unasked.map(f => act('hear', `data-feat="${esc(f)}"`, feat(c, f), askCls)).join(' ')
 /** Recorded wants first (they shape the offers), then the optional "Ask about" row below the seat buttons. */
 const intake = (c: Ctx) => (c.v.wants.length || c.v.denied.length ? `<div class="mb-2 flex flex-wrap items-center gap-1">${known(c)}</div>` : '')
-const asking = (c: Ctx) => (c.v.unasked.length ? `<div class="mt-2 flex flex-wrap items-center gap-1"><span class="text-xs text-slate-500">Ask about</span>${asks(c)}</div>` : '')
+const asking = (c: Ctx) => (c.v.unasked.length ? `<div class="mt-2 flex flex-wrap items-center gap-1"><span class="text-xs text-slate-600 dark:text-slate-300">Ask about</span>${asks(c)}</div>` : '')
 
 // ---- offers: the top one is the CTA, each further one a row; one click leases, `No` drops that spot
 const chips = (c: Ctx, o: Offer) => [...o.gives.map(g => `<span class="${pill}">+${esc(feat(c, g))}</span>`), ...o.lacks.map(m => `<span class="${pill}">-${esc(feat(c, m.feat))} (${m.level})</span>`)].join(' ')
 const squeeze = (c: Ctx, o: Offer) => (o.squeezes?.length ? `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">squeezes ${esc(o.squeezes.map(id => crew(c.w, id)).join(', '))}</span>` : '')
-const about = (c: Ctx, o: Offer) => `<p class="text-xs">${esc(o.say)} ${chips(c, o)} <span class="text-slate-500">server ${esc(staffName(c.w, o.server) || 'none yet')}</span> ${squeeze(c, o)}</p>`
+const marks = (c: Ctx, o: Offer) => (o.prefs.length ? `<span data-marks class="flex flex-wrap gap-1">${o.prefs.map(mark(c)).join('')}</span>` : '')
+const about = (c: Ctx, o: Offer) => `<div class="space-y-1 text-xs"><p>${esc(o.say)} ${chips(c, o)} <span class="text-slate-600 dark:text-slate-300">server</span> <b>${esc(staffName(c.w, o.server) || 'none yet')}</b> ${squeeze(c, o)}</p>${marks(c, o)}</div>`
 const at = (o: Offer) => `data-spot="${esc(o.spot)}" data-step="${esc(o.step)}"`
 const no = (o: Offer) => act('decline', at(o), 'No', ghost, ` aria-label="No to ${esc(o.step)}"`)
 const top = (c: Ctx, o: Offer) => `<div data-offer="top" class="space-y-1 rounded-lg border border-sky-600 p-2">${about(c, o)}<div class="flex gap-2">${act('lease', at(o), `Lease ${spot(c.w, o.spot!)} to ${crew(c.w, c.v.focus!)}`, cta)}${no(o)}</div></div>`
 const row = (c: Ctx) => (o: Offer) => `<li data-offer="${esc(o.spot)}" class="flex flex-wrap items-center gap-2 py-1"><b class="text-xs">${esc(spot(c.w, o.spot!))}</b><div class="grow">${about(c, o)}</div>${act('lease', at(o), 'Lease', ctaSm)}${no(o)}</li>`
-const wait = (o: Offer) => `<li class="py-1 text-xs text-slate-500">${esc(o.say)}</li>`
-const turns = (c: Ctx) => (c.v.rotation.length ? `<p class="mb-1 text-xs"><span class="text-slate-500">Rotation order, all servers and bartenders</span> <b>${esc(staffName(c.w, c.v.rotation[0]))}</b>${c.v.rotation.length > 1 ? `, then ${esc(c.v.rotation.slice(1, 5).map(id => staffName(c.w, id)).join(', '))}` : ''}</p>` : '')
+const wait = (o: Offer) => `<li class="py-1 text-xs text-slate-600 dark:text-slate-300">${esc(o.say)}</li>`
+const turns = (c: Ctx) => (c.v.rotation.length ? `<p class="mb-1 text-xs"><span class="text-slate-600 dark:text-slate-300">Rotation order, all servers and bartenders</span> <b>${esc(staffName(c.w, c.v.rotation[0]))}</b>${c.v.rotation.length > 1 ? `, then ${esc(c.v.rotation.slice(1, 5).map(id => staffName(c.w, id)).join(', '))}` : ''}</p>` : '')
 const offers = (c: Ctx) => {
   const [first, ...more] = c.v.offers.filter(o => o.spot)
   const waits = c.v.offers.filter(o => !o.spot)
@@ -68,9 +71,9 @@ const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms /
 const due = (c: Ctx, r: LeaseRow) => (r.until > c.now ? `settles in ${mmss(r.until - c.now)}` : 'settling now')
 const worry = (c: Ctx, r: LeaseRow) => {
   const why = c.p.host.reasons[c.w.ents[r.party]?.request?.reason ?? '']
-  return `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">concern: ${esc(why?.label ?? 'request')}</span> <span class="text-slate-500">"${esc(why?.says ?? '')}" waits for you</span>`
+  return `<span class="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">concern: ${esc(why?.label ?? 'request')}</span> <span class="text-slate-600 dark:text-slate-300">"${esc(why?.says ?? '')}" waits for you</span>`
 }
-const clockOf = (c: Ctx, r: LeaseRow) => (r.concern ? worry(c, r) : `<span class="text-slate-500">${due(c, r)}</span>`)
+const clockOf = (c: Ctx, r: LeaseRow) => (r.concern ? worry(c, r) : `<span class="tabular-nums text-slate-600 dark:text-slate-300">${due(c, r)}</span>`)
 const lease = (c: Ctx) => (r: LeaseRow) =>
   `<li data-lease="${esc(r.party)}" class="flex flex-wrap items-center gap-1 py-1 text-xs"><b>${esc(crew(c.w, r.party))}</b> at ${esc(spot(c.w, r.spot))} ${clockOf(c, r)}<span class="grow"></span>${act('confirm', `data-id="${esc(r.party)}"`, 'Seat now', ok)}${act('release', `data-id="${esc(r.party)}"`, 'Release', ghost)}</li>`
 const leased = (c: Ctx) => (c.v.leased.length ? part('Leased', ul(c.v.leased.map(lease(c)))) : '')
@@ -95,7 +98,7 @@ const sat = (c: Ctx) => (r: SeatedRow) =>
 const seated = (c: Ctx) => part('Seated: tell the server', c.v.seated.length ? `<div class="max-h-48 overflow-y-auto">${ul(c.v.seated.map(sat(c)))}</div>` : muted('Nobody seated.'))
 const draw = (app: App) => {
   const v = ask(app, 'stand', st(app).party)
-  const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now}
+  const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now, fast: taker(app, v)}
   return c ? [door, focus, leased, coming, requests, seated].map(f => f(c)).join('') : muted('Engine host service not available.')
 }
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`

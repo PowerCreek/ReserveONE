@@ -39,7 +39,7 @@ test('a starter loads its room, crew and busy tables, then plays the minute-0 st
   assert.equal(app.store.state.ui.scenario, 'table-change')
   assert.equal(app.store.state.ui.rate, 0)
 })
-test('arrive carries party facts and wants; place arrived leaves the queue with an accepted offer at the table', () => {
+test('arrive carries party facts and wants; place arrived leases the table through act (guest at it, held past its scripted ask)', () => {
   const {app} = kit()
   load(app, 'booth-out')
   const w = app.store.state.world
@@ -50,9 +50,10 @@ test('arrive carries party facts and wants; place arrived leaves the queue with 
   assert.equal(chen.body!.role, 'guest')
   load(app, 'table-change')
   const g = app.store.state.world.ents[app.store.state.ui.run!.keys.garcia]
-  assert.equal(g.queue, undefined)
-  assert.deepEqual([g.offer!.spot, g.offer!.status], ['d1', 'accepted'])
+  assert.deepEqual([g.lease!.spot, g.lease!.tables, g.offer!.status, app.store.state.world.ents.d1.table!.status], ['d1', ['d1'], 'accepted', 'leased'])
+  assert.equal(g.lease!.until, app.store.state.ui.run!.t0 + 4 * MIN) // the scripted draft ask at minute 3 finds the lease still open
   assert.deepEqual([g.body!.x, g.body!.y, g.body!.task], [88, 148, null])
+  assert.ok(app.store.state.ui.stand && !app.store.state.ui.log!.some(l => l.kind === 'warn'), app.store.state.ui.log!.map(l => l.msg).join(' | '))
 })
 test('later steps play once, at their minute, through the engine', () => {
   const {app, asks, to} = kit()

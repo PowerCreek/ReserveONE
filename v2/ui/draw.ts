@@ -1,8 +1,9 @@
 // SVG fragments for the floor (U2). Pure string builders over entities; classes come from tone.ts, data colours from entity data.
 import {defaultPolicy, having} from '../contracts/index.ts'
-import type {Components, Ent, Entity, Hold, World} from '../contracts/index.ts'
+import type {Components, Ent, Entity, Hold, Id, Insight, World} from '../contracts/index.ts'
 import {HRING} from './events.ts'
-import {DOOR, locate} from './geo.ts'
+import {DOOR, hull, levelOf, levels, lineNo, locate, rays} from './geo.ts'
+import type {Box} from './geo.ts'
 import type {Fx} from './state.ts'
 import {esc} from './render.ts'
 import {RING, ROLE, TABLE} from './tone.ts'
@@ -22,8 +23,11 @@ const SHOWN = 3 // chips under a table; the rest fold into "+n" (the tooltip lis
 const feats = defaultPolicy.host.feats
 const cw = (s: string) => s.length * 5.4 + 10
 /** Feature chips in a centred row under the table: a 4-letter tag per feature, coloured by its group. */
-export const chips = (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => {
-  const tags = (t.feat?.tags ?? []).filter(f => !IMPLIED.includes(f) && ON_FLOOR.includes(feats[f]?.group ?? '')).map(f => ({f, tip: feats[f]?.label ?? f, s: SHORT[f] ?? (feats[f]?.label ?? f).slice(0, 5), cls: CHIP[feats[f]?.group ?? 'air']}))
+type FT = Ent<'table' | 'pos'> & {feat?: Components['feat']}
+/** The feature tags a table shows as chips under it. */
+const onFloor = (t: FT) => (t.feat?.tags ?? []).filter(f => !IMPLIED.includes(f) && ON_FLOOR.includes(feats[f]?.group ?? ''))
+export const chips = (t: FT) => {
+  const tags = onFloor(t).map(f => ({f, tip: feats[f]?.label ?? f, s: SHORT[f] ?? (feats[f]?.label ?? f).slice(0, 5), cls: CHIP[feats[f]?.group ?? 'air']}))
   const row = [...tags.slice(0, SHOWN), ...(tags.length > SHOWN ? [{f: '+', tip: tags.slice(SHOWN).map(x => x.tip).join(', '), s: `+${tags.length - SHOWN}`, cls: CHIP.access}] : [])]
   const ws = row.map(c => cw(c.s)), total = ws.reduce((a, b) => a + b + 2, -2)
   const xs = ws.map((_, i) => t.pos.x + t.pos.w / 2 - total / 2 + ws.slice(0, i).reduce((a, b) => a + b + 2, 0))
@@ -37,7 +41,7 @@ export const serverOf = (w: World, hs: Hold[]) => (t: Ent<'table'>) => w.ents[hs
 export const titleOf = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
   esc(`${t.table.label} cap ${t.table.capacity} ${t.table.status}, server ${serverOf(w, hs)(t)?.staff?.name ?? '-'}${tip(t)}`)
 export const table = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
-  `<g><title>${titleOf(w, hs)(t)}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
+  `<g data-act="tcard" data-tid="${esc(t.id)}" class="cursor-pointer"><title>${titleOf(w, hs)(t)}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
     (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
       txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
       txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
@@ -72,3 +76,108 @@ export const badge = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'>) => {
   const i = having(w, 'staff').findIndex(x => x.id === s?.id)
   return h && s?.staff ? `<g data-hold="${esc(t.id)}"><title>${esc(`${s.staff.crew?.join(' + ') ?? s.staff.name} (${h.by})`)}</title><circle cx="${t.pos.x + 4}" cy="${t.pos.y + 4}" r="7" class="${STAFF[i % STAFF.length]}"/>${txt(t.pos.x + 4, t.pos.y + 7.5, 'fill-white text-[9px] font-bold', s.staff.name[0])}</g>` : ''
 }
+
+// ---- grid: full-length rays across the visible box only, offset by the camera (cheap: O(visible span / cell) lines, no cell loops)
+const GRID = ['stroke-slate-300/60 dark:stroke-slate-700/60', 'stroke-slate-400/60 dark:stroke-slate-600/80'] // every 4th line a shade stronger
+const f2 = (n: number) => +n.toFixed(2)
+const ray = (x1: number, y1: number, x2: number, y2: number, n: number) =>
+  `<line x1="${f2(x1)}" y1="${f2(y1)}" x2="${f2(x2)}" y2="${f2(y2)}" vector-effect="non-scaling-stroke" stroke-width="1" class="${GRID[Number(n % 4 === 0)]}"/>`
+/** The grid's lines for visible box `v`: verticals at v.x + rays(v.x), horizontals at v.y + rays(v.y), each spanning the box. */
+export const gridLines = (v: Box, cell = defaultPolicy.sim.grid) =>
+  rays(v.x, v.w, cell).map(r => ray(v.x + r, v.y, v.x + r, v.y + v.h, lineNo(v.x, r, cell))).join('') +
+  rays(v.y, v.h, cell).map(r => ray(v.x, v.y + r, v.x + v.w, v.y + r, lineNo(v.y, r, cell))).join('')
+export const grid = (v: Box, cell = defaultPolicy.sim.grid) => `<g data-grid aria-hidden="true" class="pointer-events-none">${gridLines(v, cell)}</g>`
+
+// ---- zones: dashed demarcations with their labels, quiet, under the tables; the door points out, the stairs show their flight
+type Z = Ent<'zone' | 'pos'>
+const ZONE: Record<Components['zone']['kind'], string> = {
+  area: 'fill-none stroke-slate-400 dark:stroke-slate-500', walkway: 'fill-slate-200/40 stroke-slate-300 dark:fill-slate-800/40 dark:stroke-slate-600',
+  aisle: 'fill-slate-200/30 stroke-slate-300 dark:fill-slate-800/30 dark:stroke-slate-600', lobby: 'fill-sky-100/50 stroke-sky-400 dark:fill-sky-950/40 dark:stroke-sky-600',
+  door: 'fill-emerald-100 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400', stairs: 'fill-violet-100/60 stroke-violet-400 dark:fill-violet-950/40 dark:stroke-violet-500',
+  wall: 'fill-slate-300/50 stroke-slate-400 dark:fill-slate-700/50 dark:stroke-slate-500',
+}
+const ZINK: Record<Components['zone']['kind'], string> = {
+  area: 'fill-slate-500 dark:fill-slate-400', walkway: 'fill-slate-400 dark:fill-slate-500', aisle: 'fill-slate-400 dark:fill-slate-500', lobby: 'fill-sky-700 dark:fill-sky-300',
+  door: 'fill-emerald-700 dark:fill-emerald-300', stairs: 'fill-violet-700 dark:fill-violet-300', wall: 'fill-slate-500 dark:fill-slate-400',
+}
+const HALO = 'stroke-slate-100 stroke-[3px] [paint-order:stroke] dark:stroke-slate-900'
+const LABEL = `text-[9px] font-semibold uppercase tracking-wider ${HALO}`
+type Pt2 = {x: number; y: number}
+const mid2 = (b: Box): Pt2 => ({x: b.x + b.w / 2, y: b.y + b.h / 2})
+/** The middle of the tables on the zone's level: stairs point away from it. */
+const heart = (w: World, z: Z) => mid2(hull(having(w, 'table', 'pos').filter(t => levelOf(w, t.pos.floor) === levelOf(w, z.pos.floor)).map(t => t.pos)) ?? z.pos)
+/** The way out: across the door's wall (its short side), away from the lobby it opens from (else the tables). */
+const outward = (w: World, z: Z): Pt2 => {
+  const lobby = having(w, 'zone', 'pos').find(o => o.zone.kind === 'lobby' && o.pos.floor === z.pos.floor)?.pos
+  const from = lobby ? mid2(lobby) : heart(w, z)
+  const [c, across] = [mid2(z.pos), z.pos.w >= z.pos.h ? 'y' : 'x'] as const
+  return across === 'y' ? {x: 0, y: Math.sign(c.y - from.y) || 1} : {x: Math.sign(c.x - from.x) || 1, y: 0}
+}
+/** An arrow from `a` along unit `d` for `n` px, head included. */
+const arrow = (a: Pt2, d: Pt2, n: number, cls: string) => {
+  const [b, s] = [{x: a.x + d.x * n, y: a.y + d.y * n}, {x: -d.y * 4, y: d.x * 4}]
+  const head = [b, {x: b.x - d.x * 7 + s.x, y: b.y - d.y * 7 + s.y}, {x: b.x - d.x * 7 - s.x, y: b.y - d.y * 7 - s.y}].map(p => `${f2(p.x)},${f2(p.y)}`).join(' ')
+  return `<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x - d.x * 6)}" y2="${f2(b.y - d.y * 6)}" stroke-width="2" class="${cls}"/><polygon points="${head}" class="${cls.replace(/stroke-/g, 'fill-')}"/>`
+}
+const DOOR_INK = 'stroke-emerald-600 dark:stroke-emerald-400', FLIGHT_INK = 'stroke-violet-500 dark:stroke-violet-400'
+/** Stairs: treads across the long side, and the flight arrow along it, pointing away from the room (up on the ground, down at the top). */
+const flight = (w: World, z: Z) => {
+  const [c, h, long] = [mid2(z.pos), heart(w, z), z.pos.w >= z.pos.h ? 'x' : 'y'] as const
+  const d = long === 'x' ? {x: Math.sign(c.x - h.x) || -1, y: 0} : {x: 0, y: Math.sign(c.y - h.y) || -1}
+  const n = Math.floor((long === 'x' ? z.pos.w : z.pos.h) / 8)
+  const treads = Array.from({length: Math.max(0, n - 1)}, (_, i) => (long === 'x' ? [z.pos.x + 8 * (i + 1), z.pos.y + 2, z.pos.x + 8 * (i + 1), z.pos.y + z.pos.h - 2] : [z.pos.x + 2, z.pos.y + 8 * (i + 1), z.pos.x + z.pos.w - 2, z.pos.y + 8 * (i + 1)]))
+  const len = (long === 'x' ? z.pos.w : z.pos.h) * 0.6
+  const up = levelOf(w, z.pos.floor) < Math.max(...levels(w))
+  return treads.map(([x1, y1, x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="1" class="stroke-violet-300 dark:stroke-violet-700"/>`).join('') +
+    arrow({x: c.x - d.x * len / 2, y: c.y - d.y * len / 2 + 6}, d, len, FLIGHT_INK) + txt(c.x, c.y - 4, `${ZINK.stairs} text-[8px] font-bold ${HALO}`, up ? 'UP' : 'DOWN')
+}
+// Zone names: a tall band reads sideways down its middle, the door's name sits beside its arrow; any other name takes the first corner
+// (inside top-left, top-right, bottom-left, bottom-right, along the top, bottom, left or right dash, then just above) whose text box clears the tables and the names already placed.
+type Lab = {x: number; y: number; anchor: 'start' | 'end' | 'middle'; box: Box; turn?: boolean}
+const TW = 6.6, TH = 9 // px per character and cap height of a 9px uppercase tracked label
+const lab = (x: number, y: number, anchor: Lab['anchor'], n: number): Lab => ({x, y, anchor, box: {x: anchor === 'start' ? x : anchor === 'end' ? x - n * TW : x - (n * TW) / 2, y: y - TH, w: n * TW, h: TH + 2}})
+const CORNERS: ((p: Box, n: number) => Lab)[] = [
+  (p, n) => lab(p.x + 4, p.y + 11, 'start', n), (p, n) => lab(p.x + p.w - 4, p.y + 11, 'end', n),
+  (p, n) => lab(p.x + 4, p.y + p.h - 4, 'start', n), (p, n) => lab(p.x + p.w - 4, p.y + p.h - 4, 'end', n), (p, n) => lab(p.x + 4, p.y - 3, 'start', n),
+]
+const hit = (a: Box) => (b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+/** Then along the top dash, then the bottom dash, a cell at a time (the name sits on the line, haloed). */
+const sweep = (p: Box, n: number, y: number) => Array.from({length: Math.max(1, Math.floor((p.w - 8 - n * TW) / 16) + 1)}, (_, i) => lab(p.x + 4 + i * 16, y, 'start', n))
+/** Then down the left dash, then the right one, reading sideways. */
+const vsweep = (p: Box, n: number, x: number) => Array.from({length: Math.max(1, Math.floor((p.h - 8 - n * TW) / 16) + 1)}, (_, i) =>
+  ((y = p.y + 4 + (n * TW) / 2 + i * 16): Lab => ({x, y, anchor: 'middle', turn: true, box: {x: x - 6, y: y - (n * TW) / 2, w: 11, h: n * TW}}))())
+const spots = (p: Box, n: number) => [...CORNERS.slice(0, 4).map(f => f(p, n)), ...sweep(p, n, p.y + 3), ...sweep(p, n, p.y + p.h + 3), ...vsweep(p, n, p.x), ...vsweep(p, n, p.x + p.w), CORNERS[4]!(p, n)]
+const free = (p: Box, n: number, blocks: Box[]) => spots(p, n).find(l => !blocks.some(hit(l.box))) ?? CORNERS[0]!(p, n)
+const doorLab = (w: World, z: Z, n: number): Lab => ((c = mid2(z.pos), o = outward(w, z)) => (o.y ? lab(c.x + 8, c.y + o.y * 18 + 3, 'start', n) : lab(c.x + o.x * 30, c.y - 8, 'middle', n)))()
+const PLACE: Partial<Record<Components['zone']['kind'], (w: World, z: Z, n: number) => Lab>> = {door: doorLab}
+const labOf = (w: World, z: Z, blocks: Box[]): Lab => {
+  const [p, n] = [z.pos, z.zone.label.length]
+  const side = p.h > 2.5 * p.w && {...lab(p.x + p.w / 2, p.y + p.h / 2, 'middle', 0), turn: true}
+  return side || (PLACE[z.zone.kind]?.(w, z, n) ?? free(p, n, blocks))
+}
+const nameAt = (z: Z, l: Lab) => `<text x="${f2(l.x)}" y="${f2(l.y)}" text-anchor="${l.anchor}"${l.turn ? ` dy="3" transform="rotate(-90 ${f2(l.x)} ${f2(l.y)})"` : ''} class="${ZINK[z.zone.kind]} ${LABEL}">${esc(z.zone.label)}</text>`
+const EXTRA: Partial<Record<Components['zone']['kind'], (w: World, z: Z) => string>> = {
+  door: (w, z) => arrow(mid2(z.pos), outward(w, z), 26, DOOR_INK),
+  stairs: flight,
+}
+/** One zone's outline (dashed), its extra marks, its name (`l`; none = unnamed here). */
+const zoneOf = (w: World, z: Z, l?: Lab) =>
+  `<g data-zone="${esc(z.zone.kind)}" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><rect x="${z.pos.x}" y="${z.pos.y}" width="${z.pos.w}" height="${z.pos.h}" rx="3" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" class="${ZONE[z.zone.kind]}"/>` +
+  (EXTRA[z.zone.kind]?.(w, z) ?? '') + (l ? nameAt(z, l) : '') + '</g>'
+/** Outlines draw areas first (largest), then the rest; names are placed fixed ones first (door, stairs, lobby), areas last, each against the tables
+ * (with their section names above) and the names before it. `skip` = names a section already shows. */
+const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall', 'lobby', 'stairs', 'door']
+/** What a table keeps clear of names: its section name above, its chips below (when it has any). */
+const pad = (t: FT): Box => ({x: t.pos.x - 8, y: t.pos.y - 18, w: t.pos.w + 16, h: t.pos.h + (onFloor(t).length ? 38 : 20)})
+const by = (ks: Components['zone']['kind'][]) => (a: Z, b: Z) => ks.indexOf(a.zone.kind) - ks.indexOf(b.zone.kind)
+const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
+  ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: ts.map(pad)}).at
+export const zonesOf = (w: World, zs: Z[], ts: FT[] = [], skip: string[] = []) => ((at = labels(w, zs, ts, skip)) => [...zs].sort(by(ORDER)).map(z => zoneOf(w, z, at.get(z.id))).join(''))()
+
+// ---- insight outlines: tables a board insight names (warn / crit), and the table whose card is open
+export const ALERT: Record<string, string> = {warn: 'stroke-amber-500 dark:stroke-amber-400', crit: 'stroke-rose-600 dark:stroke-rose-400'}
+export type Alerts = Record<Id, {level: Insight['level']; msg: string}>
+/** Worst level per table over the board's insights (info is not outlined). */
+export const alertsOf = (is: Insight[] = []): Alerts => is.filter(i => i.level !== 'info').reduce<Alerts>((m, i) => ({...m, ...Object.fromEntries(i.tables.filter(t => m[t]?.level !== 'crit').map(t => [t, {level: i.level, msg: i.msg}]))}), {})
+export const outline = (a: Alerts) => (t: Ent<'table' | 'pos'>) => ((x = a[t.id]) => (x ? `<g data-insight="${x.level}" data-tid-alert="${esc(t.id)}"><title>${esc(x.msg)}</title><rect x="${t.pos.x - 4}" y="${t.pos.y - 4}" width="${t.pos.w + 8}" height="${t.pos.h + 8}" rx="8" fill="none" stroke-width="3" class="${ALERT[x.level]}${x.level === 'crit' ? ' animate-pulse' : ''}"/></g>` : ''))()
+export const picked = (t?: Ent<'table' | 'pos'>) => (t ? `<rect data-picked x="${t.pos.x - 6}" y="${t.pos.y - 6}" width="${t.pos.w + 12}" height="${t.pos.h + 12}" rx="10" fill="none" stroke-width="2" stroke-dasharray="4 3" class="pointer-events-none stroke-sky-500"/>` : '')
