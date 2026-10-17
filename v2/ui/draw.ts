@@ -189,13 +189,52 @@ export const ping = (f: Fx) =>
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
 export const door = `<g data-door><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
 export const STAFF = ['fill-sky-600', 'fill-emerald-600', 'fill-amber-600', 'fill-rose-600', 'fill-violet-600', 'fill-teal-600', 'fill-orange-600', 'fill-pink-600']
-/** A coloured initial on the table corner for whoever holds it now (colour = the holder's place in the crew). */
+/** A coloured initial on the table corner for whoever holds it now (colour = the holder's place in the crew). Bar stools carry none: their run's brace does. */
 export const badge = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'>) => {
-  const h = hs.find(x => x.table === t.id && x.staff)
+  const h = t.table.shape === 'stool' ? undefined : hs.find(x => x.table === t.id && x.staff)
   const s = w.ents[h?.staff ?? '']
   const i = having(w, 'staff').findIndex(x => x.id === s?.id)
   return h && s?.staff ? `<g data-hold="${esc(t.id)}"><title>${esc(`${s.staff.crew?.join(' + ') ?? s.staff.name} (${h.by})`)}</title><circle cx="${t.pos.x + 4}" cy="${t.pos.y + 4}" r="7" class="${STAFF[i % STAFF.length]}"/>${txt(t.pos.x + 4, t.pos.y + 7.5, 'fill-white text-[9px] font-bold', s.staff.name[0])}</g>` : ''
 }
+
+// ---- bar stool runs: one soft brace per contiguous run of stools one server holds, on the run's open side (away from the counter), the server's badge at its tip
+type Stool = Ent<'table' | 'pos'>
+type Axis = 'x' | 'y'
+const BRACE = ['stroke-sky-600/40', 'stroke-emerald-600/40', 'stroke-amber-600/40', 'stroke-rose-600/40', 'stroke-violet-600/40', 'stroke-teal-600/40', 'stroke-orange-600/40', 'stroke-pink-600/40']
+const PERP: Record<Axis, Axis> = {x: 'y', y: 'x'}
+const SIZE: Record<Axis, 'w' | 'h'> = {x: 'w', y: 'h'}
+/** Stools in lines along `axis` (same floor and same other coordinate), split where a cell is missing. */
+const segsOf = (ts: Stool[], axis: Axis): Stool[][] => [...ts.reduce((m, t) => m.set(`${t.pos.floor}|${t.pos[PERP[axis]]}`, [...(m.get(`${t.pos.floor}|${t.pos[PERP[axis]]}`) ?? []), t]), new Map<string, Stool[]>()).values()]
+  .flatMap(l => l.sort((a, b) => a.pos[axis] - b.pos[axis]).reduce<Stool[][]>((m, t) => ((g = m.at(-1)) => (g && t.pos[axis] - g.at(-1)!.pos[axis] <= t.pos[SIZE[axis]] + 1 ? [...m.slice(0, -1), [...g, t]] : [...m, [t]]))(), []))
+/** The nearest counter's middle (the wall box nearest the stool), else the stool itself. */
+const counterAt = (w: World, t: Stool): Pt2 => having(w, 'zone', 'pos').filter(z => z.pos.floor === t.pos.floor && z.zone.kind === 'wall' && z.pos.w > 0 && z.pos.h > 0).map(z => mid2(z.pos))
+  .sort((a, b) => Math.hypot(a.x - t.pos.x, a.y - t.pos.y) - Math.hypot(b.x - t.pos.x, b.y - t.pos.y))[0] ?? mid2(t.pos)
+/** A stool's run: its longer line (a lone stool lines up along the counter's edge). */
+const runOf = (w: World, rows: Stool[][], cols: Stool[][]) => (t: Stool): {axis: Axis; seg: Stool[]} => ((r = rows.find(g => g.includes(t))!, c = cols.find(g => g.includes(t))!, k = counterAt(w, t)) =>
+  c.length > r.length || (c.length === r.length && Math.abs(k.x - t.pos.x) > Math.abs(k.y - t.pos.y)) ? {axis: 'y', seg: c} : {axis: 'x', seg: r})()
+/** Where a run's brace stands: its cell-snapped span [u0, u1] along the axis, and the side's sign and edge (4 px off the stools, away from the counter). */
+const boundOf = (w: World, run: Stool[], axis: Axis) => ((k = counterAt(w, run[0]!), p = PERP[axis], g = defaultPolicy.sim.grid, sg = Math.sign(run[0]!.pos[p] - k[p]) || 1) => ({
+  u0: Math.floor(Math.min(...run.map(t => t.pos[axis])) / g) * g, u1: Math.ceil(Math.max(...run.map(t => t.pos[axis] + t.pos[SIZE[axis]])) / g) * g, sg,
+  edge: (sg > 0 ? Math.max(...run.map(t => t.pos[p] + t.pos[SIZE[p]])) : Math.min(...run.map(t => t.pos[p]))) + sg * 4}))()
+/** The brace path, a '}' bulging out to `d` with its point at the middle (u along the run, v out from the stools). */
+const curl = (P: (u: number, v: number) => string, u0: number, u1: number) => ((m = (u0 + u1) / 2, r = Math.min(7, (u1 - u0) / 4), d = 7) =>
+  `M${P(u0, 0)} Q${P(u0, d)} ${P(u0 + r, d)} L${P(m - r, d)} Q${P(m, d)} ${P(m, 2 * d)} Q${P(m, d)} ${P(m + r, d)} L${P(u1 - r, d)} Q${P(u1, d)} ${P(u1, 0)}`)()
+/** The holder's badge: a coloured initial. */
+const initial = (w: World, staff: Entity, run: Stool[], at: [number, number]) => ((i = having(w, 'staff').findIndex(x => x.id === staff.id)) =>
+  `<g data-hold="${esc(run[0]!.id)}" class="pointer-events-auto"><title>${esc(staff.staff!.crew?.join(' + ') ?? staff.staff!.name)}</title><circle cx="${at[0]}" cy="${at[1]}" r="7" class="${STAFF[i % STAFF.length]}"/>${txt(at[0], at[1] + 3.5, 'fill-white text-[9px] font-bold', staff.staff!.name[0])}</g>`)()
+/** The brace for one run: ends snapped to cell edges, bulging to the side away from the counter, the holder's badge at the tip. */
+const brace = (w: World, run: Stool[], axis: Axis, staff: Entity) => ((s = boundOf(w, run, axis), i = having(w, 'staff').findIndex(x => x.id === staff.id)) => {
+  const P = (u: number, v: number) => (axis === 'x' ? `${f2(u)},${f2(s.edge + s.sg * v)}` : `${f2(s.edge + s.sg * v)},${f2(u)}`)
+  const tip = P((s.u0 + s.u1) / 2, 22).split(',').map(Number) as [number, number]
+  return `<g data-run="${esc(staff.id)}" data-stools="${run.map(t => esc(t.id)).join(' ')}" class="pointer-events-none"><path d="${curl(P, s.u0, s.u1)}" fill="none" stroke-width="3" stroke-linecap="round" vector-effect="non-scaling-stroke" class="${BRACE[i % BRACE.length]} dark:opacity-80"/>${initial(w, staff, run, tip)}</g>`
+})()
+/** A holder's stools as runs: each stool's longer line, the stools that chose it. */
+const runsOf = (w: World, mine: Stool[]) => ((pick = runOf(w, segsOf(mine, 'x'), segsOf(mine, 'y'))) => [...new Set(mine.map(t => pick(t).seg))]
+  .map(seg => ({axis: pick(seg[0]!).axis, mine: seg.filter(t => pick(t).seg === seg)})).filter(r => r.mine.length))()
+const byHolder = (hs: Hold[], ts: Stool[]) => ts.filter(t => t.table.shape === 'stool').reduce((m, t) => ((s = hs.find(x => x.table === t.id && x.staff)?.staff) => (s ? m.set(s, [...(m.get(s) ?? []), t]) : m))(), new Map<Id, Stool[]>())
+/** Bar stools by holder, as runs: one brace each. */
+export const braces = (w: World, hs: Hold[], ts: Stool[]) => [...byHolder(hs, ts)].filter(([sid]) => w.ents[sid]?.staff)
+  .flatMap(([sid, mine]) => runsOf(w, mine).map(r => brace(w, r.mine, r.axis, w.ents[sid]!))).join('')
 
 // ---- grid: full-length rays across the visible box only, offset by the camera (cheap: O(visible span / cell) lines, no cell loops)
 const GRID = ['stroke-slate-300/60 dark:stroke-slate-700/60', 'stroke-slate-400/60 dark:stroke-slate-600/80'] // every 4th line a shade stronger
@@ -329,8 +368,12 @@ const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall',
 const pad = (t: FT): Box => ({x: t.pos.x - 8, y: t.pos.y - 18, w: t.pos.w + 16, h: t.pos.h + 20})
 const by = (ks: Components['zone']['kind'][]) => (a: Z, b: Z) => ks.indexOf(a.zone.kind) - ks.indexOf(b.zone.kind)
 const QUIET: Components['zone']['kind'][] = ['divider', 'prop'] // never named on the plan (the hover line says what they are)
+/** What a zone's drawn marks keep clear of names: a door, stairs or stand box, and the door's arrow (out, or both ways). */
+const MARKED: Components['zone']['kind'][] = ['door', 'stairs', 'stand']
+const reach = (w: World, z: Z): Box => ((c = mid2(z.pos), d = outward(w, z), e = BOTH.includes(z.id) ? 32 : 30) => ({x: Math.min(c.x, c.x + d.x * e) - 8, y: Math.min(c.y, c.y + d.y * e) - 8, w: Math.abs(d.x * e) + 16, h: Math.abs(d.y * e) + 16}))()
+const marks = (w: World) => (z: Z): Box[] => (MARKED.includes(z.zone.kind) ? [{x: z.pos.x - 2, y: z.pos.y - 2, w: z.pos.w + 4, h: z.pos.h + 4}, ...(z.zone.kind === 'door' ? [reach(w, z)] : [])] : [])
 const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind) && !NAMELESS.includes(z.id) && !(z.zone.kind === 'wall' && thin(z))).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
-  ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: ts.map(pad)}).at
+  ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: [...ts.map(pad), ...zs.flatMap(marks(w))]}).at
 export const zonesOf = (w: World, zs: Z[], ts: FT[] = [], skip: string[] = []) => ((at = labels(w, zs, ts, skip)) => [...zs].sort(by(ORDER)).map(z => zoneOf(w, z, at.get(z.id))).join(''))()
 
 // ---- insight outlines: tables a board insight names (warn / crit), and the table whose card is open

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {ZOOM, floorSvg, frame, tabList} from './floor.ts'
-import {SEATED, gridLines, alertsOf, chips, contour, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
+import {SEATED, badge, braces, gridLines, alertsOf, chips, contour, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
@@ -348,4 +348,36 @@ test('a zone with poly is one polygon on the poly points (wall fill), a rect zon
   assert.doesNotMatch(p, /<rect/)
   assert.match(r, /<rect x="300" y="100" width="96" height="128" rx="3"/)
   assert.doesNotMatch(r, /<polygon/)
+})
+
+const stool = (id: string, x: number, y: number): Entity => ({id, pos: {floor: 'g', x, y, w: 16, h: 16}, table: {label: id, capacity: 1, min: 1, shape: 'stool', status: 'available', waiter: null, section: null}})
+const bar = (): Entity => ({id: 'ctr', zone: {label: 'Bar counter', kind: 'wall'}, pos: {floor: 'g', x: 128, y: 320, w: 64, h: 80}})
+const ana = (): Entity => ({id: 'sv', staff: {name: 'Ana', active: true, sections: [], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 20}} as Entity)
+const held = (...ids: string[]) => ids.map(table => ({table, area: 'bar', staff: 'sv', by: 'rotation' as const}))
+test('bar stools carry no badge; each contiguous run of one holder gets one brace on its open side with the badge at the tip', () => {
+  const ss = [stool('b1', 144, 400), stool('b2', 160, 400), stool('b3', 176, 400), stool('b9', 176, 304), stool('b8', 192, 320), stool('b7', 192, 336)]
+  const w = world(bar(), ana(), ...ss), hs = held('b1', 'b2', 'b3', 'b9', 'b8', 'b7')
+  assert.equal(ss.map(t => badge(w, hs)(t as never)).join(''), '')
+  const out = braces(w, hs, ss as never)
+  assert.equal(out.match(/data-run=/g)!.length, 3) // row below, column right, lone stool above
+  assert.equal(out.match(/<circle/g)!.length, 3)
+  assert.match(out, /d="M144,420 [^"]*192,420"/) // below the row (away from the counter), ends on cell edges 144 and 192
+  assert.match(out, /d="M212,320 [^"]*212,352"/) // the column spans its two cells, 4 px right of the stools
+  assert.match(out, /pointer-events-none/); assert.match(out, /vector-effect="non-scaling-stroke"/); assert.match(out, /fill="none"/)
+  assert.equal(braces(w, [], ss as never), '') // no holder, no brace
+})
+test('on the real venue every area name sits clear of the doors (box and arrow), stands, stairs and tables', () => {
+  const w = real(), hit = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  const fs = ['rf1', 'rf2', 'rf3', 'rf4'].map(f => ({zs: having(w as never, 'zone', 'pos').filter(z => z.pos.floor === f), ts: having(w as never, 'table', 'pos').filter(t => t.pos.floor === f)}))
+  const shown = fs.map(({zs, ts}) => zonesOf(w as never, zs as never, ts as never)).join('')
+  const names = ['Main dining', 'Bar', 'Patio', 'Roof']
+  names.forEach(n => assert.ok(shown.includes(`>${n}</text>`), n))
+  fs.forEach(({zs, ts}) => ((svg = zonesOf(w as never, zs as never, ts as never)) => zs.filter(z => z.zone.kind === 'area').forEach(z => {
+    const m = svg.match(new RegExp(`data-zid="${z.id}"[^]*?<text x="([\\d.-]+)" y="([\\d.-]+)" text-anchor="(\\w+)"[^>]*>([^<]*)</text>`))
+    if (!m || m[4] !== z.zone.label.toUpperCase() && m[4] !== z.zone.label) return
+    const [x, y, n] = [Number(m[1]), Number(m[2]), z.zone.label.length * 6.6]
+    const box = {x: m[3] === 'end' ? x - n : m[3] === 'middle' ? x - n / 2 : x, y: y - 9, w: n, h: 11}
+    const marks = zs.filter(o => ['door', 'stand', 'stairs'].includes(o.zone.kind)).map(o => ({x: o.pos.x - 2, y: o.pos.y - 2, w: o.pos.w + 4, h: o.pos.h + 4}))
+    ;[...marks, ...ts.map(t => t.pos)].forEach(b => assert.ok(!hit(box, b), `${z.zone.label} overlaps ${JSON.stringify(b)}`))
+  }))())
 })

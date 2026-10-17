@@ -4,7 +4,7 @@ import {having} from '../contracts/index.ts'
 import type {App, Hold, Id, Policy, World} from '../contracts/index.ts'
 import {policyOf} from './ask.ts'
 import {boardOf} from './board.ts'
-import {alertsOf, badge, door, grid, gridLines, link, outline, picked, ping, section, table, tableSig, unit, zonesOf} from './draw.ts'
+import {alertsOf, badge, braces, door, grid, gridLines, link, outline, picked, ping, section, table, tableSig, unit, zonesOf} from './draw.ts'
 import type {Alerts} from './draw.ts'
 import {CAM, DOOR, H, LV, W, boxStr, doorFloor, fitBox, floorOf, floorsOf, hull, levelName, levelOf, levels, seen, zoomAt} from './geo.ts'
 import type {Box, Cam} from './geo.ts'
@@ -68,7 +68,7 @@ const planLayers = (w: World, s: Plan, held: Holding, look: Look, v: Box): Recor
   grid: () => (look.grid === false ? '' : grid(v)), zones: () => zonesOf(w, s.zs, s.ts, named(w, s.ts)),
   secs: () => having(w, 'section').map(x => section(x, s.ts.filter(t => t.table.section === x.id), held.live)).join(''), links: () => s.links.map(link(w)).join(''),
   tables: () => s.ts.map(table(w, held.holds)).join(''),
-  over: () => s.ts.map(outline(look.alerts ?? {})).join('') + picked(s.ts.find(t => t.id === look.pick)) + s.ts.map(badge(w, held.holds)).join(''),
+  over: () => s.ts.map(outline(look.alerts ?? {})).join('') + picked(s.ts.find(t => t.id === look.pick)) + s.ts.map(badge(w, held.holds)).join('') + braces(w, held.holds, s.ts),
   door: () => (s.door && !s.zs.some(z => z.zone.kind === 'door') ? door : ''), units: () => s.units.map(unit(w)).join(''), pings: () => s.fx.map(ping).join(''),
 })
 const planShell = (fit: Box, v: Box, inner = '') => `<svg data-plan data-fit="${boxStr(fit)}" viewBox="${boxStr(v)}" tabindex="0" data-on="keydown:floorKey" class="${SVG}" role="group" aria-label="${HINT}">${inner}</svg>`
