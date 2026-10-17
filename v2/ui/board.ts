@@ -4,6 +4,7 @@ import {having} from '../contracts/index.ts'
 import type {Activity, App, Bar, Board, Bucket, BusItem, Id, Insight, Kpi, Policy, Lane, LedgerChip, Quote, SectionRow, ServerRow, SpotState, Tick, World} from '../contracts/index.ts'
 import {ask, policyOf} from './ask.ts'
 import {hms} from './geo.ts'
+import {counter, stamp, tag} from './memo.ts'
 import {chips, presets, rowsOf as prefRows} from './prefs.ts'
 import {arg, esc, panel} from './render.ts'
 import {go} from './shell.ts'
@@ -36,11 +37,10 @@ const head = (title: string, s: string) => `<h2 class="text-sm font-semibold">${
 // ---- one read per repaint: keyed by rev + options; while the clock runs, at most one read per THROTTLE ms
 const optOf = (app: App) => ({ivMin: bu(app).iv, pastMin: PAST, aheadMin: bu(app).ahead})
 export const reader = (app: App) => {
-  const last = {rev: -1, opt: '', at: 0, b: undefined as Board | undefined}
-  const hot = (app: App) => !uiOf(app).running || Date.now() - last.at >= THROTTLE
-  const stale = (opt: string) => opt !== last.opt || (uiOf(app).rev !== last.rev && hot(app))
-  const read = (opt: string) => Object.assign(last, {rev: uiOf(app).rev, opt, at: Date.now(), b: ask(app, 'board', optOf(app))})
-  return () => (stale(JSON.stringify(optOf(app))) && read(JSON.stringify(optOf(app))), last.b)
+  const last = {stamp: '', opt: '', at: 0, b: undefined as Board | undefined}
+  const hot = () => !uiOf(app).running || Date.now() - last.at >= THROTTLE
+  const read = (opt: string) => Object.assign(last, {stamp: stamp(app), opt, at: Date.now(), b: ask(app, 'board', optOf(app))}) // the memo computes it once per world change and minute
+  return () => ((opt = JSON.stringify(optOf(app))) => (opt !== last.opt || (stamp(app) !== last.stamp && hot()) ? read(opt).b : last.b))()
 }
 const readers = new WeakMap<App, () => Board | undefined>()
 /** The one board read per app, shared by every panel that shows board rows (Dashboard, Sim strip and readout, Staff prefs). */
@@ -225,19 +225,24 @@ const PANELS: [attr: string, tab: string, draw: Draw][] = [
   ['data-btool', 'board', tool], ['data-bkpis', 'board', c => strip(c.b)], ['data-binsights', 'board', insightPanel], ['data-kpis', 'sim', c => mini(c.b)], ['data-next', 'sim', c => readout(c.b)], ['data-glabels', 'board', c => (rowsOf(c).length ? labels(c) : '')],
   ['data-gtrack', 'board', c => (rowsOf(c).length ? track(c) + legend : emptyGantt)], ['data-bturn', 'board', turnPanel], ['data-bledger', 'board', ledgerPanel], ['data-bserv', 'board', serverPanel],
 ]
-const painter = (read: () => Board | undefined, tab: string, draw: Draw) => (app: App) => {
-  const b = seen(app, tab) ? read() : undefined
-  return seen(app, tab) ? (b ? draw(ctxOf(app, b)) : tab === 'board' ? none : '') : ''
+/** One panel's draw: nothing while its tab is hidden; otherwise the html is rebuilt only when the board, the world stamp or a ui key it reads changed. */
+const painter = (read: () => Board | undefined, tab: string, draw: Draw) => {
+  const last = {k: '', html: ''}
+  return (app: App) => {
+    const b = seen(app, tab) ? read() : undefined
+    const k = seen(app, tab) ? `${tag(b)}|${stamp(app)}|${JSON.stringify([bu(app), uiOf(app).prefs])}` : ''
+    return !k ? '' : k === last.k ? last.html : Object.assign(last, {k, html: b ? draw(ctxOf(app, b)) : tab === 'board' ? none : ''}).html
+  }
 }
-export const kpiPane = '<div data-kpis="ui" class="mb-3 flex flex-wrap items-center gap-1"></div>'
+export const kpiPane = '<div data-kpis="ui.bv" class="mb-3 flex flex-wrap items-center gap-1"></div>'
 /** The task readout above the floor in the Sim tab. */
-export const nextPane = '<div data-next="ui"></div>'
-export const boardPane = `<div data-board class="space-y-3"><div data-btool="ui" class="${card}"></div>
-<div data-bkpis="ui" class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(8rem,1fr))]"></div>
-<div data-binsights="ui" class="${card} min-w-0"></div>
+export const nextPane = '<div data-next="ui.bv"></div>'
+export const boardPane = `<div data-board class="space-y-3"><div data-btool="ui.bv" class="${card}"></div>
+<div data-bkpis="ui.bv" class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(8rem,1fr))]"></div>
+<div data-binsights="ui.bv" class="${card} min-w-0"></div>
 <div class="${card} min-w-0">${head('Timeline', 'Tables with anything in the window, grouped by floor; shaded = past. Header counts tables due to turn per interval (rose = busy, grey = quiet).')}
-<div class="flex min-w-0"><div data-glabels="ui" class="w-20 shrink-0"></div><div class="min-w-0 grow overflow-x-auto"><div data-gtrack="ui"></div></div></div></div>
-<div class="grid gap-3 lg:grid-cols-3"><div data-bturn="ui" class="${card} min-w-0"></div><div data-bledger="ui" class="${card} min-w-0"></div><div data-bserv="ui" class="${card} min-w-0"></div></div></div>`
+<div class="flex min-w-0"><div data-glabels="ui.bv" class="w-20 shrink-0"></div><div class="min-w-0 grow overflow-x-auto"><div data-gtrack="ui.bv"></div></div></div></div>
+<div class="grid gap-3 lg:grid-cols-3"><div data-bturn="ui.bv" class="${card} min-w-0"></div><div data-bledger="ui.bv" class="${card} min-w-0"></div><div data-bserv="ui.bv" class="${card} min-w-0"></div></div></div>`
 // ---- the readout names a door party (focus it at the stand) or a table (trace it, open its card)
 const KINDS = /^(WALK-IN|RESERVATION|PRIORITY|VIP) /
 const lastLabel = (next: string) => next.split(/\s*→\s*|\s+/).at(-1) ?? ''
@@ -262,6 +267,7 @@ const escape = (app: App) => (e: Event) => (e as KeyboardEvent).key === 'Escape'
 export const board = (app: App) => {
   uiOf(app).board ??= {pick: '', iv: 15, ahead: 180}
   const read = () => boardOf(app)
+  counter(app, 'bv', ['ui.rev', 'ui.board', 'ui.prefs', 'ui.on']) // what the panels read: the world, their own state, the prefs and the visible tab
   Object.entries(ACTS).forEach(([n, f]) => app.act(n, f))
   PANELS.forEach(([attr, tab, draw]) => app.binder(panel(app, attr, painter(read, tab, draw))))
   app.view(el => el.ownerDocument.addEventListener('keydown', escape(app)))

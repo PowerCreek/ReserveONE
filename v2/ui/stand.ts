@@ -6,6 +6,7 @@ import {bk} from './bookask.ts'
 import {run} from './act.ts'
 import {ask, policyOf} from './ask.ts'
 import {crew, spotName} from './events.ts'
+import {gate, stamp} from './memo.ts'
 import {mark} from './prefs.ts'
 import {fastMark, taker} from './queue.ts'
 import {arg, esc, panel} from './render.ts'
@@ -101,8 +102,13 @@ const sat = (c: Ctx) => (r: SeatedRow) =>
 const seated = (c: Ctx) => part('Seated: tell the server', c.v.seated.length ? `<div class="max-h-48 overflow-y-auto">${ul(c.v.seated.map(sat(c)))}</div>` : muted('Nobody seated.'))
 /** The party in focus: the one the host picked, else the head of the priority order that is at the door. */
 const focusOf = (app: App, q: QRow[]) => st(app).party || q.find(r => r.here)?.party
+/** The priority order (booking desk; its reads are memoised in the seam, ui/memo.ts). */
+const waiting = (app: App) => bk(app, 'wait')?.rows ?? []
+/** Everything the stand reads: the world and minute (the stamp), the pick, the fast-seat size and toggle, and the clock itself while a lease counts down. */
+const leasing = (app: App) => Object.values(world(app).ents).some(e => e.lease)
+const key = (app: App) => `${stamp(app)}|${st(app).party}|${uiOf(app).size}|${uiOf(app).fromDoor ?? true}|${leasing(app) ? app.store.state.now : ''}`
 const draw = (app: App) => {
-  const q = bk(app, 'wait')?.rows ?? []
+  const q = waiting(app)
   const v = ask(app, 'stand', focusOf(app, q))
   const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now, fast: taker(app, v), q: new Map(q.map(r => [r.party, r]))}
   return c ? [door, focus, leased, coming, requests, seated].map(f => f(c)).join('') : muted('Engine host service not available.')
@@ -110,7 +116,7 @@ const draw = (app: App) => {
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`
 
 // ---- acts: each one Cmd (the party in focus is the view's), then a `ui.rev` bump so the panel repaints
-const focused = (app: App) => ask(app, 'stand', focusOf(app, bk(app, 'wait')?.rows ?? []))?.focus ?? ''
+const focused = (app: App) => ask(app, 'stand', focusOf(app, waiting(app)))?.focus ?? ''
 const acts: Record<string, (app: App, ev: Event) => unknown> = {
   'stand-focus': (a, ev) => (st(a).party = arg(ev, 'id')),
   'stand-hear': (a, ev) => run(a, {do: 'hear', party: focused(a), feat: arg(ev, 'feat')}),
@@ -124,6 +130,6 @@ const acts: Record<string, (app: App, ev: Event) => unknown> = {
 export const stand = (app: App) => {
   Object.assign(uiOf(app), {stand: uiOf(app).stand ?? {party: ''}})
   Object.entries(acts).forEach(([n, f]) => app.act(n, (a, ev) => (f(a, ev), uiOf(a).rev++)))
-  app.binder(panel(app, 'data-stand', draw))
+  app.binder(panel(app, 'data-stand', gate(() => key(app), () => draw(app))))
   app.store.watch('ui.scenario', () => ((uiOf(app).stand = {party: ''}), uiOf(app).rev++))
 }

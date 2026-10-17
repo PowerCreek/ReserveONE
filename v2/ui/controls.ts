@@ -3,6 +3,7 @@ import type {App} from '../contracts/index.ts'
 import {step, spawn} from './sim.ts'
 import {note} from './log.ts'
 import {choices, load} from './scenario.ts'
+import {counter, gate} from './memo.ts'
 import {arg, esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {btn, on} from './tone.ts'
@@ -26,5 +27,10 @@ const draw = (app: App) => {
   const scen = choices().map(c => b('scenario', `data-id="${c.id}" title="${esc(c.blurb)}"`, c.label, u.scenario === c.id)).join('')
   return `<div class="flex flex-wrap items-center gap-2">${run}${b('step', '', 'Step 5s')}<span class="mx-1">|</span>${speeds}<span class="mx-1">|</span>${spawns}<span class="mx-1">|</span>arrivals ${rate}</div><div class="mt-2 flex flex-wrap items-center gap-2"><span class="text-xs uppercase text-slate-500">Scenario</span>${scen}</div>`
 }
-export const controlsPane = '<div data-controls="ui" class="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"></div>'
-export const controls = (app: App) => (app.binder(panel(app, 'data-controls', draw)), Object.entries(acts).forEach(([n, f]) => app.act(n, f)))
+export const controlsPane = '<div data-controls="ui.ctl" class="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"></div>'
+/** The bar reads four keys only: it repaints on those (`ui.ctl`), never on a tick, camera or hover write. */
+export const controls = (app: App) => {
+  counter(app, 'ctl', ['ui.running', 'ui.speed', 'ui.rate', 'ui.scenario'])
+  app.binder(panel(app, 'data-controls', gate(() => `${uiOf(app).ctl}`, () => draw(app))))
+  Object.entries(acts).forEach(([n, f]) => app.act(n, f))
+}

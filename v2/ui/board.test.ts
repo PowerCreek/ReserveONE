@@ -30,7 +30,7 @@ test('the Dashboard tab renders every section from one board call per repaint', 
   const {el, app, calls} = busy()
   await settle()
   calls.length = 0
-  uiOf(app).rev++
+  app.store.state.now += 60000 // a new minute: the memoised board is stale, so the tab shows exactly one fresh read
   await open(el)
   assert.equal(calls.length, 1)
   const b = calls[0]
