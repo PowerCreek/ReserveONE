@@ -27,7 +27,7 @@ export const defaultPolicy: Policy = {
   rotation: {idleCapMin: 600, idleWeight: 0.001},
   prefs: {bogged: 6, prefer: 2, slack: 1},
   alerts: {prepMin: 30, warnMin: 15, busBase: 30.5, busDemand: 10, busRank: 5},
-  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [48, 464], floor: [1216, 720], grid: 16, autoSeat: false},
+  sim: {walkPxPerSec: 80, dwellSec: {seat: 2, serve: 4, clear: 4}, door: [48, 416], floor: [1296, 720], grid: 16, autoSeat: false},
   plan: {horizonMin: 150, slackMin: 5, anticipate: 1},
   merge: {max: 4},
   board: {

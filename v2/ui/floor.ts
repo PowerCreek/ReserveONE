@@ -9,7 +9,9 @@ import type {Alerts} from './draw.ts'
 import {CAM, DOOR, H, LV, W, boxStr, doorFloor, fitBox, floorOf, floorsOf, hull, levelName, levelOf, levels, seen, zoomAt} from './geo.ts'
 import type {Box, Cam} from './geo.ts'
 import {cardHtml, closeCard, tableCard} from './card.ts'
-import {ISO, isoControls, isoSvg, tweak} from './iso.ts'
+import {ISO, isoBox, isoControls, isoFit, isoInner, isoSvg, lift, turnOf, tweak} from './iso.ts'
+import {isoDrag} from './isocam.ts'
+import type {View} from './isocam.ts'
 import type {Iso} from './iso.ts'
 import {holdsOf, live} from './assign.ts'
 import {presets} from './presets.ts'
@@ -147,9 +149,35 @@ const zoomWheel = (app: App, svg: SVGSVGElement, ev: WheelEvent) => {
   ev.preventDefault()
   return fit && r.width && ((uiOf(app).cam = zoomAt(fit, camOf(app), camOf(app).z * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), (ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height)), uiOf(app).rev++)
 }
+// ---- iso camera: a drag or wheel writes the view to state and redraws the live svg in place (one frame at a time); the release repaints the panel
+const isoEl = (): SVGSVGElement | null => globalThis.document?.querySelector('[data-floor] svg[data-iso]') ?? null
+const frame = (f: () => void) => (globalThis.requestAnimationFrame ?? ((g: () => void) => setTimeout(g, 16)))(f)
+/** What a live change redraws: pan/zoom only the viewBox, a level move its translate, a turn the insides (and the turn readout). */
+const tr = (v: [number, number]) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
+const LIVE: Record<string, (app: App, svg: SVGSVGElement) => void> = {
+  box: () => undefined,
+  lift: (app, svg) => svg.querySelectorAll('[data-level]').forEach(g => g.setAttribute('transform', tr(lift(app.store.state.world, isoOf(app), Number(g.getAttribute('data-level')))))),
+  all: (app, svg) => ((svg.innerHTML = isoInner(ctx(app, alertsNow(app)), isoOf(app), uiOf(app).fx)), svg.ownerDocument.querySelector('[data-floor] [data-rot]')?.replaceChildren(`${Math.round(isoOf(app).rot)}°`)),
+}
+const redraw = (app: App, p: Partial<View>) => ((svg = isoEl()) => svg && (svg.setAttribute('viewBox', isoBox(ctx(app, {}), isoOf(app))), LIVE[p.rot !== undefined ? 'all' : p.shift ? 'lift' : 'box']!(app, svg)))()
+const isoHooks = (app: App) => {
+  const st = {due: false, p: {} as Partial<View>}
+  const flush = () => ((st.due = false), redraw(app, st.p), (st.p = {}))
+  return {
+    view: () => isoOf(app), turn: () => turnOf(app.store.state.world, isoOf(app)), fit: () => isoFit(app.store.state.world, isoOf(app)), close: () => closeCard(app), grid: policyOf(app).sim.grid,
+    put: (v: Partial<View>, done: boolean) => ((uiOf(app).iso = {...isoOf(app), ...v}), done ? uiOf(app).rev++ : ((st.p = {...st.p, ...v}), st.due || ((st.due = true), frame(flush)))),
+  }
+}
+/** Opacity slider: state plus the live level and readout, no repaint (the slider keeps its drag). */
+const isoOp = (app: App, ev: Event) => ((el = ev.target as HTMLInputElement, lv = el.getAttribute('data-lv') ?? '') => {
+  uiOf(app).iso = tweak(isoOf(app), 'op', `${lv}:${el.value}`)
+  isoEl()?.querySelector(`[data-level="${lv}"]`)?.setAttribute('opacity', String((isoOf(app).op[lv] ?? 100) / 100))
+  el.ownerDocument.querySelector(`[data-floor] output[data-op="${lv}"]`)?.replaceChildren(`${isoOf(app).op[lv]}%`)
+})()
 export const floor = (app: App) => {
   Object.entries(ACTS).forEach(([n, f]) => app.act(n, (a, ev) => (f(a, ev), uiOf(a).rev++, refocus(ev))))
   app.act('floorKey', (a, ev) => key(a, ev as KeyboardEvent))
+  app.act('isoOp', isoOp)
   app.use(tableCard)
-  app.binder(panel(app, 'data-floor', draw)).view(el => drag(app, el))
+  app.binder(panel(app, 'data-floor', draw)).view(el => (drag(app, el), isoDrag(el, isoHooks(app))))
 }

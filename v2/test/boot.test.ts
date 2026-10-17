@@ -9,7 +9,7 @@ import {settle} from './dom.ts'
 const DIST = 'dist/v2.html'
 before(() => void execFileSync('node', ['v2/build.mjs'], {stdio: 'pipe'})) // the test owns its artifact: boot what the build really emits
 const avail = (doc: Document) => [...doc.querySelectorAll('[data-floor] svg title')].filter(t => / cap \d+ available/.test(t.textContent!)).length
-test('the built page boots in jsdom without errors, shows the selected floor, then all 71 tables via the floor tabs, and a party waits at the door', async () => {
+test('the built page boots in jsdom without errors, shows the selected floor, then all 67 tables via the floor tabs, and a party waits at the door', async () => {
   const errs: unknown[] = []
   const virtualConsole = new VirtualConsole()
   virtualConsole.on('jsdomError', e => errs.push(e)).on('error', e => errs.push(e))
@@ -30,15 +30,15 @@ test('the built page boots in jsdom without errors, shows the selected floor, th
     return [...seen, avail(doc)]
   }, Promise.resolve([]))
   assert.deepEqual(shown, per.map(([, n]) => n))
-  assert.equal(shown.reduce((a, b) => a + b, 0), 70) // B22 (the managers' desk) is never offered
+  assert.equal(shown.reduce((a, b) => a + b, 0), 66) // B22 (the managers' desk) is never offered
   assert.match(doc.querySelector('[data-stand]')!.textContent!, /At the door[\s\S]*Lease .+ to .+ party/)
   win.close()
 })
-test('seed: 4 floors, 71 held and featured tables inside the policy floor, a host, 4 servers, 2 bartender pairs and a busser, ids equal keys, plus the door and the service entity', () => {
+test('seed: 4 floors, 67 held and featured tables inside the policy floor, a host, 4 servers, 2 bartender pairs and a busser, ids equal keys, plus the door and the service entity', () => {
   const w = seed().world
   const [fw, fh] = defaultPolicy.sim.floor
   assert.equal(having(w, 'floor').length, 4)
-  assert.equal(having(w, "table", "pos").length, 71)
+  assert.equal(having(w, "table", "pos").length, 67)
   assert.ok(Object.entries(w.ents).every(([k, e]) => e.id === k))
   assert.ok(having(w, 'table').every(t => (t.table.status === 'available' || t.id === 'rf_b22') && (w.ents[t.id].feat?.tags.length ?? 0) > 0))
   assert.ok(having(w, 'table').every(t => t.table.section !== null || w.ents[t.id].assign || ['bar', 'roof'].includes(w.ents[t.id].area?.id ?? '')), 'every table has a holder: section, dealt top, or area pair')

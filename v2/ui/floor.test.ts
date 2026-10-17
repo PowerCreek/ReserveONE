@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {ZOOM, floorSvg, tabList} from './floor.ts'
-import {alertsOf, seatsOf, table, zonesOf} from './draw.ts'
+import {SEATED, alertsOf, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
@@ -194,4 +194,63 @@ test('a divider zone is one solid line with no fill and no label; a prop is quie
   assert.doesNotMatch(dv, /<rect|<text|dasharray/)
   assert.doesNotMatch(svg, />(DV|PR)<\/text>/)
   assert.match(svg, />ST<\/text>/)
+})
+// ---- occupancy, party chip, shapes (U12)
+const tb = (id: string, x: number, seating?: Entity['seating'], shape: 'rect' | 'round' | 'stool' | 'booth' = 'rect', cap = 4): Entity =>
+  ({id, pos: {floor: 'g', x, y: 160, w: 32, h: 48}, table: {label: id.toUpperCase(), capacity: cap, min: 1, shape, status: 'occupied', waiter: null, section: null}, ...(seating ? {seating} : {})})
+const sat = (party: string, tbl: string, size: number): Entity[] => [{id: party, party: {num: 1, label: 'W1', prefix: 'W', kind: 'W', name: 'Chen', size}},
+  {id: `s-${party}`, slot: {table: tbl, party, seatedAt: 0, turnAt: 1, status: 'ACTIVE'}}]
+const world = (...es: Entity[]) => ({nextParty: 1, ents: Object.fromEntries(es.map(e => [e.id, e]))})
+const count = (svg: string, cls: string) => svg.split(`class="${cls}"`).length - 1
+test('occupancy: a seated table fills its taken places red and outlines the rest; a link fills primary first; free tables keep their tone', () => {
+  const w = world(tb('a', 100, {chairs: {l: 2, r: 2}}), tb('b', 200, {chairs: {l: 2, r: 2}}), tb('c', 300, {chairs: {l: 1, r: 1}}), {id: 'k', link: {members: ['a', 'b']}}, ...sat('p1', 'a', 6))
+  assert.deepEqual(['a', 'b', 'c'].map(t => seatedAt(w, t)), [4, 2, 0])
+  const [a, b] = ['a', 'b'].map(t => table(w, [])(w.ents[t] as never))
+  assert.equal([count(a!, SEATED.on), count(a!, SEATED.off)].join(), '4,0')
+  assert.equal([count(b!, SEATED.on), count(b!, SEATED.off)].join(), '2,2')
+  const c = table(w, [])(w.ents.c as never)
+  assert.ok(!c.includes(SEATED.off) && !c.includes(SEATED.on) && c.includes('fill-rose-300/70')) // occupied status, no party: the quiet tone
+  assert.doesNotMatch(c, /emerald-300|green/) // never green on a seated or occupied table
+  assert.match(a!, /data-party-chip[^]*👥[^]*>6<\/text>/) // the party chip on the primary only
+  assert.doesNotMatch(b!, /data-party-chip/)
+  assert.match(a!, /<text data-cap x="129" y="204" text-anchor="end"[^>]*>4p</) // capacity right-aligned inside the body
+  assert.match(a!, /<rect x="100" y="160" width="32" height="48" rx="0"/) // sharp corners
+  const guest = {id: 'g', body: {role: 'guest' as const, x: 1, y: 1, speed: 1, task: null, backlog: [], party: 'p1'}}
+  assert.equal(unit(w)(guest), '') // the seated guest shows as the chip, not a dot
+  assert.match(unit(world())(guest), /<circle/)
+})
+test('benches split into places: corner = 3 upholstered + a chair, small corner 2 + a chair, a banquette 4-top 2 + 2', () => {
+  const at = (w: number, h: number, seating: Entity['seating']) => seatsOf({id: 'x', pos: {floor: 'g', x: 0, y: 0, w: w * G, h: h * G}, seating} as never).places.map(p => p.kind)
+  assert.deepEqual(at(3, 2, {chairs: {t: 1}, bench: ['b', 'l']}), ['bench', 'bench', 'bench', 'chair'])
+  assert.deepEqual(at(2, 2, {chairs: {t: 1}, bench: ['b', 'l']}), ['bench', 'bench', 'chair'])
+  assert.deepEqual(at(3, 2, {chairs: {t: 2}, bench: ['b']}), ['bench', 'bench', 'chair', 'chair'])
+  const w = world({...tb('q', 100, {chairs: {t: 1}, bench: ['b', 'l']}), pos: {floor: 'g', x: 100, y: 100, w: 48, h: 32}}, ...sat('p1', 'q', 3))
+  const svg = table(w, [])(w.ents.q as never)
+  assert.equal(svg.match(/data-bench/g)!.length, 3)
+  assert.equal([count(svg, SEATED.on), count(svg, SEATED.off)].join(), '3,1')
+})
+test('round tops are circles with petal chairs; high chairs get their own mark; a counter top draws its pieces with one stool per entry', () => {
+  const w = world(
+    {...tb('r', 100, {chairs: {}, ring: 6}, 'round', 6), pos: {floor: 'g', x: 100, y: 100, w: 48, h: 48}},
+    tb('h', 200, {chairs: {l: 2, r: 2}, high: true}),
+    {...tb('l', 300, {chairs: {}, high: true, top: [[0, 0, 2, 8], [2, 6, 4, 2]], at: [[-1, 1, 'r'], [-1, 2, 'r'], [2, 8, 't']]}, 'stool', 10), pos: {floor: 'g', x: 300, y: 100, w: 96, h: 128}},
+  )
+  const [r, h, l] = ['r', 'h', 'l'].map(t => table(w, [])(w.ents[t] as never))
+  assert.match(r!, /<circle cx="124" cy="124" r="24" stroke-width="2"/)
+  assert.equal(r!.match(/data-petal/g)!.length, 6)
+  assert.equal(h!.match(/data-high/g)!.length, 4)
+  assert.equal(l!.match(/data-top/g)!.length, 2)
+  assert.doesNotMatch(l!, /width="96" height="128"/) // no body rect under the counter
+  assert.equal(l!.match(/data-stool/g)!.length, 3)
+  assert.match(l!, /data-stool cx="292" cy="124"/) // a cell left of the counter, one down
+})
+test('a zero-thickness wall is a line; a door on it is an opening with jambs, its arrow and name', () => {
+  const z = (id: string, kind: 'wall' | 'door', x: number, y: number, w: number, h: number): Entity => ({id, zone: {label: id.toUpperCase(), kind}, pos: {floor: 'g', x, y, w, h}})
+  const zs = [z('wl', 'wall', 0, 200, 320, 0), z('dr', 'door', 32, 192, 48, 16)]
+  const svg = zonesOf(world(...zs), zs as never)
+  assert.match(svg, /data-zone="wall" data-zid="wl" data-line><title>WL<\/title><line x1="0" y1="200" x2="320" y2="200" stroke-width="4"/)
+  assert.match(svg, /data-zone="door" data-zid="dr" data-opening>[^]*<line x1="32" y1="200" x2="80" y2="200" stroke-width="6" data-gap/)
+  assert.match(svg, /data-opening>[^]*<polygon/)
+  assert.doesNotMatch(svg, />WL<\/text>/)
+  assert.match(svg, />DR<\/text>/)
 })

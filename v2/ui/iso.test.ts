@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {GAPS, ISO, isoSvg, legend, tweak} from './iso.ts'
+import {Z, table} from './furniture.ts'
+import {along, axes, axisOf, fitOf, zoomTo} from './isocam.ts'
+import {seen} from './geo.ts'
 import type {Ctx} from './iso.ts'
 import {click, rig} from './rig.ts'
 import type {Entity, World} from '../contracts/index.ts'
@@ -15,34 +18,41 @@ const world = (): World => ({nextParty: 1, ents: Object.fromEntries([
 ].map(e => [e.id, e]))})
 const ctx = (): Ctx => ({w: world(), holds: [], areas: {main: {label: 'Main floor'}, bar: {label: 'Bar'}, roof: {label: 'Roof'}}})
 const order = (svg: string, ...ids: string[]) => ids.map(id => svg.indexOf(`data-tid="${id}"`))
-/** Screen y of a block's first top-face point (the 5th polygon in its group). */
-const topY = (svg: string, id: string) => Number(svg.slice(svg.indexOf(`data-tid="${id}"`)).match(/<polygon points="([^"]+)"/g)![4]!.match(/,(-?[\d.]+)/)![1])
-test('painter order: a nearer table is drawn after a farther one, and a camera half-turn flips them', () => {
+/** One table's group (up to the next table or the level's end). */
+const grp = (svg: string, id: string) => ((i = svg.indexOf(`data-tid="${id}"`)) => svg.slice(i, svg.indexOf('data-tid=', i + 10) > 0 ? svg.indexOf('data-tid=', i + 10) : undefined))()
+const lvl = (svg: string, n: number) => svg.match(new RegExp(`data-level="${n}" opacity="([^"]+)" transform="translate\\(([-\\d.]+) ([-\\d.]+)\\)"`))
+const vb = (svg: string) => svg.match(/viewBox="([^"]+)"/)![1]
+const count = (s: string, re: RegExp) => s.match(re)?.length ?? 0
+test('painter order: a nearer table is drawn after a farther one, and a half turn flips them', () => {
   const [far, near] = order(isoSvg(ctx(), ISO), 'far', 'near')
   assert.ok(far! > 0 && near! > far!)
-  const [far2, near2] = order(isoSvg(ctx(), tweak(tweak(ISO, 'turn', '1'), 'turn', '1')), 'far', 'near')
+  const [far2, near2] = order(isoSvg(ctx(), tweak(ISO, 'rot', '180')), 'far', 'near')
   assert.ok(far2! > near2!)
+  assert.equal(tweak(ISO, 'rot', '-90').rot, 270)
 })
-test('level 1 is drawn after level 0 and sits above it by the spacing stop', () => {
+test('level 1 is drawn after level 0 and its group is lifted by the spacing stop (one translate, geometry unchanged)', () => {
   const svg = isoSvg(ctx(), ISO)
   assert.ok(svg.indexOf('data-level="1"') > svg.indexOf('data-level="0"'))
-  assert.ok(svg.indexOf('data-tid="up"') > svg.indexOf('data-tid="near"'))
-  const lift = (o: typeof ISO) => ((s = isoSvg(ctx(), o)) => topY(s, 'far') - topY(s, 'up'))()
-  assert.ok(Math.abs(lift(ISO) - GAPS[ISO.gap]!) < 0.2) // same x, y: the roof block is one spacing stop higher on screen
-  assert.ok(Math.abs(lift(tweak(ISO, 'gap', '0'))) < 0.2) // flat: stacked in place
-  assert.match(svg, /data-slab="g"[^]*>Main<[^]*data-slab="r"[^]*>Roof</) // one labelled slab per floor
+  const dy = (o: typeof ISO) => ((s = isoSvg(ctx(), o)) => Number(lvl(s, 0)![3]) - Number(lvl(s, 1)![3]))()
+  assert.ok(Math.abs(dy(ISO) - GAPS[ISO.gap]!) < 0.2)
+  assert.ok(Math.abs(dy(tweak(ISO, 'gap', '0'))) < 0.2)
+  assert.equal(grp(svg, 'up').replace(/data-tid="up"/, ''), grp(isoSvg(ctx(), tweak(ISO, 'gap', '0')), 'up').replace(/data-tid="up"/, ''))
+  assert.match(svg, /data-slab="g"[^]*>Main<[^]*data-slab="r"[^]*>Roof</)
 })
-test('opacity and hide controls change the output; upper levels start see-through', () => {
-  const lv = (svg: string, n: number) => svg.match(new RegExp(`data-level="${n}" class="([^"]+)"`))?.[1]
-  assert.deepEqual([lv(isoSvg(ctx(), ISO), 0), lv(isoSvg(ctx(), ISO), 1)], ['opacity-100', 'opacity-50'])
-  assert.equal(lv(isoSvg(ctx(), tweak(ISO, 'op', '1:75')), 1), 'opacity-75')
+test('opacity is continuous per level; hiding a level or turning never changes the fit', () => {
+  const svg = isoSvg(ctx(), ISO)
+  assert.deepEqual([lvl(svg, 0)![1], lvl(svg, 1)![1]], ['1', '0.5'])
+  assert.equal(lvl(isoSvg(ctx(), tweak(ISO, 'op', '1:35')), 1)![1], '0.35')
+  assert.equal(tweak(ISO, 'op', '1:140').op[1], 100)
   const hid = isoSvg(ctx(), tweak(ISO, 'hide', '1'))
-  assert.equal(lv(hid, 1), undefined)
+  assert.equal(lvl(hid, 1), null)
   assert.doesNotMatch(hid, /data-tid="up"/)
+  assert.equal(vb(hid), vb(svg))
+  assert.equal(vb(isoSvg(ctx(), tweak(ISO, 'rot', '37'))), vb(svg))
   assert.match(isoSvg(ctx(), tweak(tweak(ISO, 'hide', '1'), 'hide', '1')), /data-tid="up"/)
 })
 test('palette swaps fills and the legend', () => {
-  const near = (pal: string) => ((s = isoSvg(ctx(), tweak(ISO, 'pal', pal))) => s.slice(s.indexOf('data-tid="near"'), s.indexOf('</g>', s.indexOf('data-tid="near"'))))()
+  const near = (pal: string) => grp(isoSvg(ctx(), tweak(ISO, 'pal', pal)), 'near')
   assert.match(near('status'), /fill-rose-100/)
   assert.match(near('area'), /fill-amber-200/)
   assert.match(near('section'), /fill="#0ea5e9"/)
@@ -51,6 +61,83 @@ test('palette swaps fills and the legend', () => {
   const key = legend(ctx(), tweak(ISO, 'pal', 'section'))
   assert.match(key, /Window <span[^>]*>1</)
   assert.match(key, /no section <span[^>]*>2</)
+})
+test('zones outline the slab with names; walls and dividers stand up; insight tables ring their top', () => {
+  const w = world()
+  Object.assign(w.ents, {z1: {id: 'z1', zone: {label: 'Lobby', kind: 'lobby'}, pos: {floor: 'g', x: 0, y: 500, w: 80, h: 60}}, dv: {id: 'dv', zone: {label: 'Screen', kind: 'divider'}, pos: {floor: 'g', x: 300, y: 300, w: 0, h: 48}}})
+  const svg = isoSvg({...ctx(), w, alerts: {near: {level: 'crit', msg: 'x'}, far: {level: 'warn', msg: 'y'}}}, ISO)
+  assert.match(svg, /data-izone="lobby"><title>Lobby<\/title><polygon[^>]*stroke-dasharray="5 4"[^]*>Lobby<\/text>/)
+  assert.ok(svg.indexOf('data-izone="lobby"') > svg.indexOf('data-slab="g"') && svg.indexOf('data-izone="lobby"') < svg.indexOf('data-tid='))
+  assert.match(svg, /data-izone="divider"><title>Screen<\/title><polygon/)
+  assert.doesNotMatch(svg, />Screen<\/text>/)
+  assert.match(grp(svg, 'near'), /data-insight="crit"[^>]*stroke-rose-600/)
+  assert.match(grp(svg, 'far'), /data-insight="warn"[^>]*stroke-amber-500/)
+  assert.doesNotMatch(isoSvg(ctx(), ISO), /data-insight/)
+})
+test('each level carries its own grid, clipped to its own slabs', () => {
+  const svg = isoSvg(ctx(), ISO)
+  ;[0, 1].forEach(n => assert.match(svg, new RegExp(`data-level="${n}"[^]*?<clipPath id="iso-clip-${n}">[^]*?data-igrid clip-path="url\\(#iso-clip-${n}\\)"`)))
+  assert.ok(count(svg, /<polyline/g) > 10)
+})
+test('stitched floors abut: slabs are unpadded hulls, so neighbours share their edge', () => {
+  const w = world()
+  Object.assign(w.ents, {b: {id: 'b', floor: {name: 'Bar', active: true, level: 0}}, bt: {...w.ents.far!, id: 'bt', pos: {floor: 'b', x: 140, y: 100, w: 40, h: 80}}})
+  w.ents.near!.pos = {floor: 'g', x: 100, y: 140, w: 40, h: 40}
+  const top = (svg: string, f: string) => ((g = svg.slice(svg.indexOf(`data-slab="${f}"`), svg.indexOf('</g>', svg.indexOf(`data-slab="${f}"`)))) => g.match(/points="([^"]+)"/g)!.at(-1)!.slice(8, -1).split(' '))()
+  const svg = isoSvg({...ctx(), w}, ISO)
+  assert.equal(top(svg, 'g').filter(p => top(svg, 'b').includes(p)).length, 2)
+})
+test('furniture: chairs (legs, seat, back), benches, a single pedestal on a + base along the chair sides', () => {
+  const w = world()
+  w.ents.far!.seating = {chairs: {l: 2}, bench: ['b']}
+  const g = grp(isoSvg({...ctx(), w}, ISO), 'far')
+  assert.equal(count(g, /data-p="chair"/g), 2)
+  assert.equal(count(g, /data-p="bench"/g), 2) // a 40 px bench seats two (draw.ts places)
+  assert.equal(count(g, /data-p="table"/g), 1)
+  const tb = table({x: 0, y: 0, w: 32, h: 48}, [], Z.table, 'x')
+  const span = (i: number) => ((f = tb.solids[i]!.foot) => [Math.max(...f.map(p => p[0])) - Math.min(...f.map(p => p[0])), Math.max(...f.map(p => p[1])) - Math.min(...f.map(p => p[1]))])()
+  assert.ok(span(0)[0] > 20 && span(0)[1] === 0 && span(1)[1] > 30 && span(1)[0] === 0) // arms along x and y, not diagonal
+  assert.ok(tb.solids[2]!.foot.length === 1 && tb.solids[2]!.post! < 4 && tb.solids[2]!.h > 10) // one thin pedestal
+  assert.equal(tb.solids[3]!.z + tb.solids[3]!.h, Z.table)
+})
+test('round tops with petal chairs, high-tops taller, counters and stools from seating.top / seating.at, stool tables are stools', () => {
+  const w = world()
+  w.ents.far!.table = {...w.ents.far!.table!, shape: 'round'}
+  w.ents.far!.seating = {chairs: {}, ring: 6}
+  w.ents.near!.seating = {chairs: {}, top: [[0, 0, 1, 2], [0, 2, 2, 1]], at: [[1, 0, 'l'], [1, 1, 'l'], [0, 3, 't']]}
+  w.ents.up!.table = {...w.ents.up!.table!, shape: 'stool'}
+  const svg = isoSvg({...ctx(), w}, ISO)
+  assert.equal(count(grp(svg, 'far'), /data-p="chair"/g), 6)
+  assert.ok(grp(svg, 'far').match(/<polygon points="[^"]+"/g)!.some(p => p.split(' ').length === 21)) // a 20-gon top
+  assert.equal(count(grp(svg, 'near'), /data-p="counter"/g), 2)
+  assert.equal(count(grp(svg, 'near'), /data-p="table"/g), 0)
+  assert.equal(count(grp(svg, 'near'), /data-p="stool"/g), 3)
+  assert.equal(count(grp(svg, 'up'), /data-p="stool"/g), 1)
+  const labelY = (o: Entity['seating']) => ((v = world()) => ((v.ents.far!.seating = o), Number(grp(isoSvg({...ctx(), w: v}, ISO), 'far').match(/<text x="[^"]+" y="([^"]+)"/)![1])))()
+  assert.ok(Math.abs(labelY({chairs: {l: 1}}) - labelY({chairs: {l: 1}, high: true}) - (Z.high - Z.table)) < 0.2)
+})
+test('occupancy: a seated table fills its first covers red and outlines the rest; others stay plain', () => {
+  const w = world()
+  w.ents.far!.seating = {chairs: {l: 2, r: 1}}
+  Object.assign(w.ents, {p1: {id: 'p1', party: {num: 1, label: 'W-1', prefix: 'W', kind: 'W', name: 'A', size: 2}}, s1x: {id: 's1x', slot: {table: 'far', party: 'p1', seatedAt: 0, turnAt: 0, status: 'ACTIVE'}}})
+  const g = grp(isoSvg({...ctx(), w}, ISO), 'far')
+  assert.match(g, /data-taken="2"/)
+  const chairs = g.split('data-p="chair"').slice(1)
+  assert.deepEqual(chairs.map(c => (/fill-rose-500/.test(c) ? 'on' : /fill-none stroke-rose-500/.test(c) ? 'off' : '?')), ['on', 'on', 'off'])
+  assert.doesNotMatch(grp(isoSvg(ctx(), ISO), 'far'), /rose-500/)
+})
+test('camera: screen axes under the turn, the drag axis, distance along it, zoom about a point', () => {
+  const t = {deg: 0, c: [0, 0] as [number, number]}
+  const [ex, ey] = axes(t)
+  assert.equal(axisOf(t, [ex![0] * 5, ex![1] * 5]), 0)
+  assert.equal(axisOf(t, [ey![0] * 5, ey![1] * 5]), 1)
+  assert.equal(axisOf(t, [0.2, -9]), 2)
+  assert.ok(Math.abs(along(t, 0, [ex![0] * 10, ex![1] * 10]) - 10) < 1e-9)
+  assert.equal(axisOf({...t, deg: 90}, [ex![0] * 5, ex![1] * 5]), 1) // a quarter turn: screen x-direction is now world y (negated)
+  const fit = fitOf([100, 100], 50, 0, 40, 10)
+  const cam = zoomTo(fit, {x: 0, y: 0, z: 1}, 2, [fit.x + 10, fit.y + 20])
+  const v = seen(fit, cam), v0 = seen(fit, {x: 0, y: 0, z: 1})
+  assert.ok(Math.abs((fit.x + 10 - v.x) / v.w - (fit.x + 10 - v0.x) / v0.w) < 1e-9 && cam.z === 2)
 })
 test('the floor panel toggles 2D | Iso and the iso controls repaint the same world', async () => {
   const {app, el} = rig()
@@ -62,33 +149,34 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   await settle()
   assert.ok(f().querySelector('svg[data-iso]') && !f().querySelector('[data-floors]'))
   assert.equal(f().querySelectorAll('[data-tid]').length, 3)
+  const svg = () => f().querySelector('svg[data-iso]')!
+  const range = f().querySelector<HTMLInputElement>('input[type="range"][data-lv="1"]')!
+  range.value = '20'
+  range.dispatchEvent(new window.Event('input', {bubbles: true}))
+  assert.equal(svg().querySelector('[data-level="1"]')!.getAttribute('opacity'), '0.2')
+  assert.equal(f().querySelector('output[data-op="1"]')!.textContent, '20%')
+  const box = svg().getAttribute('viewBox')
   click(el, '[data-act="iso"][data-k="hide"][data-v="1"]')
   await settle()
   assert.equal(f().querySelectorAll('[data-tid]').length, 2)
   assert.equal(f().querySelector('[data-k="hide"][data-v="1"]')!.getAttribute('aria-pressed'), 'false')
+  assert.equal(svg().getAttribute('viewBox'), box)
+  const ptr = (type: string, target: Element, x: number, y: number, o: object = {}) => target.dispatchEvent(new window.MouseEvent(type, {bubbles: true, clientX: x, clientY: y, button: 0, ...o}))
+  const rot = () => (app.store.state.ui as any).iso.rot
+  ptr('pointerdown', svg(), 10, 10); ptr('pointermove', svg(), 60, 10); ptr('pointerup', svg(), 60, 10)
+  await settle()
+  assert.equal(rot(), 20) // 50 px of orbit
+  ptr('pointerdown', svg().querySelector('[data-slab]')!, 10, 10); ptr('pointermove', svg(), 10, -40); ptr('pointerup', svg(), 10, -40)
+  await settle()
+  assert.ok(Math.abs((app.store.state.ui as any).iso.shift[0][2]) >= 16) // straight up the screen = the z axis, snapped to a cell
+  ptr('pointerdown', svg(), 10, 10, {shiftKey: true}); ptr('pointermove', svg(), 40, 10, {shiftKey: true}); ptr('pointerup', svg(), 40, 10)
+  await settle()
+  assert.ok((app.store.state.ui as any).iso.cam.x < 0 && rot() === 20)
+  const tb = svg().querySelector('[data-tid="far"] polygon')!
+  ptr('pointerdown', tb, 10, 10); ptr('pointerup', tb, 12, 11); tb.dispatchEvent(new window.MouseEvent('click', {bubbles: true}))
+  await settle()
+  assert.equal((app.store.state.ui as any).card?.table, 'far') // a press under 4 px is a click
   click(el, '[data-act="floorView"][data-id="2d"]')
   await settle()
   assert.ok(f().querySelector('[data-floors]'))
-})
-test('zones outline each slab with their names; insight tables ring their top face; blocks open the table card', () => {
-  const c = {...ctx(), w: {...world(), ents: {...world().ents, z1: {id: 'z1', zone: {label: 'Lobby', kind: 'lobby' as const}, pos: {floor: 'g', x: 0, y: 500, w: 80, h: 60}}}}, alerts: {near: {level: 'crit' as const, msg: 'x'}, far: {level: 'warn' as const, msg: 'y'}}}
-  const svg = isoSvg(c, ISO)
-  assert.match(svg, /data-izone="lobby"><title>Lobby<\/title><polygon[^>]*stroke-dasharray="5 4"[^]*>Lobby<\/text>/)
-  assert.ok(svg.indexOf('data-izone') > svg.indexOf('data-slab="g"') && svg.indexOf('data-izone') < svg.indexOf('data-tid=')) // on the slab, under the blocks
-  assert.match(svg, /data-tid="near" data-act="tcard"[^]*?data-insight="crit"[^>]*stroke-rose-600/)
-  assert.match(svg, /data-tid="far" data-act="tcard"[^]*?data-insight="warn"[^>]*stroke-amber-500/)
-  assert.doesNotMatch(isoSvg(ctx(), ISO), /data-insight/)
-})
-test('seating draws pads under the block (chairs and benches), pointer-less; dividers are a bare line', () => {
-  const w = world()
-  w.ents.far!.seating = {chairs: {l: 2}, bench: ['b']}
-  w.ents.dv = {id: 'dv', zone: {label: 'Screen', kind: 'divider'}, pos: {floor: 'g', x: 300, y: 300, w: 0, h: 48}}
-  const svg = isoSvg({...ctx(), w}, ISO)
-  const pads = svg.slice(svg.indexOf('data-iseats'), svg.indexOf('</g>', svg.indexOf('data-iseats')))
-  assert.equal(pads.match(/<polygon points="[^"]+" class="fill-emerald-300/g)!.length, 3 * 3 + 0 + 0 + 3 * 0 || 9) // 3 pads, each with a top and two shaded sides
-  assert.ok(svg.indexOf('data-iseats') < svg.indexOf('data-tid="far"') + 400 && svg.indexOf('data-iseats') > svg.indexOf('data-tid="far"'))
-  assert.match(svg, /pointer-events-none/)
-  assert.match(svg, /data-izone="divider"><title>Screen<\/title><polyline/)
-  assert.doesNotMatch(svg, />Screen<\/text>/)
-  assert.doesNotMatch(isoSvg(ctx(), ISO), /data-iseats/)
 })

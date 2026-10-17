@@ -1,5 +1,5 @@
 // SVG fragments for the floor (U2). Pure string builders over entities; classes come from tone.ts, data colours from entity data.
-import {defaultPolicy, having} from '../contracts/index.ts'
+import {defaultPolicy, having, partsOf} from '../contracts/index.ts'
 import type {Components, Ent, Entity, Hold, Id, Insight, Side, World} from '../contracts/index.ts'
 import {HRING} from './events.ts'
 import {DOOR, hull, levelOf, levels, lineNo, locate, rays} from './geo.ts'
@@ -41,7 +41,10 @@ export const serverOf = (w: World, hs: Hold[]) => (t: Ent<'table'>) => w.ents[hs
 export const titleOf = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
   esc(`${t.table.label} cap ${t.table.capacity} ${t.table.status}, server ${serverOf(w, hs)(t)?.staff?.name ?? '-'}${tip(t)}`)
 // ---- seating marks: chairs and benches in the one-cell bands just outside a table's body (shared with the isometric view)
-type Seats = {chairs: Box[]; benches: Box[]}
+/** One seat a guest can take: `kind` picks its mark; `a` = a petal's angle (deg, from the round top's centre). */
+export type Place = {box: Box; kind: 'chair' | 'high' | 'bench' | 'stool' | 'petal'; a?: number}
+type Seats = {chairs: Box[]; benches: Box[]; places: Place[]}
+type ST = Ent<'pos'> & {seating?: Components['seating']}
 const BAND: Record<Side, (p: Box, c: number) => Box> = {
   t: (p, c) => ({x: p.x, y: p.y - c, w: p.w, h: c}), b: (p, c) => ({x: p.x, y: p.y + p.h, w: p.w, h: c}),
   l: (p, c) => ({x: p.x - c, y: p.y, w: c, h: p.h}), r: (p, c) => ({x: p.x + p.w, y: p.y, w: c, h: p.h}),
@@ -53,31 +56,95 @@ const bench = (p: Box, c: number, on: Side[]) => (s: Side): Box => {
   const [band, lo, hi] = [BAND[s](p, c), on.includes('l') ? c : 0, on.includes('r') ? c : 0]
   return FLAT.includes(s) ? {...band, x: band.x - lo, w: band.w + lo + hi} : band
 }
+/** Places on a bench: two per three cells of the body's side (a 3-cell side seats 2, a 2-cell side 1), the band cut evenly along its length. */
+const benchSeats = (p: Box, c: number, on: Side[]) => (s: Side): Place[] => {
+  const [b, n, flat] = [bench(p, c, on)(s), Math.max(1, Math.round(((FLAT.includes(s) ? p.w : p.h) / c) * (2 / 3))), FLAT.includes(s)]
+  const len = (flat ? b.w : b.h) / n
+  return Array.from({length: n}, (_, i): Place => ({kind: 'bench', box: flat ? {x: b.x + i * len + 1, y: b.y + 1, w: len - 2, h: b.h - 2} : {x: b.x + 1, y: b.y + i * len + 1, w: b.w - 2, h: len - 2}}))
+}
 /** `n` chairs centred at L*(i+1)/(n+1) along the side, each ~70% of a cell, in the middle of the band. */
 const chairs = (p: Box, c: number) => ([s, n]: [Side, number]) => Array.from({length: n}, (_, i): Box => {
   const [band, k, d] = [BAND[s](p, c), (i + 1) / (n + 1), c * 0.7]
   const [cx, cy] = FLAT.includes(s) ? [p.x + p.w * k, band.y + c / 2] : [band.x + c / 2, p.y + p.h * k]
   return {x: cx - d / 2, y: cy - d / 2, w: d, h: d}
 })
-export const seatsOf = (t: Ent<'pos'> & {seating?: Components['seating']}, cell = defaultPolicy.sim.grid): Seats => ({
-  chairs: Object.entries(t.seating?.chairs ?? {}).flatMap(([s, n]) => chairs(t.pos, cell)([s as Side, n ?? 0])),
-  benches: (t.seating?.bench ?? []).filter(s => SIDES.includes(s)).map(bench(t.pos, cell, t.seating?.bench ?? [])),
-})
+const sq = (cx: number, cy: number, d: number): Box => ({x: cx - d / 2, y: cy - d / 2, w: d, h: d})
+/** Petals: `n` chairs evenly round a round top, half a cell out from its rim, the first at 12 o'clock. */
+const petals = (p: Box, c: number, n: number) => Array.from({length: n}, (_, i): Place => ((a = -90 + (360 * i) / n, r = Math.min(p.w, p.h) / 2 + c / 2, rad = (a * Math.PI) / 180) =>
+  ({kind: 'petal', a, box: sq(p.x + p.w / 2 + r * Math.cos(rad), p.y + p.h / 2 + r * Math.sin(rad), c * 0.7)}))())
+/** Stools at given cells from the body's top-left. */
+const stools = (p: Box, c: number, at: NonNullable<Components['seating']['at']>) => at.map(([x, y]): Place => ({kind: 'stool', box: sq(p.x + (x + 0.5) * c, p.y + (y + 0.5) * c, c * 0.7)}))
+export const seatsOf = (t: ST, cell = defaultPolicy.sim.grid): Seats => ((s = t.seating, side = Object.entries(s?.chairs ?? {}).flatMap(([k, n]) => chairs(t.pos, cell)([k as Side, n ?? 0]))) => {
+  const [round, stool, on] = [petals(t.pos, cell, s?.ring ?? 0), stools(t.pos, cell, s?.at ?? []), (s?.bench ?? []).filter(x => SIDES.includes(x))]
+  const benches = on.map(bench(t.pos, cell, on))
+  const places = [...on.flatMap(benchSeats(t.pos, cell, on)), ...side.map((box): Place => ({box, kind: s?.high ? 'high' : 'chair'})), ...round, ...stool]
+  return {chairs: [...side, ...round.map(r => r.box), ...stool.map(r => r.box)], benches, places}
+})()
 /** The fill family of a table's status, a shade deeper than its body (no stroke: marks stay quiet). */
 const TONE: Record<keyof typeof TABLE, string> = {
   available: 'fill-emerald-300/70 dark:fill-emerald-700/70', leased: 'fill-sky-300/70 dark:fill-sky-700/70', occupied: 'fill-rose-300/70 dark:fill-rose-700/70',
   lapsed: 'fill-amber-300/70 dark:fill-amber-700/70', blocked_private: 'fill-slate-300/70 dark:fill-slate-600/70',
 }
 export const seatTone = (st: keyof typeof TABLE) => TONE[st]
-const mark = (r: Box, rx: number, cls: string) => `<rect x="${f2(r.x)}" y="${f2(r.y)}" width="${f2(r.w)}" height="${f2(r.h)}" rx="${rx}" class="${cls}"/>`
-export const seats = (t: Ent<'table' | 'pos'> & {seating?: Components['seating']}) => ((s = seatsOf(t), c = seatTone(t.table.status)) =>
-  t.seating ? `<g data-seats class="pointer-events-none">${s.benches.map(b => mark(b, 3, c)).join('')}${s.chairs.map(r => mark(r, 3, c)).join('')}</g>` : '')()
+/** A seated table's places: taken = filled red, the rest outlined red with no fill (never the free tone). */
+export const SEATED = {on: 'fill-rose-500 stroke-rose-600 dark:fill-rose-500 dark:stroke-rose-400', off: 'fill-none stroke-rose-500 dark:stroke-rose-400'}
 
-export const table = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
-  `<g data-act="tcard" data-tid="${esc(t.id)}" class="cursor-pointer"><title>${titleOf(w, hs)(t)}</title>${seats(t)}<rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
-    (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
-      txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
-      txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
+// ---- occupancy: how many covers sit at one table (a link or merge fills its members' places in order, primary first)
+const groupOf = (w: World, t: Id) => having(w, 'link').find(l => l.link.members.includes(t))?.link.members ?? [t]
+const spanOf = (w: World, s: Ent<'slot'>) => ((p = partsOf(w, s.slot.table)) => (p.length > 1 ? p : groupOf(w, p[0]!)))()
+/** The active slot at table `t` and the tables it spans (primary first). */
+export const slotAt = (w: World, t: Id) => having(w, 'slot').filter(s => s.slot.status === 'ACTIVE').map(s => ({s, ts: spanOf(w, s)})).find(x => x.ts.includes(t))
+const room = (w: World, id: Id) => ((e = w.ents[id]) => (e?.pos ? seatsOf(e as ST).places.length || (e.table?.capacity ?? 0) : 0))()
+/** Covers seated at table `t` now: the active slot's party size, spread over its tables' places in order (the last takes any overflow). */
+export const seatedAt = (w: World, t: Id): number => ((x = slotAt(w, t)) => {
+  const [n, i] = [w.ents[x?.s.slot.party ?? '']?.party?.size ?? 0, x?.ts.indexOf(t) ?? -1]
+  const left = n - (x?.ts.slice(0, i).reduce((a, m) => a + room(w, m), 0) ?? 0)
+  return x ? Math.max(0, i === x.ts.length - 1 ? left : Math.min(room(w, t), left)) : 0
+})()
+/** Per place, its class: a seated table shows taken/empty in red, any other the quiet tone of its status. */
+export const placeTones = (w: World, t: Ent<'table' | 'pos'> & {seating?: Components['seating']}) => ((k = seatedAt(w, t.id), on = !!slotAt(w, t.id)) =>
+  seatsOf(t).places.map((_, i) => (on ? (i < k ? SEATED.on : SEATED.off) : seatTone(t.table.status))))()
+const rect = (r: Box, cls: string, extra = '') => `<rect x="${f2(r.x)}" y="${f2(r.y)}" width="${f2(r.w)}" height="${f2(r.h)}" rx="0" stroke-width="1.25"${extra} class="${cls}"/>`
+const ctr = (r: Box) => ({x: f2(r.x + r.w / 2), y: f2(r.y + r.h / 2)})
+/** One mark per kind: square chairs and benches; a high chair adds its foot ring; stools stay round; petals lie along the rim. */
+const MARK: Record<Place['kind'], (p: Place, cls: string) => string> = {
+  chair: (p, c) => rect(p.box, c), bench: (p, c) => rect(p.box, c, ' data-bench'),
+  high: (p, c) => rect(p.box, c, ' data-high') + ((m = ctr(p.box)) => `<circle cx="${m.x}" cy="${m.y}" r="${f2(p.box.w * 0.24)}" fill="none" stroke-width="1" class="stroke-slate-600/80 dark:stroke-slate-300/80"/>`)(),
+  stool: (p, c) => ((m = ctr(p.box)) => `<circle data-stool cx="${m.x}" cy="${m.y}" r="${f2(p.box.w / 2)}" stroke-width="1.25" class="${c}"/>`)(),
+  petal: (p, c) => ((m = ctr(p.box)) => `<ellipse data-petal cx="${m.x}" cy="${m.y}" rx="${f2(p.box.w * 0.6)}" ry="${f2(p.box.h * 0.4)}" transform="rotate(${f2((p.a ?? 0) + 90)} ${m.x} ${m.y})" stroke-width="1.25" class="${c}"/>`)(),
+}
+export const seats = (t: Ent<'table' | 'pos'> & {seating?: Components['seating']}, w: World = {nextParty: 1, ents: {}}) => ((ps = seatsOf(t).places, cs = placeTones(w, t)) =>
+  t.seating ? `<g data-seats data-taken="${seatedAt(w, t.id)}" class="pointer-events-none">${ps.map((p, i) => MARK[p.kind](p, cs[i]!)).join('')}</g>` : '')()
+
+// ---- the table: its body (a rect, a circle for a round top, or the counter's pieces), label, capacity "#p" right-aligned, the party chip lower-left
+type TT = Ent<'table' | 'pos'> & {feat?: Components['feat']; seating?: Components['seating']}
+const cell0 = defaultPolicy.sim.grid
+const pieces = (t: TT): Box[] => (t.seating?.top ?? []).map(([x, y, w, h]) => ({x: t.pos.x + x * cell0, y: t.pos.y + y * cell0, w: w * cell0, h: h * cell0}))
+const RX: Record<Components['table']['shape'], number> = {booth: 0, rect: 0, round: 0, stool: 20}
+const BODY: Record<'top' | 'round' | 'plain', (t: TT, cls: string) => string> = {
+  top: (t, c) => pieces(t).map(p => rect(p, c).replace('stroke-width="1.25"', 'stroke-width="2" data-top')).join(''),
+  round: (t, c) => `<circle cx="${f2(t.pos.x + t.pos.w / 2)}" cy="${f2(t.pos.y + t.pos.h / 2)}" r="${f2(Math.min(t.pos.w, t.pos.h) / 2)}" stroke-width="2" class="${c}"/>`,
+  plain: (t, c) => `<rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${RX[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${c}"/>`,
+}
+const bodyKind = (t: TT): 'top' | 'round' | 'plain' => (pieces(t).length ? 'top' : t.table.shape === 'round' ? 'round' : 'plain')
+/** Where the writing goes: the largest counter piece, a round top's inscribed square, else the body. */
+const FACE: Record<ReturnType<typeof bodyKind>, (t: TT) => Box> = {
+  top: t => pieces(t).reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a)),
+  round: t => ((d = Math.min(t.pos.w, t.pos.h) / Math.SQRT2) => sq(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2, d))(),
+  plain: t => t.pos,
+}
+const INK = 'fill-slate-800 font-semibold dark:fill-slate-100'
+const writing = (t: TT, f: Box) => (f.h < SMALL ? txt(f.x + f.w / 2, f.y + f.h / 2 + 3.5, `${INK} text-[10px]`, t.table.label) :
+  txt(f.x + f.w / 2, f.y + f.h / 2 - 2, `${INK} text-[13px]`, t.table.label) +
+  `<text data-cap x="${f2(f.x + f.w - 3)}" y="${f2(f.y + f.h - 4)}" text-anchor="end" class="fill-slate-600 text-[9px] dark:fill-slate-300">${t.table.capacity}p</text>`)
+/** The seated party: a silhouette at the lower-left, its covers over it a little low so the heads show; a click opens the party. */
+const partyChip = (w: World, t: TT, f: Box) => ((x = slotAt(w, t.id), p = w.ents[x?.s.slot.party ?? '']) => (x && x.ts[0] === t.id && p?.party
+  ? `<g data-act="ent" data-eid="${esc(p.id)}" data-party-chip class="cursor-pointer"><title>${esc(`${p.party.name || 'Guest'} (${p.party.label}) x${p.party.size}: open the party`)}</title>` +
+    `<text x="${f2(f.x + 1)}" y="${f2(f.y + f.h - 3)}" class="text-[13px]">👥</text>` +
+    `<text x="${f2(f.x + 9.5)}" y="${f2(f.y + f.h - 3)}" transform="translate(0 3)" text-anchor="middle" class="fill-white stroke-slate-900 stroke-[2.5px] text-[9px] font-bold [paint-order:stroke]">${p.party.size}</text></g>`
+  : ''))()
+export const table = (w: World, hs: Hold[]) => (t: TT) => ((k = bodyKind(t), f = FACE[bodyKind(t)](t)) =>
+  `<g data-act="tcard" data-tid="${esc(t.id)}" class="cursor-pointer"><title>${titleOf(w, hs)(t)}</title>${seats(t, w)}${BODY[k](t, TABLE[t.table.status])}` + writing(t, f) + partyChip(w, t, f) + '</g>')()
 /** `live` = the active mode has standing holds; otherwise the chunk tints fade (nobody holds them). */
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
   const lead = [...ts].sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x)[0]
@@ -94,9 +161,11 @@ const target = (w: World, e: Ent<'body'>) => {
   return at && `<line x1="${e.body.x}" y1="${e.body.y}" x2="${at.x}" y2="${at.y}" stroke-width="1.5" stroke-dasharray="3 4" class="stroke-slate-400"/>`
 }
 const tag = (e: Entity) => e.party?.size ?? e.staff?.name?.[0] ?? (e.body?.role ?? '?')[0].toUpperCase()
-export const unit = (w: World) => (e: Ent<'body'>) =>
+/** A guest whose party is seated shows as the table's party chip instead of a dot. */
+const sitting = (w: World, e: Ent<'body'>) => e.body.role === 'guest' && having(w, 'slot').some(s => s.slot.status === 'ACTIVE' && s.slot.party === (e.body.party ?? e.id))
+export const unit = (w: World) => (e: Ent<'body'>) => (sitting(w, e) ? '' :
   `<g><title>${esc(e.id)} ${e.body.role} ${esc(e.body.task?.do ?? 'idle')}</title>${target(w, e) ?? ''}<circle cx="${e.body.x}" cy="${e.body.y}" r="${e.body.role === 'guest' ? 8 : 10}" class="${ROLE[e.body.role]}"/>` +
-  txt(e.body.x, e.body.y + 4, 'fill-white text-[10px] font-bold', tag(e)) + txt(e.body.x, e.body.y - 14, 'fill-slate-500 text-[9px] dark:fill-slate-400', e.body.task?.do ?? '') + '</g>'
+  txt(e.body.x, e.body.y + 4, 'fill-white text-[10px] font-bold', tag(e)) + txt(e.body.x, e.body.y - 14, 'fill-slate-500 text-[9px] dark:fill-slate-400', e.body.task?.do ?? '') + '</g>')
 export const ping = (f: Fx) =>
   `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? HRING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
@@ -199,8 +268,30 @@ const EXTRA: Partial<Record<Components['zone']['kind'], (w: World, z: Z) => stri
 /** A partition between tables: one solid thin line along the rect's long axis (the rect may have no width or no height); no fill, no name. */
 const divider = (z: Z) => ((p = z.pos, h = z.pos.w >= z.pos.h) =>
   `<g data-zone="divider" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><line x1="${p.x}" y1="${p.y}" x2="${h ? p.x + p.w : p.x}" y2="${h ? p.y : p.y + p.h}" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke" class="${ZONE.divider}"/></g>`)()
+/** A zero-thickness zone (no width or no height). */
+const thin = (z: Z) => z.pos.w === 0 || z.pos.h === 0
+const seg = (x1: number, y1: number, x2: number, y2: number, w: number, cls: string, extra = '') =>
+  `<line x1="${f2(x1)}" y1="${f2(y1)}" x2="${f2(x2)}" y2="${f2(y2)}" stroke-width="${w}"${extra} vector-effect="non-scaling-stroke" class="${cls}"/>`
+/** A wall drawn as a line on a cell edge: a solid stroke, heavier than a divider. */
+const wallLine = (z: Z) => ((p = z.pos, h = z.pos.w >= z.pos.h) =>
+  `<g data-zone="wall" data-zid="${esc(z.id)}" data-line><title>${esc(z.zone.label)}</title>${seg(p.x, p.y, h ? p.x + p.w : p.x, h ? p.y : p.y + p.h, 4, 'stroke-slate-500 dark:stroke-slate-400', ' stroke-linecap="square"')}</g>`)()
+/** Where a door crosses a thin wall on its floor: the stretch of the wall's line inside the door's rect (none = not on a wall line). */
+const gapOn = (w: World, z: Z) => having(w, 'zone', 'pos').filter(o => o.zone.kind === 'wall' && thin(o) && o.pos.floor === z.pos.floor).map(o => o.pos).map(o => (o.h === 0
+  ? {x1: Math.max(o.x, z.pos.x), x2: Math.min(o.x + o.w, z.pos.x + z.pos.w), y1: o.y, y2: o.y, on: o.y >= z.pos.y && o.y <= z.pos.y + z.pos.h}
+  : {x1: o.x, x2: o.x, y1: Math.max(o.y, z.pos.y), y2: Math.min(o.y + o.h, z.pos.y + z.pos.h), on: o.x >= z.pos.x && o.x <= z.pos.x + z.pos.w}))
+  .find(g => g.on && (g.x2 - g.x1) + (g.y2 - g.y1) > 0)
+/** The opening: the wall's line cut away (floor colour) with a jamb across each end. */
+const opening = (g: NonNullable<ReturnType<typeof gapOn>>) => ((h = g.y1 === g.y2) =>
+  seg(g.x1, g.y1, g.x2, g.y2, 6, 'stroke-slate-100 dark:stroke-slate-900', ' data-gap') +
+  [[g.x1, g.y1], [g.x2, g.y2]].map(([x, y]) => (h ? seg(x!, y! - 6, x!, y! + 6, 2, DOOR_INK) : seg(x! - 6, y!, x! + 6, y!, 2, DOOR_INK))).join(''))()
+const doorOf = (w: World, z: Z, l?: Lab) => ((g = gapOn(w, z)) => (g
+  ? `<g data-zone="door" data-zid="${esc(z.id)}" data-opening><title>${esc(z.zone.label)}</title>${opening(g)}${EXTRA.door!(w, z)}${l ? nameAt(z, l) : ''}</g>` : undefined))()
+/** Special draws: a divider is a line; a thin wall is a line; a door on a wall line is an opening in it. */
+const SPECIAL: Partial<Record<Components['zone']['kind'], (w: World, z: Z, l?: Lab) => string | undefined>> = {
+  divider: (_w, z) => divider(z), wall: (_w, z) => (thin(z) ? wallLine(z) : undefined), door: doorOf,
+}
 /** One zone's outline (dashed), its extra marks, its name (`l`; none = unnamed here). */
-const zoneOf = (w: World, z: Z, l?: Lab) => (z.zone.kind === 'divider' ? divider(z) :
+const zoneOf = (w: World, z: Z, l?: Lab) => (SPECIAL[z.zone.kind]?.(w, z, l) ??
   `<g data-zone="${esc(z.zone.kind)}" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><rect x="${z.pos.x}" y="${z.pos.y}" width="${z.pos.w}" height="${z.pos.h}" rx="3" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" class="${ZONE[z.zone.kind]}"/>` +
   (EXTRA[z.zone.kind]?.(w, z) ?? '') + (l ? nameAt(z, l) : '') + '</g>')
 /** Outlines draw areas first (largest), then the rest; names are placed fixed ones first (door, stairs, lobby), areas last, each against the tables
@@ -210,7 +301,7 @@ const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall',
 const pad = (t: FT): Box => ({x: t.pos.x - 8, y: t.pos.y - 18, w: t.pos.w + 16, h: t.pos.h + (onFloor(t).length ? 38 : 20)})
 const by = (ks: Components['zone']['kind'][]) => (a: Z, b: Z) => ks.indexOf(a.zone.kind) - ks.indexOf(b.zone.kind)
 const QUIET: Components['zone']['kind'][] = ['divider', 'prop'] // never named on the plan (the hover line says what they are)
-const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind)).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
+const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind) && !(z.zone.kind === 'wall' && thin(z))).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
   ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: ts.map(pad)}).at
 export const zonesOf = (w: World, zs: Z[], ts: FT[] = [], skip: string[] = []) => ((at = labels(w, zs, ts, skip)) => [...zs].sort(by(ORDER)).map(z => zoneOf(w, z, at.get(z.id))).join(''))()
 

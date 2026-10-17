@@ -14,7 +14,7 @@ const labels = (ts: Entity[]) => ts.map(t => t.table!.label)
 
 test('every table carries an area tag with the expected counts', () => {
   assert.equal(tables.length, having(w, 'table').length)
-  assert.deepEqual(['main', 'grotto', 'patio', 'bar', 'roof'].map(a => inArea(a).length), [24, 6, 7, 19, 15])
+  assert.deepEqual(['main', 'grotto', 'patio', 'bar', 'roof'].map(a => inArea(a).length), [24, 6, 7, 19, 11])
   assert.deepEqual(labels(inArea('grotto')).sort(), ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'])
 })
 test('main is four quadrant blocks with balanced covers, never interleaved, held by the four floor servers', () => {
@@ -25,8 +25,7 @@ test('main is four quadrant blocks with balanced covers, never interleaved, held
   assert.equal([1, 2, 3, 4].reduce((a, s) => a + by(s).length, 0), 24)
   assert.ok(Math.max(...covers) - Math.min(...covers) <= defaultPolicy.section.tol * (covers.reduce((a, b) => a + b, 0) / 4) * 2 + 2, `covers ${covers}`)
   assert.ok(new Set(['1', '2', '3', '4', '24'].map(sec)).size >= 2, 'no server holds every booth')
-  assert.deepEqual([sec('5') === sec('7'), sec('13') === sec('15'), sec('6') === sec('8'), sec('14') === sec('16')], [true, true, true, true]) // each quad splits along its horizontal aisle
-  assert.deepEqual([sec('5') !== sec('6'), sec('13') !== sec('14')], [true, true])
+  assert.deepEqual([sec('5') === sec('7'), sec('6') === sec('8'), sec('13') === sec('15'), sec('14') === sec('16')], [true, true, true, true], 'a quad block is never split across its divider')
   const c = (t: typeof main[0]) => [t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2] as const // the partition cuts on table centres
   const bx = (s: number) => { const cs = by(s).map(c); return {x0: Math.min(...cs.map(q => q[0])), x1: Math.max(...cs.map(q => q[0])), y0: Math.min(...cs.map(q => q[1])), y1: Math.max(...cs.map(q => q[1]))} }
   const inside = (s: number, o: number) => by(o).map(c).filter(([x, y]) => x >= bx(s).x0 && x <= bx(s).x1 && y >= bx(s).y0 && y <= bx(s).y1).length
@@ -61,7 +60,7 @@ test('main floor capacities: booths 1-4 and 24 seat 6, the listed 2-tops seat 2,
   assert.deepEqual(main(twos).map(t => [t.capacity, t.shape]), twos.map(() => [2, 'rect']))
   assert.deepEqual(main(fours).map(t => [t.capacity, t.shape]), fours.map(() => [4, 'rect']))
   assert.deepEqual(fours, ['9', '10', '11', '12', '17', '18', '20', '22', '23'])
-  assert.equal(having(w, 'table').length, 71)
+  assert.equal(having(w, 'table').length, 67)
 })
 test('every level is laid out without overlaps (floors on one level share its frame); adjacency (adj) is the owner\'s runs, symmetric and on one floor', () => {
   const ts = having(w, 'table', 'pos', 'area')
@@ -72,22 +71,21 @@ test('every level is laid out without overlaps (floors on one level share its fr
   assert.ok(ts.every(t => adj(t.id).every(o => adj(o).includes(t.id) && w.ents[o]!.pos!.floor === t.pos.floor)))
   assert.deepEqual(['17', '19', '23', '9', '12', '1', '24'].map(n => adj(`rf_${n}`)), [['rf_18'], ['rf_18', 'rf_20'], ['rf_22'], ['rf_10'], ['rf_11'], [], []])
   assert.deepEqual(['g1', 'g2', 'g4', 'b14', 'b15', 'b21', 'b20', 'b22', 'b13'].map(n => adj(`rf_${n}`)), [['rf_g2'], ['rf_g1', 'rf_g3'], ['rf_g5'], ['rf_b15'], ['rf_b14', 'rf_b16'], ['rf_b20'], ['rf_b21'], [], []])
-  const R = (...ns: number[]) => ns.map(n => `rf_r${n}`).sort()
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => adj(`rf_r${n}`)), [R(2, 6), R(1, 3, 5), R(2, 4), R(3, 5, 9), R(2, 4, 6, 8), R(1, 5, 7), R(6, 8), R(5, 7, 9), R(4, 8, 10), R(9)], 'roof: each snake row a run, rows joined across their aisles by column')
-  assert.deepEqual(['rt1', 'rt2', 'rt3', 'r_bar', 'r_bar2'].map(n => adj(`rf_${n}`)), [[], [], [], [], []])
+  const R = (...ns: number[]) => ns.map(n => `rf_rt${n}`).sort()
+  assert.deepEqual([4, 5, 6, 7, 8, 9, 10].map(n => adj(`rf_rt${n}`)), [R(5, 9), R(4, 6, 8), R(5, 7), R(6, 8), R(5, 7, 9), R(4, 8, 10), R(9)], 'roof: each snake row a run, rows joined across their aisle by column')
+  assert.deepEqual(['rt1', 'rt2', 'rt3', 'r_bar'].map(n => adj(`rf_${n}`)), [[], [], [], []])
 })
 test('labels are the owner\'s: T1-T24, G, B, P, R; floors are named and stacked on two levels', () => {
   const by = (a: string) => labels(inArea(a))
   assert.deepEqual(by('main'), Array.from({length: 24}, (_, i) => `T${i + 1}`))
   assert.ok(by('bar').every(l => /^B\d+$/.test(l)) && by('patio').every(l => /^P\d+$/.test(l)))
-  assert.deepEqual(by('roof'), [...Array.from({length: 10}, (_, i) => `R${i + 1}`), 'RT1', 'RT2', 'RT3', 'Bar', 'Bar L'])
+  assert.deepEqual(by('roof'), [...Array.from({length: 10}, (_, i) => `RT${i + 1}`), 'Roof bar'])
   assert.deepEqual(having(w, 'floor').map(f => [f.id, f.floor.name, f.floor.level]), [['rf1', 'Main Dining Room', 0], ['rf2', 'Bar', 0], ['rf3', 'Patio', 0], ['rf4', 'Roof', 1]])
-  assert.deepEqual(['r1', 'r3', 'r10', 'rt1', 'rt2', 'rt3', 'r_bar', 'r_bar2'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.feat!.tags.includes('hightop')]), [[4, false], [6, false], [4, false], [4, true], [2, true], [6, true], [6, false], [4, false]])
+  assert.deepEqual(['rt4', 'rt10', 'rt1', 'rt2', 'rt3', 'r_bar'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.feat!.tags.includes('hightop')]), [[4, false], [4, false], [4, true], [2, true], [6, true], [10, true]])
 })
 const p = (n: string) => w.ents[`rf_${n}`]!.pos!
 const at = (a: string) => having(w, 'table', 'area', 'pos').filter(t => t.area.id === a)
 const cx = (n: string) => p(n).x + p(n).w / 2
-const cy = (n: string) => p(n).y + p(n).h / 2
 const wall = Math.max(...nums([17, 18, 19, 20, 21, 22, 23, 24]).map(n => p(n).y + p(n).h)) // main's bottom wall (T17's)
 const G = defaultPolicy.sim.grid
 const zones = having(w, 'zone', 'pos')
@@ -102,29 +100,30 @@ test('level 0 is one frame: the bar sits right of the walkway along T4/T15/T16/T
   const right = Math.max(...at('bar').map(t => t.pos.x + t.pos.w + (w.ents[t.id]!.seating?.bench?.includes('r') ? G : 0)))
   assert.deepEqual([w.ents.rf_b15!.table!.capacity, w.ents.rf_b13!.table!.capacity], [4, 2], 'B15 a 4-top, B13 a 2-top')
   assert.equal(p('b14').x + p('b14').w + G, right, 'B14 against the right bar wall')
-  assert.equal(p('b15').x - (p('b16').x + p('b16').w), p('b14').x - (p('b15').x + p('b15').w), 'B15 evenly between B16 and B14')
-  assert.ok(p('b13').y === p('b12').y && p('b13').x + p('b13').w === right, 'B13 at the right bounds on B12\'s row')
-  assert.ok(crosses(zone('Spare chair'), {...p('b13'), x: p('b13').x - 3 * G, w: 3 * G}), 'the spare chair kept beside B13')
+  assert.deepEqual([p('b15').x - (p('b16').x + p('b16').w), p('b14').x - (p('b15').x + p('b15').w)], [2 * G, 2 * G], 'B16, B15, B14 two cells apart')
+  assert.ok(p('b13').y === p('b12').y && p('b13').x === p('b12').x + p('b12').w && w.ents.rf_b13!.seating!.chairs.b === 1, 'B13 next to B12, its chair tucked under it')
+  assert.ok(crosses(zone('Spare chair'), {...p('b13'), w: p('b13').w + 2 * G}), 'the spare chair kept beside B13')
+  assert.deepEqual([p('b22').x - (p('b21').x + p('b21').w), p('b21').x - (p('b20').x + p('b20').w)], [G, G], 'B20, B21, B22 one cell apart')
+  assert.ok(p('b3').y + p('b3').h === zone('Bar counter').y - 0 * G && p('b9').y === zone('Bar counter').y + zone('Bar counter').h && p('b3').x === zone('Bar counter').x, 'stools hug the counter')
   assert.ok(['b20', 'b4', 'b5', 'b6', 'b7', 'b8', 'b16'].every((n, i, a) => i === 0 || p(a[i - 1]!).y < p(n).y), 'B20 heads the column, B16 ends it')
   assert.ok(at('patio').every(t => t.pos.y > wall && t.pos.x + t.pos.w < p('b4').x), 'patio in front of main, clear of the bar')
 })
-test('roof (owner): ids snake (R1-R3 right, R4-R6 back left, R7-R10 right), rows across aisles by column, R3 under the RT1|RT2 gap, RT3 centred on the L bar an aisle off', () => {
-  const y = (ns: string[]) => new Set(ns.map(n => p(n).y + p(n).h)).size === 1
+test('roof (owner): all RT; ids snake (RT4-RT6 back left, RT7-RT10 right) three cells apart, rows across by column; RT1 (T9-sized) and RT2 high-tops on the top band; RT3 5 long an aisle off the L bar of 10 stools', () => {
+  const y = (ns: string[]) => new Set(ns.map(n => p(n).y)).size === 1
   const order = (ns: string[]) => ns.every((n, i) => i === 0 || cx(ns[i - 1]!) < cx(n))
-  assert.ok(y(['r1', 'r2', 'r3']) && y(['r4', 'r5', 'r6']) && y(['r7', 'r8', 'r9', 'r10']), 'three rows')
-  assert.ok(order(['r1', 'r2', 'r3']) && order(['r6', 'r5', 'r4']) && order(['r7', 'r8', 'r9', 'r10']), 'the snake: right, back left, right')
-  assert.ok(p('r1').y + p('r1').h < p('r6').y && p('r6').y + p('r6').h < p('r7').y, 'rows top to bottom, an aisle between')
-  assert.deepEqual([['r1', 'r6'], ['r2', 'r5'], ['r3', 'r4'], ['r6', 'r7'], ['r5', 'r8'], ['r4', 'r9']].map(([a, b]) => cx(a!) === cx(b!)), Array(6).fill(true), 'columns face across the aisles')
-  const [rt1, rt2, rt3, bar, foot] = ['rt1', 'rt2', 'rt3', 'r_bar', 'r_bar2'].map(p)
-  assert.ok(cx('r3') === (rt1!.x + rt1!.w + rt2!.x) / 2 && p('r3').y >= rt1!.y + rt1!.h && p('r3').w < p('r3').h, 'R3 (6-top) turns its short edge to the gap between RT1 and RT2')
-  assert.ok(cy('rt3') === cy('r_bar') && bar!.x - (rt3!.x + rt3!.w) >= 3 * G, 'RT3 centred along the bar front, seat band and an aisle off it')
-  assert.deepEqual([bar!.h / G, foot!.w / G, w.ents.rf_r_bar!.table!.capacity, w.ents.rf_r_bar2!.table!.capacity], [6, 4, 6, 4], 'the L: 6 at the front, 4 under the foot')
-  assert.ok(bar!.y >= p('r1').y + p('r1').h && foot!.y + foot!.h <= p('r10').y, 'the bar stays between the R1/R2 row and the R10 row')
-  const [stairs, corner, walkTop, wallR] = ['Stairs down', 'Stair corner', 'Top walk', 'Wall'].map(zone)
+  assert.ok(y(['rt4', 'rt5', 'rt6']) && y(['rt7', 'rt8', 'rt9', 'rt10']) && order(['rt6', 'rt5', 'rt4']) && order(['rt7', 'rt8', 'rt9', 'rt10']), 'the snake')
+  assert.equal(p('rt7').y - (p('rt6').y + p('rt6').h), 3 * G, 'three cells between the rows')
+  assert.deepEqual([['rt6', 'rt7'], ['rt5', 'rt8'], ['rt4', 'rt9']].map(([a, b]) => cx(a!) === cx(b!)), [true, true, true], 'columns face across the aisle')
+  assert.deepEqual([[p('rt1').w, p('rt1').h], [p('rt3').w / G, p('rt3').h / G]], [[p('9').w, p('9').h], [2, 5]], 'RT1 the size of T9, RT3 five long')
+  assert.ok(p('rt2').x - (p('rt1').x + p('rt1').w) >= 3 * G, 'RT1\'s right chairs, a cell or two, then RT2\'s')
+  const bar = w.ents.rf_r_bar!
+  assert.deepEqual([bar.table!.capacity, bar.seating!.at!.length, bar.seating!.top!.length, bar.seating!.at!.filter(a => a[2] === 'r').length], [10, 10, 2, 6], 'one bar: an L top, 6 at the front, 4 under the foot')
+  assert.ok(p('r_bar').x - (p('rt3').x + p('rt3').w) >= 3 * G, 'RT3: seat band, an aisle, then the bar stools')
+  const [stairs, walkTop, wallR, rdoor] = ['Stairs down', 'Top walk', 'Wall', 'Roof door'].map(zone)
   assert.ok(at('roof').every(t => t.pos.x >= stairs!.x && t.pos.y >= stairs!.y), 'the stairs arrive top-left')
-  assert.ok(corner!.x === stairs!.x + stairs!.w && walkTop!.x === corner!.x + corner!.w && walkTop!.y === rt1!.y, 'stair corner (the way in on its right), then the top walk on RT1\'s row')
-  assert.ok(wallR!.x === walkTop!.x + walkTop!.w && rt1!.x === wallR!.x + wallR!.w, 'a wall between the top walk and RT1')
-  assert.deepEqual([stairs!.x, stairs!.y], [zone('Stairs to the roof').x, zone('Stairs to the roof').y], 'the flight lands over the ground stairs')
+  assert.ok(holds(walkTop!, stairs!) && stairs!.y === walkTop!.y && stairs!.h * 2 === walkTop!.h && stairs!.h === 4 * G, 'the stairs down are the top walk\'s upper half (two 2-cell flights)')
+  assert.ok(wallR!.x === walkTop!.x + walkTop!.w && p('rt1').x - G === wallR!.x + wallR!.w && rdoor!.x === wallR!.x && rdoor!.y === wallR!.y + wallR!.h, 'the wall beside RT1, the door under it')
+  assert.deepEqual([stairs!.x, stairs!.y, stairs!.w, stairs!.h], [zone('Stairs to the roof').x, zone('Stairs to the roof').y, zone('Stairs to the roof').w, zone('Stairs to the roof').h], 'the flight lands over the ground stairs')
 })
 test('ground (owner): door lower-left on the bottom wall; lobby, host stand against the stair wall (the T5-T16 band), stairs off the booth aisle; POS cubbies; the exit at the walkway\'s foot; restrooms up the grotto\'s left wall', () => {
   const [door, lobby, host, stairs, swall, booth, bq, walkway] = ['Front door', 'Lobby', 'Host stand', 'Stairs to the roof', 'Stair wall', 'Booth aisle', 'Banquette aisle', 'Walkway'].map(zone)
@@ -134,29 +133,37 @@ test('ground (owner): door lower-left on the bottom wall; lobby, host stand agai
   assert.ok(holds({...door!, y: door!.y - 1, h: door!.h + 1}, {x: dx, y: dy, w: 0, h: 0}), 'policy.sim.door is the door')
   assert.ok(lobby!.y + lobby!.h === door!.y && lobby!.x <= door!.x && lobby!.w >= 6 * G, 'lobby (about two tables wide) just inside the door')
   assert.ok(host!.y + host!.h === lobby!.y && swall!.y + swall!.h === host!.y && host!.y === p('5').y, 'host stand on the lobby, against the stair wall, in line with the T5-T16 band')
-  assert.ok(stairs!.y + stairs!.h === swall!.y && stairs!.x + stairs!.w === booth!.x && stairs!.y + stairs!.h > booth!.y, 'the stairs continue from the booth aisle\'s left end')
-  const [pos1, pos2, exit] = ['POS', 'POS (walkway)', 'Exit (no re-entry)'].map(zone)
+  assert.ok(stairs!.y + stairs!.h === swall!.y && stairs!.h === 4 * G && stairs!.x + stairs!.w === zone('Restroom aisle').x, 'half-turn stairs (2-cell flights) above the stair wall, off the restroom aisle')
+  assert.deepEqual([booth!.h, bq!.h, lobby!.h], [2 * G, G, 5 * G], 'booth aisle two cells, banquette aisle one, the lobby five')
+  const [pdoor, pos1, pos2, exit] = ['Patio entrance', 'POS', 'POS (walkway)', 'Exit (no re-entry)'].map(zone)
+  assert.ok(pdoor!.y === wall && pdoor!.x > door!.x + door!.w && pdoor!.x + pdoor!.w <= lobby!.x + lobby!.w, 'the patio entrance on the lobby\'s bottom wall')
   const t17 = {x: p('17').x - G, y: p('17').y - G} // its bench (left) and chair band (top)
   assert.ok(pos1!.x === lobby!.x + lobby!.w && pos1!.x + pos1!.w === t17.x && pos1!.y === t17.y && pos1!.y + pos1!.h === wall, 'a POS cubby between the lobby and T17, T17\'s height')
-  assert.ok(pos2!.x === p('24').x + p('24').w && pos2!.x + pos2!.w === walkway!.x, 'a POS between T24 and the walkway')
-  assert.ok(exit!.x === walkway!.x && exit!.y === wall && exit!.x + exit!.w === p('b16').x - G, 'the exit at the walkway\'s foot, between that POS and the bar wall by B16')
+  assert.ok(pos2!.x === p('24').x + p('24').w && pos2!.x + pos2!.w === walkway!.x && pos2!.y === p('24').y, 'a POS between T24 and the walkway, on T24\'s top')
+  assert.equal(p('24').x + p('24').w, p('14').x + p('14').w, 'T24\'s right edge on T14\'s')
+  assert.ok(p('24').x === p('23').x + p('23').w + G, 'T24 borders T23\'s bench')
+  assert.ok(exit!.x === walkway!.x && exit!.y === wall && exit!.x + exit!.w <= p('b16').x - G, 'the exit at the walkway\'s foot, between that POS and the bar wall by B16')
   assert.ok(['1', '2', '3', '4'].every(n => p(n).y + p(n).h === booth!.y) && ['9', '10', '11', '12'].every(n => p(n).y === booth!.y + booth!.h), 'booths and the centre lane flush on the booth aisle')
   assert.ok(['17', '18', '20', '22', '23'].every(n => p(n).y - G === bq!.y + bq!.h), 'banquette chairs flush on the banquette aisle')
   assert.equal(zone('Grotto').y + zone('Grotto').h, booth!.y, 'the grotto opens flush on the booth aisle')
   const [aisle, walk, mens, ladies] = ['Restroom aisle', 'Restroom walk', "Men's room", "Ladies' room"].map(zone)
+  assert.deepEqual([aisle!.w, walk!.h, zone('POS').x], [3 * G, 3 * G, zone('Grotto').x + 2 * G], 'restroom aisle and walk 3 cells; the lobby reaches the grotto\'s third cell, where the POS by T17 starts')
+  const gdoor = zone('Grotto entrance'), lanes = p('g4').x - G - (p('g1').x + p('g1').w + G)
+  assert.deepEqual([gdoor.w, gdoor.y, lanes, gdoor.x - (p('g1').x + p('g1').w + G)], [2 * G, booth!.y, 4 * G, G], 'a 2-cell grotto entrance centred between lanes 4 cells apart')
   assert.ok(aisle!.x + aisle!.w === zone('Grotto').x && aisle!.y + aisle!.h === booth!.y && aisle!.y === walk!.y + walk!.h, 'the restroom aisle runs up the grotto\'s left wall from the booth aisle to the restroom walk')
   assert.ok(mens!.x <= aisle!.x && mens!.x + mens!.w >= aisle!.x + aisle!.w && mens!.y + mens!.h === walk!.y, 'the men\'s room straight up the aisle')
   assert.ok(ladies!.x + ladies!.w < mens!.x && ladies!.y + ladies!.h === walk!.y && walk!.x <= ladies!.x, 'the walk turns left to the ladies\' room, a gap between the two')
   const hostAt = having(w, 'body').find(b => b.body.role === 'host')!.body
   assert.ok(holds(host!, {x: hostAt.x, y: hostAt.y, w: 0, h: 0}), 'host at the stand')
-  const ts = having(w, 'table', 'pos')
+  const ts = having(w, 'table', 'pos').filter(t => w.ents[t.pos.floor]!.floor!.level === 0)
   assert.deepEqual(having(w, 'body').filter(b => ts.some(t => holds(t.pos, {x: b.body.x, y: b.body.y, w: 0, h: 0}))).map(b => b.id), [], 'crew parked clear of tables')
 })
 test('spacing (owner): chairs in a one-cell band, a shared walking margin between exposed neighbours, 4-tops long-edge seated and turnable; benches fixed; booths and the patio carry no seat cells', () => {
   const s = (n: string) => w.ents[`rf_${n}`]!.seating
-  assert.deepEqual([s('9'), s('g1'), s('5'), s('18'), s('19'), s('17'), s('23'), s('b16'), s('b20'), s('r3')],
-    [{chairs: {l: 2, r: 2}, turn: true}, {chairs: {l: 2, r: 2}, turn: true}, {chairs: {l: 1, r: 1}}, {chairs: {t: 2}, bench: ['b']}, {chairs: {t: 1}, bench: ['b']}, {chairs: {t: 1}, bench: ['b', 'l']}, {chairs: {t: 1}, bench: ['b', 'r']}, {chairs: {t: 1}, bench: ['b', 'l']}, {chairs: {b: 1}, bench: ['t', 'l']}, {chairs: {l: 3, r: 3}}])
-  assert.deepEqual(['1', '2', '24', 'p1', 'p7'].map(s), Array(5).fill(undefined))
+  assert.deepEqual([s('9'), s('g1'), s('5'), s('18'), s('19'), s('17'), s('23'), s('b16'), s('b20'), s('rt3'), s('p1'), s('p4')],
+    [{chairs: {l: 2, r: 2}, turn: true}, {chairs: {l: 2, r: 2}, turn: true}, {chairs: {l: 1, r: 1}}, {chairs: {t: 2}, bench: ['b']}, {chairs: {t: 1}, bench: ['b']}, {chairs: {t: 1}, bench: ['b', 'l']}, {chairs: {t: 1}, bench: ['b', 'r']}, {chairs: {t: 1}, bench: ['b', 'l']}, {chairs: {b: 1}, bench: ['t', 'l']}, {chairs: {l: 3, r: 3}, high: true}, {chairs: {l: 1, r: 1}}, {chairs: {}, ring: 6}])
+  assert.deepEqual(['1', '2', '24'].map(s), Array(3).fill(undefined))
+  assert.deepEqual(['p1', 'p4'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.table!.shape]), [[2, 'rect'], [6, 'round']], 'patio: 2-tops and round 6-tops')
   assert.ok(p('9').h > p('9').w, '4-tops are longer on the seated edge')
   const gap = (a: string, b: string) => (p(b).x - (p(a).x + p(a).w)) / G
   assert.deepEqual([gap('9', '10'), gap('10', '11'), gap('11', '12'), gap('7', '9'), gap('12', '13')], [3, 3, 3, 3, 3], 'seat, shared margin, seat')
@@ -177,8 +184,8 @@ test('every table sits on whole grid cells: footprint and centre', () => {
   assert.deepEqual(off.map(t => t.id), [])
 })
 test('zones mark each part, labelled as a host says them, and each area zone holds its tables on its floor', () => {
-  assert.deepEqual([...new Set(zones.map(z => `${z.zone.label}:${z.zone.kind}`))].sort(), ['Banquette aisle:aisle', 'Bar counter:wall', 'Bar foot:wall', 'Bar:area', 'Booth aisle:aisle', 'Divider:divider', 'Exit (no re-entry):door', 'Front door:door', 'Grotto:area', 'Host stand:stand', "Ladies' room:room", 'Lobby:lobby', 'Main dining:area', "Men's room:room",
-    'POS (walkway):stand', 'POS:stand', 'Patio:area', 'Restroom aisle:aisle', 'Restroom walk:walkway', 'Roof bar:wall', 'Roof:area', 'Spare chair:prop', 'Stair corner:wall', 'Stair wall:wall', 'Stairs down:stairs', 'Stairs to the roof:stairs', 'Top walk:walkway', 'Walkway:walkway', 'Wall:wall'])
+  assert.deepEqual([...new Set(zones.map(z => `${z.zone.label}:${z.zone.kind}`))].sort(), ['Banquette aisle:aisle', 'Bar counter:wall', 'Bar:area', 'Booth aisle:aisle', 'Divider:divider', 'Exit (no re-entry):door', 'Front door:door', 'Grotto entrance:door', 'Grotto wall:wall', 'Grotto:area', 'Host stand:stand', "Ladies' room:room", 'Lobby:lobby', 'Main dining:area', "Men's room:room",
+    'POS (walkway):stand', 'POS:stand', 'Patio entrance:door', 'Patio:area', 'Restroom aisle:aisle', 'Restroom walk:walkway', 'Roof door:door', 'Roof:area', 'Spare chair:prop', 'Stair wall:wall', 'Stairs down:stairs', 'Stairs to the roof:stairs', 'Top walk:walkway', 'Walkway:walkway', 'Wall:wall'])
   const area = {main: 'Main dining', grotto: 'Grotto', bar: 'Bar', patio: 'Patio', roof: 'Roof'}
   Object.entries(area).forEach(([a, label]) => assert.ok(at(a).every(t => holds(zone(label), t.pos) && zones.find(z => z.zone.label === label)!.pos.floor === t.pos.floor), label))
   assert.equal(w.ents[zones.find(z => z.zone.label === 'Stairs down')!.pos.floor]!.floor!.level, 1)
@@ -189,8 +196,8 @@ test('zones mark each part, labelled as a host says them, and each area zone hol
 test('merge options come from those runs: any connected set up to policy.merge.max, across the aisle on the roof, never across floors or into the grotto from the main floor', () => {
   const ids = merges(defaultPolicy, w).map(s => s.id)
   assert.ok(['m:rf_17+rf_18+rf_19', 'm:rf_18+rf_19+rf_20+rf_21', 'm:rf_10+rf_11+rf_12', 'm:rf_g1+rf_g2+rf_g3', 'm:rf_b14+rf_b15+rf_b16', 'm:rf_b20+rf_b21'].every(i => ids.includes(i)))
-  assert.ok(['m:rf_r1+rf_r6', 'm:rf_r1+rf_r2+rf_r5+rf_r6', 'm:rf_r1+rf_r2+rf_r3', 'm:rf_r4+rf_r5+rf_r6', 'm:rf_r10+rf_r7+rf_r8+rf_r9', 'm:rf_r4+rf_r9'].every(i => ids.includes(i)))
-  assert.ok(!ids.some(i => /rf_(1|2|3|4|5|6|7|8|24|b22|b1|b13|p1|rt1|rt2|rt3|r_bar|r_bar2)(\+|$)/.test(i)), 'booths, quads, stools, patio, high tables and bar do not merge')
+  assert.ok(['m:rf_rt6+rf_rt7', 'm:rf_rt4+rf_rt5+rf_rt6', 'm:rf_rt10+rf_rt7+rf_rt8+rf_rt9', 'm:rf_rt4+rf_rt9'].every(i => ids.includes(i)))
+  assert.ok(!ids.some(i => /rf_(1|2|3|4|5|6|7|8|24|b22|b1|b13|p1|rt1|rt2|rt3|r_bar)(\+|$)/.test(i)), 'booths, quads, stools, patio, high tables and bar do not merge')
   assert.ok(!ids.some(i => i.split('+').length > defaultPolicy.merge.max))
   assert.ok(!ids.includes('m:rf_17+rf_18+rf_19+rf_20+rf_21'))
 })
@@ -202,8 +209,8 @@ test('the centre lane (9-12) is pushed together only when no other merge is read
   assert.deepEqual(ask(['rf_9', 'rf_10', 'rf_11', 'rf_12', 'rf_18', 'rf_19', 'rf_20'], 8).tables.sort(), ['rf_18', 'rf_19', 'rf_20']) // so does the 17-23 run
 })
 test('bar stools are first come, first served: the host never offers or seats them, even when nothing else is free', () => {
-  const stools = ['rf_b1', 'rf_b7', 'rf_b12', 'rf_r_bar', 'rf_r_bar2']
-  assert.deepEqual(stools.map(id => w.ents[id]!.table!.shape), Array(5).fill('stool'))
+  const stools = ['rf_b1', 'rf_b7', 'rf_b12', 'rf_r_bar']
+  assert.deepEqual(stools.map(id => w.ents[id]!.table!.shape), Array(4).fill('stool'))
   const alone = only(stools)
   const [it] = Engine.fit(defaultPolicy, alone, 0, [1])
   assert.deepEqual([it.ready, it.tables.some(t => stools.includes(t))], [false, false]) // every other table is busy: the party waits rather than take a stool

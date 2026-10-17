@@ -102,3 +102,38 @@ test('a blocked table offers nothing; a party too large for the table gets no le
   await settle()
   assert.match(card(el)!.textContent!, /Blocked/)
 })
+test('every entity on the card is a link: table, party, server, joined tables; the floor party chip opens the party', async () => {
+  const {app, el} = await setup()
+  openCard(app, 't1')
+  await settle()
+  await press(el, 'lease')
+  await press(el, 'seat')
+  const refs = () => [...card(el)!.querySelectorAll('[data-act="ent"]')].map(b => b.getAttribute('data-eid'))
+  const waiter = t1(app).waiter!
+  assert.deepEqual(refs(), ['t1', 'p1', waiter])
+  assert.match(card(el)!.querySelector('[data-card-party]')!.textContent!, /Chen \(W1\) x2/)
+  click(el, '[data-act="card-close"]')
+  await settle()
+  const chip = el.querySelector('[data-floor] [data-tid="t1"] [data-party-chip]')!
+  assert.match(chip.textContent!, /👥2/)
+  tap(el, '[data-floor] [data-tid="t1"] [data-party-chip]') // the chip opens the party: the card of the table it sits at
+  await settle()
+  assert.equal(card(el)?.getAttribute('data-card'), 't1')
+  click(el, `[data-card] [data-act="ent"][data-eid="${waiter}"]`) // the server opens on the Staff tab with its form
+  await settle()
+  assert.equal(app.store.state.ui.tab, 'staff')
+  assert.equal(app.store.state.ui.prefs?.open, waiter)
+  app.apply([{op: 'add', ent: {id: 'k', link: {members: ['t2', 't1']}}}, {op: 'add', ent: party(3, 'W', 2, 'Dee', {queue: {since: 0, quotedMin: 5, status: 'WAITING', from: null}})}])
+  openCard(app, 't2')
+  await settle()
+  assert.match(card(el)!.querySelector('[data-card-joined]')!.textContent!, /joined with T1/)
+  click(el, '[data-card-joined] [data-act="ent"][data-eid="t1"]') // a joined table opens its own card where this one is
+  await settle()
+  assert.equal(card(el)?.getAttribute('data-card'), 't1')
+  const {follow} = await import('./card.ts')
+  follow(app, 'p3', new el.ownerDocument.defaultView!.Event('click')) // a party at the door: the stand with it in focus
+  await settle()
+  assert.equal(app.store.state.ui.stand?.party, 'p3')
+  assert.equal(app.store.state.ui.tab, 'sim')
+  assert.equal(card(el), null)
+})
