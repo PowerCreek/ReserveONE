@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {defaultBooking} from '../contracts/index.ts'
-import type {BookCmd, Outcome, World} from '../contracts/index.ts'
+import type {BookCmd, Outcome, Placed, World} from '../contracts/index.ts'
 import {N, P, mins, party, table, world} from './testkit.ts'
 import {apply} from './patch.ts'
 import {booking} from './booking.ts'
@@ -107,4 +107,31 @@ test('list: by slot with states (late after grace), filters by state/size/area, 
   assert.deepEqual(booking.list(P, w, N, {size: [5, 99]}).slots.flatMap(s => s.rows.map(r => r.name)), ['Big'])
   assert.deepEqual(booking.list(P, w, N, {area: 'patio'}).slots.flatMap(s => s.rows.map(r => r.name)), ['Big'])
   assert.equal(booking.list(P, w, N, {state: 'ARRIVED'}).total, 0)
+})
+test('note: free text on a booking, a call-ahead and a walk-in; clearing; edit keeps working; gone parties refuse', () => {
+  const w1 = after(room(), {do: 'book', size: 2, name: 'Lee', at: N + mins(60)})
+  const w2 = after(w1, {do: 'call', size: 2, name: 'Cal', etaMin: 15})
+  const w3 = after(w2, {do: 'walk', size: 2, name: 'Wal'})
+  const lee = named(w3, 'Lee').id
+  const w4 = after(after(after(w3, {do: 'note', party: lee, notes: 'nut allergy'}), {do: 'note', party: named(w3, 'Cal').id, notes: 'running late, said 15 min'}), {do: 'note', party: named(w3, 'Wal').id, notes: 'prefers booth'})
+  assert.deepEqual([named(w4, 'Lee').intake!.notes, named(w4, 'Lee').reservation!.notes, named(w4, 'Cal').intake!.notes, named(w4, 'Wal').intake!.notes], ['nut allergy', 'nut allergy', 'running late, said 15 min', 'prefers booth'])
+  assert.equal(after(w4, {do: 'edit', party: lee, size: 3}).ents[lee]!.intake!.notes, 'nut allergy')
+  assert.equal(after(w4, {do: 'note', party: lee, notes: ''}).ents[lee]!.reservation!.notes, '')
+  assert.match(err(w4, {do: 'note', party: 'nope', notes: 'x'}), /No party/)
+  assert.match(err(after(w4, {do: 'leave', party: lee, why: 'cancel'}), {do: 'note', party: lee, notes: 'x'}), /no longer/)
+})
+test('preview: the table avail shows before booking is the table the list shows after (plain, pushed together, no spot); the planner leads avail.spots', () => {
+  const next = (e: ReturnType<typeof table>, ...ids: string[]) => ({...e, adj: {with: ids}})
+  const w = world([table('t1', 2), next(table('m1', 4), 'm2'), next(table('m2', 4), 'm1'), table('t3', 6)])
+  const cases: [number, string][] = [[2, 'T1'], [8, 'M1+M2'], [40, '-']]
+  cases.forEach(([size, label]) => {
+    const q = {size, at: N + mins(60)}
+    const a = booking.avail(P, w, N, q) as unknown as {plan: Placed | null; spots: {id: string}[]}
+    const w2 = after(w, {do: 'book', size, name: `Pty${size}`, at: q.at})
+    const row = booking.list(P, w2, N).slots.flatMap(s => s.rows).find(r => r.name === `Pty${size}`)!
+    assert.equal(a.plan?.label ?? '-', label)
+    assert.deepEqual(a.plan ? [a.plan.label, a.plan.tables] : null, row.table ? [row.table.label, row.table.tables] : null)
+    assert.equal(a.spots[0]?.id, a.plan?.spot ?? a.spots[0]?.id)
+  })
+  assert.equal((booking.avail(P, w, N, {size: 8, at: N + mins(60)}) as unknown as {plan: Placed}).plan.merge, true)
 })

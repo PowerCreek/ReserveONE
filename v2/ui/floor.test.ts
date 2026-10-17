@@ -2,13 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
-import {ZOOM, floorSvg, tabList} from './floor.ts'
-import {SEATED, alertsOf, chips, contour, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
+import {ZOOM, floorSvg, frame, tabList} from './floor.ts'
+import {SEATED, gridLines, alertsOf, chips, contour, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
 import type {Entity} from '../contracts/index.ts'
-import {floorOf, rays} from './geo.ts'
+import type {Box} from './geo.ts'
+import {floorOf, rays, seen} from './geo.ts'
 test('empty world shows scenario picker; clicking a preset draws the floor', async () => {
   const {app, el} = rig()
   await settle()
@@ -306,4 +307,34 @@ test('2D layers: a table change swaps that table only, a unit move swaps the uni
   const g2 = q('[data-layer="units"] > g')
   assert.equal(g2.filter((n, i) => n !== g[i]).length, 1)
   assert.equal(q('[data-tid="t2"]')[0], t2)
+})
+
+test('the visible box takes the element aspect: the grid covers every pixel and a pan shifts verticals and horizontals alike', async () => {
+  const {app, el} = rig()
+  load(app, 'rush')
+  await settle()
+  const svg = el.querySelector('[data-floor] svg[data-plan]')!
+  Object.defineProperty(svg, 'getBoundingClientRect', {value: () => ({width: 1000, height: 400, x: 0, y: 0, top: 0, left: 0, right: 1000, bottom: 400})})
+  const fit = svg.getAttribute('data-fit')!.split(' ').map(Number)
+  svg.dispatchEvent(new el.ownerDocument.defaultView!.KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true}))
+  const [x, y, w, h] = svg.getAttribute('viewBox')!.split(' ').map(Number) as [number, number, number, number]
+  assert.ok(Math.abs(w / h - 2.5) < 0.01) // the element's aspect, not 4:3
+  const cam = app.store.state.ui.cam!
+  const v = seen({x: fit[0]!, y: fit[1]!, w: fit[2]!, h: fit[3]!}, cam)
+  assert.ok(x <= v.x + 0.01 && y <= v.y + 0.01 && x + w >= v.x + v.w - 0.01 && y + h >= v.y + v.h - 0.01) // the camera's box stays inside
+  const ls = lines(`<g data-grid>${svg.querySelector('[data-grid]')!.innerHTML}</g></g>`)
+  const [vs, hs] = [ls.filter(l => l.x1 === l.x2), ls.filter(l => l.y1 === l.y2)]
+  assert.ok(vs.length && vs[0]!.x1 - x < G && x + w - vs.at(-1)!.x1 <= G + 0.01 && hs[0]!.y1 - y < G && y + h - hs.at(-1)!.y1 <= G + 0.01) // lines reach every edge
+  assert.ok(vs.every(l => l.y1 === y && l.y2 === y + h) && hs.every(l => l.x1 === x && l.x2 === x + w))
+})
+test('a pan shifts the vertical rays by the same offset as the horizontal ones, on a wide element', () => {
+  const [fit, size]: [Box, [number, number]] = [{x: 0, y: 0, w: 1800, h: 1000}, [1200, 500]]
+  const at = (cx: number, cy: number) => frame(seen(fit, {x: cx, y: cy, z: 1}), size)
+  const [a, b] = [at(0, 0), at(7, 7)]
+  assert.ok(Math.abs(a.w / a.h - 2.4) < 0.01)
+  const rel = (v: Box) => ({x: rays(v.x, v.w, G), y: rays(v.y, v.h, G)})
+  const md = (n: number) => +((((n % G) + G) % G)).toFixed(2)
+  ;(['x', 'y'] as const).forEach(k => assert.equal(md(rel(b)[k][0]! - (rel(a)[k][0]! - 7)), 0)) // each axis: every ray 7 over
+  const xs = (v: Box) => [...gridLines(v).matchAll(/x1="([^"]+)" y1="[^"]+" x2="\1"/g)].map(m => +m[1]!)
+  assert.ok(xs(b)[0]! >= b.x - G && xs(b).at(-1)! <= b.x + b.w && b.x + b.w - xs(b).at(-1)! <= G) // verticals cover the widened box
 })

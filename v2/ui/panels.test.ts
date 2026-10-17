@@ -5,6 +5,7 @@ import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {click, rig} from './rig.ts'
 import {ask} from './ask.ts'
+import {bk} from './bookask.ts'
 import {uiOf} from './state.ts'
 const text = (el: Element, sel: string) => el.querySelector(sel)!.textContent!
 test('tabs show one pane at a time through data-show', async () => {
@@ -96,7 +97,7 @@ test('header shows the service mode chip and the staff tab carries the assignmen
   assert.match(text(el, 'header [data-mode]'), /(Sectioned|Rotation) (schedule|manual)/)
   assert.equal(el.querySelectorAll('[data-show="ui.on.staff"] [data-assign] [data-act="svcmode"]').length, 3)
 })
-test('fast seating from the door list: the button names the door party it takes, both lists mark it, a click seats it (it leaves the door); off seats a fresh walk-in', async () => {
+test('fast seating: two buttons; "Seat from the door" takes the size match (else the first in priority order) and both lists mark it; "Seat walk-in (new)" mints a fresh one', async () => {
   const {el, app} = rig()
   load(app, 'lunch')
   await settle()
@@ -105,22 +106,81 @@ test('fast seating from the door list: the button names the door party it takes,
   uiOf(app).size = head.size
   uiOf(app).rev++
   await settle()
-  assert.equal(text(el, '[data-act="quick"]'), `Seat ${head.name} x${head.size} from the door`)
-  assert.equal(el.querySelector('[data-act="fromdoor"]')!.getAttribute('aria-checked'), 'true')
+  assert.equal(el.querySelector('[data-act="fromdoor"]'), null, 'the old toggle is gone')
+  assert.match(text(el, '[data-act="seatdoor"]'), new RegExp(`^Seat ${head.label} .* x${head.size} from the door$`))
+  assert.match(text(el, '[data-act="quick"]'), new RegExp(`^Seat walk-in \\(new\\) x${head.size}`))
   assert.ok(el.querySelector(`[data-queue] li[data-party="${head.party}"] [data-fastmark]`), 'queue row marked')
   assert.ok(el.querySelector(`[data-stand] [data-id="${head.party}"] [data-fastmark]`), 'stand door card marked')
   assert.equal(el.querySelectorAll('[data-stand] [data-fastmark]').length, 1)
   const before = door().length
-  click(el, '[data-act="quick"]')
+  click(el, '[data-act="seatdoor"]')
   assert.ok(!door().includes(head.party) && door().length === before - 1, 'the door party was consumed')
   assert.equal(having(app.store.state.world, 'slot').find(s => s.slot.party === head.party)?.slot.status, 'ACTIVE')
   await settle()
-  click(el, '[data-act="fromdoor"]')
-  await settle()
-  assert.equal(el.querySelector('[data-act="fromdoor"]')!.getAttribute('aria-checked'), 'false')
-  assert.equal(text(el, '[data-act="quick"]'), `Seat a new walk-in x${head.size}`)
-  assert.equal(el.querySelectorAll('[data-fastmark]').length, 0)
   const n = door().length
   click(el, '[data-act="quick"]')
   assert.equal(door().length, n) // a fresh walk-in: nobody leaves the door list
+})
+test('seat from the door with no size match takes the first door party in priority order; with an empty door it is disabled with a reason', async () => {
+  const {el, app} = rig()
+  load(app, 'lunch')
+  await settle()
+  uiOf(app).size = 11
+  uiOf(app).rev++
+  await settle()
+  const first = bk(app, 'wait')!.rows.find(r => r.here)!
+  assert.equal(el.querySelector('[data-act="seatdoor"]')!.getAttribute('data-takes'), first.party)
+  assert.ok(el.querySelector(`[data-queue] li[data-party="${first.party}"] [data-fastmark]`))
+  const ents = app.store.state.world.ents
+  Object.keys(ents).filter(k => ents[k].queue).forEach(k => delete ents[k])
+  uiOf(app).rev++
+  await settle()
+  const b = el.querySelector<HTMLButtonElement>('[data-act="seatdoor"]')!
+  assert.ok(b.disabled)
+  assert.match(b.parentElement!.textContent!, /Nobody is waiting at the door/)
+})
+test('selecting a party in the queue or at the stand sets the stepper to its size', async () => {
+  const {el, app} = rig()
+  load(app, 'lunch')
+  await settle()
+  const rows = ask(app, 'stand')!.door
+  const odd = rows[0]
+  uiOf(app).size = odd.size === 7 ? 8 : 7
+  uiOf(app).rev++
+  await settle()
+  click(el, `[data-queue] li[data-party="${odd.party}"] [data-act="q-pick"]`)
+  await settle()
+  assert.equal(uiOf(app).size, odd.size)
+  assert.equal(uiOf(app).stand!.party, odd.party)
+  uiOf(app).size = odd.size === 7 ? 8 : 7
+  click(el, `[data-stand] [data-act="stand-focus"][data-id="${odd.party}"]`)
+  assert.equal(uiOf(app).size, odd.size)
+})
+test('fast seating says where: the button line, door rows and stand cards preview the table; after the click a status confirmation names the same table and opens its card', async () => {
+  const {el, app} = rig()
+  load(app, 'lunch')
+  await settle()
+  const head = ask(app, 'stand')!.door[0]
+  uiOf(app).size = head.size
+  uiOf(app).rev++
+  await settle()
+  const line = text(el, '[data-act="seatdoor"] + [data-dest]')
+  assert.match(line, /^Goes to T\d+ \(.*\), ready now\.$/)
+  assert.match(text(el, '[data-act="quick"] + [data-dest]'), /^Goes to T\d+/)
+  const row = text(el, `[data-queue] li[data-party="${head.party}"] [data-goes]`)
+  assert.equal(row, `would go to ${line.replace(/^Goes to /, '').replace(', ready now.', '')}`)
+  assert.equal(text(el, `[data-stand] [data-id="${head.party}"] [data-goes]`), row)
+  assert.equal(el.querySelector('[data-landed]')!.getAttribute('role'), 'status')
+  assert.equal(el.querySelector('[data-landed]')!.textContent, '')
+  click(el, '[data-act="seatdoor"]')
+  await settle()
+  const seated = having(app.store.state.world, 'slot').find(s => s.slot.party === head.party)!.slot.table
+  const label = app.store.state.world.ents[seated].table!.label
+  assert.ok(line.includes(`Goes to ${label} `), 'previewed table = seated table')
+  assert.match(text(el, '[data-fast] [data-landed]'), new RegExp(`Seated ${head.label} x${head.size} -> ${label} `))
+  assert.ok(el.querySelector('[data-stand] [data-landed]') || el.querySelectorAll('[data-landed]').length >= 1)
+  assert.equal(el.querySelector(`[data-fast] [data-landed] [data-act="ent"]`)!.getAttribute('data-eid'), seated)
+  click(el, '[data-fast] [data-act="landed-x"]')
+  await settle()
+  assert.equal(el.querySelector('[data-fast] [data-landed]')!.textContent, '')
 })

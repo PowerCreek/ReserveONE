@@ -5,8 +5,8 @@ import {ALERT, STAFF, contour, seatedAt, seatsOf, serverOf, slotAt, titleOf} fro
 import type {Alerts, Place} from './draw.ts'
 import {CAM, H, W, floorOf, hull, levelName, levelOf, levels} from './geo.ts'
 import type {Box} from './geo.ts'
-import {SEAT, Z, bench, chair, counter, depth, extent, grow, mid, ngon, order, piece, proj, pts, rect, stool, strip, table, wall} from './furniture.ts'
-import type {Box3, P3, Piece, Turn, V2} from './furniture.ts'
+import {SEAT, Z, bench, chair, counter, depth, extent, grow, html, mid, ngon, order, piece, proj, pts, rect, shapes, stool, strip, table, wall, wrapKind} from './furniture.ts'
+import type {Box3, P3, Piece, Shape, Turn, V2} from './furniture.ts'
 import {fitOf, offset, viewBox} from './isocam.ts'
 import type {View} from './isocam.ts'
 import {esc} from './render.ts'
@@ -93,16 +93,23 @@ const ZEDGE: Record<string, string> = {stand: 'stroke-indigo-500 dark:stroke-ind
 const QUIET = ['divider', 'prop'] // never named on the plan
 const STANDING = ['wall', 'divider']
 const txt = (p: V2, cls: string, s: unknown, anchor = 'middle') => `<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
-const zone = (t: Turn, lite = false) => (z: Ent<'zone' | 'pos'>) =>
-  `<g data-izone="${esc(z.zone.kind)}">${lite ? '' : `<title>${esc(z.zone.label)}</title>`}<polygon points="${pts(flat(t, z.pos, 0.5))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
-  (QUIET.includes(z.zone.kind) || lite ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
+const zone = (t: Turn) => (z: Ent<'zone' | 'pos'>) =>
+  `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${pts(flat(t, z.pos, 0.5))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
+  (QUIET.includes(z.zone.kind) ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
 /** Standing zones: a wall box (counter height), a line wall at wall height, a divider at shoulder height. */
 const WALL = 'fill-stone-300 stroke-stone-500 stroke-[0.5px] dark:fill-stone-600 dark:stroke-stone-400'
-const standing = (t: Turn) => (z: Ent<'zone' | 'pos'>): Frag[] => ((h = z.zone.kind === 'divider' ? Z.divider : z.pos.w && z.pos.h ? Z.bar : Z.wall) =>
-  wall(z.pos, h, WALL, G).map((p, i) => frag(p, `<g data-izone="${esc(z.zone.kind)}">${i ? '' : `<title>${esc(z.zone.label)}</title>`}${piece(t)(p)}</g>`)))()
+/** A fragment: one piece of furniture, its painter box and the markup around it (`open` / `close`); `key` names it within its level. Turned at draw time (`fhtml`, or moved in place by layersiso). */
+export type Frag = {key: string; at: V2; box: Box3; open: string; close: string; p: Piece}
+const frag = (key: string, p: Piece, open: string): Frag => ({key, at: p.at, box: extent(p), open, close: '</g>', p})
+export const fhtml = (f: Frag, sh: Shape[]) => f.open + wrapKind(f.p.kind, sh.map(html).join('')) + f.close
+export const drawn = (tu: Turn) => (f: Frag) => shapes(tu)(f.p)
+const standing = (z: Ent<'zone' | 'pos'>): Frag[] => ((h = z.zone.kind === 'divider' ? Z.divider : z.pos.w && z.pos.h ? Z.bar : Z.wall) =>
+  wall(z.pos, h, WALL, G).map((p, i) => frag(`${z.id}/${i}`, p, `<g data-izone="${esc(z.zone.kind)}">${i ? '' : `<title>${esc(z.zone.label)}</title>`}`)))()
+/** A wall's pieces depend on its zone only: kept between frames. */
+const walls = new Map<string, {sig: string; fr: Frag[]}>()
+const wallsOf = (z: Ent<'zone' | 'pos'>): Frag[] => ((sig = `${JSON.stringify(z.pos)}|${z.zone.kind}|${z.zone.label}`, hit = walls.get(z.id)) =>
+  hit?.sig === sig ? hit.fr : ((fr = standing(z)) => (walls.set(z.id, {sig, fr}), fr))())()
 // ---- tables as furniture; every piece is its own fragment so the painter can sort it among its neighbours (a table's pieces repeat its data-tid, marked data-frag)
-export type Frag = {at: V2; box: Box3; html: string}
-const frag = (p: Piece, html: string): Frag => ({at: p.at, box: extent(p), html})
 type Side = 't' | 'r' | 'b' | 'l'
 const sideOf = (p: Box, b: Box): Side => (b.y + b.h <= p.y + 0.5 ? 't' : b.y >= p.y + p.h - 0.5 ? 'b' : b.x + b.w <= p.x + 0.5 ? 'l' : 'r')
 const FACE: Record<Side, number> = {t: Math.PI / 2, b: -Math.PI / 2, l: 0, r: Math.PI}
@@ -159,16 +166,26 @@ const INK_BIG = 'text-[11px] font-bold [paint-order:stroke] stroke-white/80 stro
 const INK_SMALL = 'text-[8px] font-bold [paint-order:stroke] stroke-white/80 stroke-[2px] dark:stroke-slate-900/80'
 /** A table: its hit footprint (first, under everything; carries the title and seat count), its pieces as fragments, and its ring and label (over the level). */
 export type Block = {at: V2; hit: string; frags: Frag[]; over: string}
-/** `lite` (a drag-turn frame): the table's body only, no seats, footprint or name; the release redraws in full. */
-export const block = (c: Ctx, o: Iso, tu: Turn, lite = false) => (t: T): Block => {
-  const [paint, b, tag] = [PAINT[o.pal](c)(t), buildOf(t), `data-act="tcard" data-tid="${esc(t.id)}"`]
-  const cls = lite ? [] : finish(c, t, b, paint)
-  const nb = b.benches ? b.places.filter(q => q.kind === 'bench').length : 0
-  const parts = lite ? b.body(paint) : [...b.body(paint), ...(b.benches?.(cls.slice(0, nb)) ?? []), ...b.places.map((pl, i) => (i < nb ? undefined : SEATS[pl.kind](t, pl, cls[i]!))).filter((x): x is Piece => !!x)]
-  const label = lite ? '' : txt(proj(tu)([...centroid(b.top), b.th + 1] as P3), `${paint.ink} ${t.pos.w < 2 * G || t.pos.h < 2 * G || b.own ? INK_SMALL : INK_BIG}`, t.table.label)
-  return lite ? {at: mid(t.pos), hit: '', over: '', frags: parts.map((p, i) => frag(p, `<g ${tag} data-frag data-fi="${i}">${piece(tu)(p)}</g>`))} : {at: mid(t.pos), hit: `<g ${tag} data-taken="${seatedAt(c.w, t.id)}" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title><polygon points="${pts(flat(tu, t.pos))}" class="fill-transparent"/></g>`,
-    frags: parts.map((p, i) => frag(p, `<g ${tag} data-frag data-fi="${i}" class="cursor-pointer">${piece(tu)(p)}</g>`)), over: `<g ${tag} data-frag data-over class="cursor-pointer">${ring3(c, t, tu, b)}${label}</g>`}
+const tagOf = (t: T) => `data-act="tcard" data-tid="${esc(t.id)}"`
+/** A table's pieces in their finishes, kept while its build, palette and seat finishes stay (the turn does not change them). */
+const kept = new Map<string, {b: Build; sig: string; fr: Frag[]}>()
+const piecesOf = (t: T, b: Build, paint: Paint, cls: string[]): Piece[] => ((nb = b.benches ? b.places.filter(q => q.kind === 'bench').length : 0) =>
+  [...b.body(paint), ...(b.benches?.(cls.slice(0, nb)) ?? []), ...b.places.map((pl, i) => (i < nb ? undefined : SEATS[pl.kind](t, pl, cls[i]!))).filter((x): x is Piece => !!x)])()
+export const fragsOf = (c: Ctx, o: Iso, t: T): Frag[] => {
+  const [paint, b] = [PAINT[o.pal](c)(t), buildOf(t)]
+  const [cls, old] = [finish(c, t, b, paint), kept.get(t.id)]
+  const sig = `${paint.cls}|${paint.fill ?? ''}|${cls.join(',')}`
+  const fr = old?.b === b && old.sig === sig ? old.fr : piecesOf(t, b, paint, cls).map((p, i) => frag(`${t.id}/${i}`, p, `<g ${tagOf(t)} data-frag data-fi="${i}" class="cursor-pointer">`))
+  return (kept.set(t.id, {b, sig, fr}), fr)
 }
+const hitOf = (c: Ctx, tu: Turn) => (t: T) =>
+  `<g ${tagOf(t)} data-taken="${seatedAt(c.w, t.id)}" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title><polygon points="${footprint(tu, t)}" class="fill-transparent"/></g>`
+const overOf = (c: Ctx, o: Iso, tu: Turn) => (t: T) => {
+  const [paint, b] = [PAINT[o.pal](c)(t), buildOf(t)]
+  const label = txt(proj(tu)([...centroid(b.top), b.th + 1] as P3), `${paint.ink} ${t.pos.w < 2 * G || t.pos.h < 2 * G || b.own ? INK_SMALL : INK_BIG}`, t.table.label)
+  return `<g ${tagOf(t)} data-frag data-over class="cursor-pointer">${ring3(c, t, tu, b)}${label}</g>`
+}
+export const block = (c: Ctx, o: Iso, tu: Turn) => (t: T): Block => ({at: mid(t.pos), hit: hitOf(c, tu)(t), frags: fragsOf(c, o, t), over: overOf(c, o, tu)(t)})
 const NAME = 'fill-slate-600 stroke-white stroke-[3px] text-[13px] font-semibold uppercase tracking-wide [paint-order:stroke] dark:fill-slate-300 dark:stroke-slate-900'
 /** A floor's name off its slab's far corner (top of the screen under the turn). */
 const name = (tu: Turn) => ([f, b]: [Ent<'floor'>, Box]) => ((cs = rect(b).map(p => proj(tu)([p[0], p[1], 0])), top = cs.reduce((a, p) => (p[1] < a[1] ? p : a))) => txt([top[0], top[1] - 8], NAME, f.floor.name))()
@@ -180,19 +197,32 @@ export const tr = (v: V2) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
 /** What a level draws, by layer (bottom to top): base = slabs, zone outlines, grid; hits = table footprints; furn = furniture back to front; over = rings and table names; names = floor names; units, pings = the movers. */
 export const LAYERS = ['base', 'hits', 'furn', 'over', 'names', 'units', 'pings'] as const
 export type Layers = Record<typeof LAYERS[number], string>
-export const levelParts = (c: Ctx, o: Iso, fx: Fx[], live: boolean, lv: number): Layers => {
-  const tu = turnOf(c.w, o)
+/** A level's tables far to near under the turn. */
+export const tabsAt = (c: Ctx, tu: Turn, lv: number) => tablesAt(c.w, lv).sort((a, b) => depthOf(tu, mid(a.pos)) - depthOf(tu, mid(b.pos)))
+/** A level's floor slabs with their stitched reach: they depend on the layout only. */
+export const slabsOf = (c: Ctx, lv: number): [Ent<'floor'>, Box][] => {
   const raw = having(c.w, 'floor').filter(f => levelOf(c.w, f.id) === lv).map(f => [f, slabOf(c.w, lv)(f)] as const).filter((x): x is [Ent<'floor'>, Box] => !!x[1])
-  const fs = raw.map(([f, b]): [Ent<'floor'>, Box] => [f, reachTo(raw.map(x => x[1]))(b)])
-  const zs = zonesAt(c.w, lv)
-  const bs = tablesAt(c.w, lv).map(block(c, o, tu, live)).sort((a, b) => depthOf(tu, a.at) - depthOf(tu, b.at))
-  const fr = [...bs.flatMap(b => b.frags), ...zs.filter(z => STANDING.includes(z.zone.kind)).flatMap(standing(tu))]
-  return {
-    base: fs.map(slab(tu, lv)).join('') + zs.filter(z => !STANDING.includes(z.zone.kind)).map(zone(tu, live)).join('') + (live ? '' : gridOf(tu, lv, fs.map(x => x[1]))),
-    hits: bs.map(b => b.hit).join(''),
-    furn: (live ? fr.map((_, i) => i).sort((i, j) => depthOf(tu, fr[i]!.at) - depthOf(tu, fr[j]!.at)) : order(tu, fr)).map(i => fr[i]!.html).join(''),
-    over: bs.map(b => b.over).join(''), names: live ? '' : fs.map(name(tu)).join(''), ...movers(c, o, fx, lv),
-  }
+  return raw.map(([f, b]): [Ent<'floor'>, Box] => [f, reachTo(raw.map(x => x[1]))(b)])
+}
+export const hitsOf = (c: Ctx, tu: Turn, tabs: T[]) => tabs.map(hitOf(c, tu)).join('')
+/** A table's footprint polygon under a turn (the hit layer follows a turn by this alone). */
+export const footprint = (tu: Turn, t: T) => pts(flat(tu, t.pos))
+/** What the level draws besides furniture, hits and movers: slabs, zone outlines and grid, table rings and names, floor names. */
+export const statics = (c: Ctx, o: Iso, tu: Turn, lv: number, tabs: T[], fs: [Ent<'floor'>, Box][]) => {
+  const zs = zonesAt(c.w, lv).filter(z => !STANDING.includes(z.zone.kind))
+  return {base: fs.map(slab(tu, lv)).join('') + zs.map(zone(tu)).join('') + gridOf(tu, lv, fs.map(x => x[1])), over: tabs.map(overOf(c, o, tu)).join(''), names: fs.map(name(tu)).join('')}
+}
+/** The level's fragments in draw-input order: tables far to near, then standing zones. */
+export const wallsAt = (c: Ctx, lv: number): Frag[] => zonesAt(c.w, lv).filter(z => STANDING.includes(z.zone.kind)).flatMap(wallsOf)
+export const fragsAt = (c: Ctx, o: Iso, lv: number, tabs: T[]): Frag[] => [...tabs.flatMap(t => fragsOf(c, o, t)), ...wallsAt(c, lv)]
+/** Fragments back to front by the painter (`order`). */
+export const sorted = (tu: Turn, fr: Frag[]) => order(tu, fr).map(i => fr[i]!)
+export type Parts = Layers & {fr: Frag[]; sh: Shape[][]}
+export const levelParts = (c: Ctx, o: Iso, fx: Fx[], lv: number): Parts => {
+  const tu = turnOf(c.w, o), tabs = tabsAt(c, tu, lv)
+  const fr = sorted(tu, fragsAt(c, o, lv, tabs))
+  const sh = fr.map(drawn(tu))
+  return {...statics(c, o, tu, lv, tabs, slabsOf(c, lv)), hits: hitsOf(c, tu, tabs), furn: fr.map((f, i) => fhtml(f, sh[i]!)).join(''), fr, sh, ...movers(c, o, fx, lv)}
 }
 /** Units and pings of a level (the mover layers), keyed for in-place updates. */
 export const unitsOf = (c: Ctx, o: Iso, lv: number) => (o.units ? having(c.w, 'body').filter(b => levelOf(c.w, floorOf(c.w, b.id)) === lv) : [])
@@ -200,10 +230,10 @@ export const pingsOf = (c: Ctx, o: Iso, fx: Fx[], lv: number) => (o.pings ? fx.f
 const movers = (c: Ctx, o: Iso, fx: Fx[], lv: number) => ((tu = turnOf(c.w, o)) => ({units: unitsOf(c, o, lv).map(unit(tu)).join(''), pings: pingsOf(c, o, fx, lv).map(ping(tu)).join('')}))()
 export const levelOpen = (c: Ctx, o: Iso, lv: number) => `<g data-level="${lv}" opacity="${(o.op[lv] ?? 100) / 100}" transform="${tr(lift(c.w, o, lv))}">`
 export const wrapLayers = (p: Layers) => LAYERS.map(k => `<g data-layer="${k}">${p[k]}</g>`).join('')
-const level = (c: Ctx, o: Iso, fx: Fx[], live = false) => (lv: number) => levelOpen(c, o, lv) + wrapLayers(levelParts(c, o, fx, live, lv)) + '</g>'
+const level = (c: Ctx, o: Iso, fx: Fx[]) => (lv: number) => levelOpen(c, o, lv) + wrapLayers(levelParts(c, o, fx, lv)) + '</g>'
 const depthOf = (tu: Turn, p: V2) => depth(tu)(p)
-/** The svg's insides (live redraws during a drag swap these and the viewBox, keeping the svg element; `live` skips the grids and sorts by depth only; the release repaints in full). */
-export const isoInner = (c: Ctx, o: Iso, fx: Fx[] = [], live = false) => shownLevels(c.w, o).map(level(c, o, fx, live)).join('')
+/** The svg's insides, every level in full. */
+export const isoInner = (c: Ctx, o: Iso, fx: Fx[] = []) => shownLevels(c.w, o).map(level(c, o, fx)).join('')
 export const isoBox = (c: Ctx, o: Iso) => viewBox(isoFit(c.w, o), o.cam)
 const HINT = 'isometric floors: drag empty space to turn, drag a level to move it along x, y or z, shift or right drag to pan, wheel to zoom'
 /** The svg around the layers: the live panel paints this and the layers fill it (layers.iso.ts); `isoSvg` is the same with everything inside as one string. */

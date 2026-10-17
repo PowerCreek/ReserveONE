@@ -66,8 +66,9 @@ export type BookCmd =
   | {do: 'leave'; party: Id; why: Exclude<GoneWhy, 'noshow'>; note?: string}
   | {do: 'bump'; party: Id; to: 'up' | 'down' | 'top'; why: string}
   | {do: 'text'; party: Id}
+  | {do: 'note'; party: Id; notes: string} // free-text notes on a reservation or call-ahead (also settable through edit)
 /** Availability for a draft at its time: `spots` that can take it (tightest first), `taken` = how many of them other bookings in the window will need; `alts` = nearby times that work. */
-export interface Avail {ok: boolean; at: number; spots: {id: Id; label: string; tables: Id[]; area: Id}[]; taken: number; why: string; alts: number[]}
+export interface Avail {plan?: import('./engine.ts').Placed | null; ok: boolean; at: number; spots: {id: Id; label: string; tables: Id[]; area: Id}[]; taken: number; why: string; alts: number[]}
 export type AvailQ = Pick<Draft, 'size' | 'at' | 'durationMin' | 'feats' | 'area'> & {skip?: Id}
 export type ResState = 'BOOKED' | 'LATE' | 'ARRIVED' | 'SEATED' | 'NO_SHOW' | 'CANCELLED'
 export type BookAct = 'arrive' | 'seat' | 'noshow' | 'edit' | 'cancel'

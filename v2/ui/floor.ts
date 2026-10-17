@@ -59,7 +59,7 @@ export const fitOf = (s: ReturnType<typeof scope>): Box => {
 const named = (w: World, ts: {table: {section: Id | null}}[]) => having(w, 'section').filter(x => ts.some(t => t.table.section === x.id)).map(x => x.section.name.toLowerCase())
 /** How the 2D view is looked at: the camera, the grid toggle, insight outlines, the table whose card is open. */
 export interface Look {cam?: Cam; grid?: boolean; alerts?: Alerts; pick?: Id}
-const SVG = 'block mx-auto aspect-[4/3] w-full max-w-[104vh] cursor-grab touch-none select-none rounded bg-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-500 active:cursor-grabbing dark:bg-slate-900'
+const SVG = 'block h-[72vh] w-full cursor-grab touch-none select-none rounded bg-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-500 active:cursor-grabbing dark:bg-slate-900'
 const HINT = 'restaurant floor: drag or arrow keys to pan, ctrl + wheel or + and - to zoom, 0 to fit'
 const PLAN = ['grid', 'zones', 'secs', 'links', 'tables', 'over', 'door', 'units', 'pings'] as const
 type Plan = ReturnType<typeof scope>
@@ -133,6 +133,13 @@ const camBar = (app: App) => `<div role="group" aria-label="camera" class="inlin
   camBtn('out', '−', 'zoom out') + `<span class="w-11 text-center text-xs tabular-nums text-slate-500">${Math.round(camOf(app).z * 100)}%</span>` + camBtn('in', '+', 'zoom in') + camBtn('fit', 'Fit', 'fit the floor') + '</div>'
 const BARS: Record<string, (app: App) => string> = {'2d': camBar, iso: () => ''}
 const bar = (app: App) => `<div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">${toggle(viewOf(app))}${BARS[viewOf(app)]!(app)}</div>`
+/** A resize only records the size; one frame later the viewBox and grid follow (resizes of a burst coalesce). */
+const watched = new WeakMap<Element, ResizeObserver | null>()
+const sized = new WeakSet<App>()
+const watch = (app: App, svg: Element) => watched.has(svg) || watched.set(svg, typeof ResizeObserver === 'undefined' ? null : ((o = new ResizeObserver(es => {
+  sizes.set(svg, [es.at(-1)!.contentRect.width, es.at(-1)!.contentRect.height])
+  sized.has(app) || (sized.add(app), requestAnimationFrame(() => (sized.delete(app), repan(app))))
+})) => (o.observe(svg), o))())
 const MODE = new WeakMap<Element, string>()
 /** After each panel paint: the svg is the layers' own; sync them with the world (skipped layers cost nothing). */
 const sync = (app: App, el: Element) => ((svg = el.querySelector('svg[data-plan], svg[data-iso]'), w = worldOf(app)) => {
@@ -140,6 +147,7 @@ const sync = (app: App, el: Element) => ((svg = el.querySelector('svg[data-plan]
   own(svg)
   const mode = svg.hasAttribute('data-iso') ? 'iso' : 'plan'
   MODE.get(svg) !== mode && (svg.replaceChildren(), resetIso(svg), plans.delete(svg), MODE.set(svg, mode))
+  mode === 'plan' && (watch(app, svg), repan(app))
   mode === 'iso' ? turning.has(app) || syncIso(svg, (last.set(app, ctx(app, alertsNow(app))), last.get(app)!), isoOf(app), fxOf(app)) : syncPlan(svg, w, fxOf(app), shown(w, uiOf(app).floorId), held(app), {cam: camOf(app), grid: uiOf(app).grid ?? true, alerts: alertsNow(app), pick: uiOf(app).card?.table})
 })()
 const draw = (app: App) => (having(worldOf(app), 'table', 'pos').length ? bar(app) + VIEWS[viewOf(app)]!(app, alertsNow(app)) + cardHtml(app) : empty)
@@ -156,10 +164,16 @@ const CAMS: Record<string, (app: App) => Cam> = {
   out: a => zoomAt(fitNow(a) ?? {x: 0, y: 0, w: W, h: H}, camOf(a), camOf(a).z / STEP),
   fit: () => CAM,
 }
+// ---- the real visible box: the element's own size decides how much of the plane it shows, so graphics and grid cover every pixel (no letterbox bands)
+const sizes = new WeakMap<Element, [number, number]>()
+const sizeOf = (svg: Element): [number, number] | undefined => ((r = svg.getBoundingClientRect?.(), z = sizes.get(svg) ?? (r ? [r.width, r.height] as [number, number] : undefined)) => (z && z[0] > 0 && z[1] > 0 ? z : undefined))()
+/** The camera's box widened (or heightened) to an element of `size`, about the same centre; without a size, the box itself. */
+export const frame = (v: Box, size?: [number, number]): Box =>
+  size ? ((a = size[0] / size[1], w = Math.max(v.w, v.h * a), h = Math.max(v.h, v.w / a)) => ({x: v.x + v.w / 2 - w / 2, y: v.y + v.h / 2 - h / 2, w, h}))() : v
 const planEl = (): SVGSVGElement | null => globalThis.document?.querySelector('[data-floor] svg[data-plan]') ?? null
 const fitNow = (_a: App): Box | undefined => ((f = planEl()?.getAttribute('data-fit')?.split(' ').map(Number)) => f && {x: f[0]!, y: f[1]!, w: f[2]!, h: f[3]!})()
 /** Move the live svg to the camera without a repaint. */
-const repan = (app: App) => ((svg = planEl(), fit = fitNow(app)) => svg && fit && ((v = seen(fit, camOf(app))) => (svg.setAttribute('viewBox', boxStr(v)), svg.querySelector('[data-grid]')?.replaceChildren(), svg.querySelector('[data-grid]')?.insertAdjacentHTML('beforeend', gridLines(v))))())()
+const repan = (app: App) => ((svg = planEl(), fit = fitNow(app)) => svg && fit && ((v = frame(seen(fit, camOf(app)), sizeOf(svg))) => (svg.setAttribute('viewBox', boxStr(v)), svg.querySelector('[data-grid]')?.replaceChildren(), svg.querySelector('[data-grid]')?.insertAdjacentHTML('beforeend', gridLines(v))))())()
 const pan = (app: App, dx: number, dy: number) => ((uiOf(app).cam = {...camOf(app), x: camOf(app).x + dx, y: camOf(app).y + dy}), repan(app))
 const ARROWS: Record<string, [number, number]> = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}
 const ZKEYS: Record<string, string> = {'+': 'in', '=': 'in', '-': 'out', _: 'out', '0': 'fit'}
@@ -175,13 +189,16 @@ const ACTS: Record<string, (app: App, ev: Event) => void> = {
   cam: (a, ev) => (uiOf(a).cam = (CAMS[arg(ev, 'k')] ?? camOf)(a)),
 }
 // ---- gestures (gesture.ts): drag, wheel and pinch only pile deltas up; each animation frame applies them once, eased. Pan and zoom move the viewBox of the cached layers, a turn re-projects once per frame, the release repaints in full.
+/** The gesture's anchor is a fraction of the real visible box; the camera math wants it as a fraction of the camera's own box. */
+const inSeen = (fit: Box, cam: Cam, g: {svg: SVGSVGElement; anchor: [number, number]}): [number, number] => ((v = seen(fit, cam), e = frame(v, sizeOf(g.svg))) =>
+  [(e.x + g.anchor[0] * e.w - v.x) / v.w, (e.y + g.anchor[1] * e.h - v.y) / v.h] as [number, number])()
 const planGesture = (app: App, el: Element) => gesture({
   root: el, sel: '[data-floor] svg[data-plan]', fling: ['pan'], tau: 60,
   mode: ev => (ev.button === 0 ? 'pan' : undefined), push: {pan: (dx, dy) => ({px: dx, py: dy})},
   wheel: ev => ev.ctrlKey || ev.metaKey, begin: () => closeCard(app),
   apply: (d, g, settled) => {
     const fit = fitNow(app) ?? {x: 0, y: 0, w: W, h: H}
-    const z = d.lz ? zoomAt(fit, camOf(app), camOf(app).z * Math.exp(d.lz), g.anchor[0], g.anchor[1]) : camOf(app)
+    const z = d.lz ? zoomAt(fit, camOf(app), camOf(app).z * Math.exp(d.lz), ...inSeen(fit, camOf(app), g)) : camOf(app)
     glide.set(app, {...glide.get(app), cam: {...z, x: z.x - (d.px ?? 0) * g.k, y: z.y - (d.py ?? 0) * g.k}})
     repan(app)
     settled && (Object.assign(uiOf(app), {cam: camOf(app)}), glide.delete(app), uiOf(app).rev++)

@@ -112,7 +112,14 @@ const textRow: Row<'text'> = (c, cmd) => {
   const e = partyOf(c.w, cmd.party)
   return r && e ? done([set(e.id, {intake: {...intakeOf(e), texted: c.now}})], [], `Texted ${e.party.name || e.party.label}: your table is ready`) : fail(`${cmd.party} is not waiting`)
 }
-const rows: {[K in BookCmd['do']]: Row<K>} = {book: bookRow, edit: editRow, call: callRow, walk: walkRow, arrive: arriveRow, noshow: noshowRow, leave: leaveRow, bump: bumpRow, text: textRow}
+// ---- note: free text on a booked, called-ahead or waiting party (intake.notes; a reservation keeps its own copy in step)
+const noteRow: Row<'note'> = (c, cmd) => {
+  const e = partyOf(c.w, cmd.party)
+  const err = live(c, cmd.party, e) ?? why([[typeof cmd.notes !== 'string', 'Notes must be text']])
+  const r = e?.reservation && {reservation: {...e.reservation, notes: cmd.notes}}
+  return err ? fail(err) : done([set(e!.id, {intake: {...intakeOf(e!), notes: cmd.notes}, ...r})], [], `${e!.party.label} ${e!.party.name}: ${cmd.notes.trim() ? `note "${cmd.notes.trim()}"` : 'note cleared'}`)
+}
+const rows: {[K in BookCmd['do']]: Row<K>} = {book: bookRow, edit: editRow, call: callRow, walk: walkRow, arrive: arriveRow, noshow: noshowRow, leave: leaveRow, bump: bumpRow, text: textRow, note: noteRow}
 export const bookAct: Booking['act'] = (p, w, now, cmd) => {
   const row = rows[cmd?.do as BookCmd['do']] as Row<BookCmd['do']> | undefined
   return row ? row({p, w, now, b: bookOf(p)}, cmd) : fail(`Unknown booking command ${cmd?.do}`)

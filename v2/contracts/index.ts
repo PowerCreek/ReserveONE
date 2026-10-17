@@ -8,3 +8,4 @@ export * from './scenario.ts'
 export * from './service.ts'
 export * from './desk.ts'
 export * from './booking.ts'
+export type {Guess, Gate, StratHold, StratCtl, Pair, Risk, Share, StratView, Strategist} from './strategy.ts' // Lane and Move stay in strategy.ts (desk.ts owns those names)

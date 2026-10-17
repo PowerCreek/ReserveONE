@@ -57,4 +57,5 @@ export interface Service {
   tell: Decide<[table: Id], Decision> // host action: set `slot.told`; refuses with a reason when the area is seen, nothing is seated, or no server holds the table
 }
 import type {Desk} from './desk.ts'
-export type HostEngine = Engine & Coach & Service & Omit<Desk, 'board'> & {board?: Desk['board']} // board lands with wave 5 (engine/board.ts)
+import type {Strategist} from './strategy.ts'
+export type HostEngine = Engine & Coach & Service & Omit<Desk, 'board'> & {board?: Desk['board']} & Partial<Strategist> // board lands with wave 5 (engine/board.ts); strategy is the planner (contracts/strategy.ts)

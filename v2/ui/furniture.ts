@@ -18,35 +18,60 @@ export const depth = (t: Turn) => (p: V2) => ((q = spin(t)(p)) => q[0] + q[1])()
 const f1 = (n: number) => String(Math.round(n * 10) / 10)
 export const pts = (ps: V2[]) => ps.map(([x, y]) => `${f1(x)},${f1(y)}`).join(' ')
 /** A solid: footprint (convex, frame px) from z up by h; `flat` = no side shading (outlines, thin slabs); `post` = a stroke of that width up from the footprint's one point (legs, pedestals). */
-export interface Solid {foot: V2[]; z: number; h: number; cls: string; fill?: string; flat?: boolean; post?: number; sides?: boolean[]; seam?: boolean} // sides = which footprint edges get a side face (default all: a tile drops the edges it shares); seam = the top is filled without a stroke and only the drawn edges are outlined (tiles read as one piece)
+export interface Solid {foot: V2[]; z: number; h: number; cls: string; fill?: string; flat?: boolean; post?: number; legs?: boolean; sides?: boolean[]; seam?: boolean} // sides = which footprint edges get a side face (default all: a tile drops the edges it shares); seam = the top is filled without a stroke and only the drawn edges are outlined (tiles read as one piece)
 /** A piece: solids drawn as one unit, sorted with its neighbours by the depth of `at`. */
 export interface Piece {at: V2; solids: Solid[]; kind?: string}
 const mean = (ps: V2[]): V2 => [ps.reduce((s, p) => s + p[0], 0) / ps.length, ps.reduce((s, p) => s + p[1], 0) / ps.length]
 const outward = (m: V2) => ([a, b]: [V2, V2]): V2 => ((n: V2 = [b[1] - a[1], a[0] - b[0]], o = (a[0] + b[0]) / 2 - m[0], q = (a[1] + b[1]) / 2 - m[1]) => (n[0] * o + n[1] * q < 0 ? [-n[0], -n[1]] : n) as V2)()
 const fill = (s: Solid) => (s.fill ? ` fill="${s.fill}"` : '')
-const poly = (ps: V2[], cls: string, f = '') => `<polygon points="${pts(ps)}"${f} class="${cls}"/>`
-/** Sides facing the viewer (outward normal toward +x+y once turned), each under a shade by its facing, then the top face. */
-const post = (t: Turn, s: Solid) => ((p = spin(t)(s.foot[0]!), a = iso(p, s.z), b = iso(p, s.z + s.h)) =>
-  `<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke-width="${s.post}" class="${s.cls}"/>`)()
-/** A floor bar: a stroke along the footprint's two points at z (cross-base arms). */
-const bar = (t: Turn, s: Solid) => ((a = iso(spin(t)(s.foot[0]!), s.z), b = iso(spin(t)(s.foot[1]!), s.z)) =>
-  `<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke-width="${s.post}" stroke-linecap="round" class="${s.cls}"/>`)()
-export const solid = (t: Turn) => (s: Solid) => (s.post ? (s.foot.length > 1 ? bar(t, s) : post(t, s)) : box(t, s))
-const box = (t: Turn, s: Solid) => {
-  const r = s.foot.map(spin(t))
-  const edges = r.map((a, i): [V2, V2] => [a, r[(i + 1) % r.length]!])
-  const seen = edges.map(e => [e, outward(mean(r))(e)] as const).filter(([, n], i) => n[0] + n[1] > 1e-9 && (s.sides?.[i] ?? true))
-  const side = ([[a, b], n]: readonly [[V2, V2], V2]) => ((q = [iso(a, s.z), iso(b, s.z), iso(b, s.z + s.h), iso(a, s.z + s.h)]) =>
-    poly(q, s.cls, fill(s) + (s.seam ? NOSTROKE : '')) + (s.flat ? '' : poly(q, n[1] > n[0] ? 'fill-black/10' : 'fill-black/30')))()
-  return seen.map(side).join('') + (s.seam ? seamTop(s, edges) : poly(r.map(p => iso(p, s.z + s.h)), s.cls, fill(s)))
+/** One drawn element split into its fixed part (`a`: attributes other than geometry) and its geometry (`g`: points, or x1 y1 x2 y2), so a retained element follows a new turn by writing `g` alone. */
+export interface Shape {tag: 'polygon' | 'polyline' | 'path'; a: string; g: string[]}
+export const GEO: Record<Shape['tag'], string[]> = {polygon: ['points'], polyline: ['points'], path: ['d']}
+const HTML: Record<Shape['tag'], (s: Shape) => string> = {
+  polygon: s => `<polygon points="${s.g[0]}"${s.a}/>`,
+  polyline: s => `<polyline points="${s.g[0]}"${s.a}/>`,
+  path: s => `<path d="${s.g[0]}"${s.a}/>`,
 }
+export const html = (s: Shape) => HTML[s.tag](s)
+const stroke = (p: V2, q: V2, a: string): Shape => ({tag: 'polyline', a, g: [`${f1(p[0])},${f1(p[1])} ${f1(q[0])},${f1(q[1])}`]}) // a two-point polyline: one write moves it
+/** A post: a stroke up from the footprint's one point. */
+const post = (t: Turn, s: Solid): Shape[] => ((p = spin(t)(s.foot[0]!)) => [stroke(iso(p, s.z), iso(p, s.z + s.h), ` stroke-width="${s.post}" class="${s.cls}"`)])()
+/** A floor bar: a stroke along the footprint's two points at z (cross-base arms). */
+const bar = (t: Turn, s: Solid): Shape[] => [stroke(iso(spin(t)(s.foot[0]!), s.z), iso(spin(t)(s.foot[1]!), s.z), ` stroke-width="${s.post}" stroke-linecap="round" class="${s.cls}"`)]
+/** Legs: every footprint point a post, drawn as one path (one element to move per chair). */
+const legs = (t: Turn, s: Solid): Shape[] => [{tag: 'path', a: ` fill="none" stroke-width="${s.post}" class="${s.cls}"`, g: [s.foot.map(p => ((q = spin(t)(p)) => `M${f1((q[0] - q[1]) * C)},${f1((q[0] + q[1]) / 2 - s.z)}V${f1((q[0] + q[1]) / 2 - s.z - s.h)}`)()).join('')]}]
+export const solid = (t: Turn) => (s: Solid): Shape[] => (s.legs ? legs(t, s) : s.post ? (s.foot.length > 1 ? bar(t, s) : post(t, s)) : box(t, s))
+// ---- a solid's outward edge normals and centre are fixed in the frame: kept once, turned per draw (the turn only rotates them)
+const geos = new WeakMap<Solid, {ns: V2[]; m: V2}>()
+const geoOf = (s: Solid) => geos.get(s) ?? (geos.set(s, {m: mean(s.foot), ns: s.foot.map((a, i) => outward(mean(s.foot))([a, s.foot[(i + 1) % s.foot.length]!]))}), geos.get(s)!)
+const cs = new WeakMap<Turn, V2>()
+const csOf = (t: Turn): V2 => cs.get(t) ?? (cs.set(t, [Math.cos(rad(t)), Math.sin(rad(t))]), cs.get(t)!)
+/** A solid's footprint turned and projected: per vertex its "x,y" at the base and at the top (strings, so every face only joins them). */
+const verts = (t: Turn, s: Solid): [string, string][] => {
+  const [[co, si], [cx, cy], zt] = [csOf(t), t.c, s.z + s.h]
+  return s.foot.map(([x, y]) => ((rx = cx + (x - cx) * co - (y - cy) * si, ry = cy + (x - cx) * si + (y - cy) * co, sx = f1((rx - ry) * C), sy = (rx + ry) / 2) => [`${sx},${f1(sy - s.z)}`, `${sx},${f1(sy - zt)}`] as [string, string])())
+}
+const face = (a: string, f: string): Shape => ({tag: 'polygon', a: f, g: [a]})
+/** Sides facing the viewer (outward normal toward +x+y once turned), each under a shade by its facing, then the top face. */
+const box = (t: Turn, s: Solid): Shape[] => {
+  const [[co, si], v, ns] = [csOf(t), verts(t, s), geoOf(s).ns]
+  const f = fill(s) + (s.seam ? NOSTROKE : '') + ` class="${s.cls}"`
+  const side = (i: number): Shape[] => ((a = v[i]!, b = v[(i + 1) % v.length]!, q = `${a[0]} ${b[0]} ${b[1]} ${a[1]}`) =>
+    [face(q, f), ...(s.flat ? [] : [face(q, ns[i]![0] * si + ns[i]![1] * co > ns[i]![0] * co - ns[i]![1] * si ? SHADE10 : SHADE30)])])()
+  const seen = v.map((_, i) => i).filter(i => ns[i]![0] * co - ns[i]![1] * si + ns[i]![0] * si + ns[i]![1] * co > 1e-9 && (s.sides?.[i] ?? true))
+  return [...seen.flatMap(side), ...(s.seam ? seamTop(s, v) : [face(v.map(a => a[1]).join(' '), fill(s) + ` class="${s.cls}"`)])]
+}
+const SHADE10 = ' class="fill-black/10"', SHADE30 = ' class="fill-black/30"'
 /** A tile's faces carry no stroke (inline style: it must beat the stroke class); the top's outer edges are stroked on their own. */
 const NOSTROKE = ' style="stroke:none"'
-const seamTop = (s: Solid, edges: [V2, V2][]) => `<polygon points="${pts(edges.map(([a]) => iso(a, s.z + s.h)))}"${fill(s)}${NOSTROKE} class="${s.cls}"/>` +
-  edges.filter((_, i) => s.sides?.[i] ?? true).map(([a, b]) => `<polyline points="${pts([iso(a, s.z + s.h), iso(b, s.z + s.h)])}" class="${s.cls}"/>`).join('')
-/** A piece's solids bottom-up, then far to near (tagged `data-p` with its kind). */
-export const piece = (t: Turn) => (p: Piece) => ((s = [...p.solids].sort((a, b) => a.z - b.z || depth(t)(mean(a.foot)) - depth(t)(mean(b.foot))).map(solid(t)).join('')) =>
-  (p.kind ? `<g data-p="${p.kind}">${s}</g>` : s))()
+const seamTop = (s: Solid, v: [string, string][]): Shape[] => [face(v.map(a => a[1]).join(' '), `${fill(s)}${NOSTROKE} class="${s.cls}"`),
+  ...v.map((a, i): [string, number] => [a[1], i]).filter(([, i]) => s.sides?.[i] ?? true).map(([a, i]) => ({tag: 'polyline', a: ` class="${s.cls}"`, g: [`${a} ${v[(i + 1) % v.length]![1]}`]}) as Shape)]
+/** A piece's solids bottom-up, then far to near, as shapes. */
+export const shapes = (t: Turn) => (p: Piece): Shape[] => ((d = (s: Solid) => ((q = spin(t)(geoOf(s).m)) => q[0] + q[1])()) =>
+  p.solids.map(s => [s, d(s)] as const).sort((a, b) => a[0].z - b[0].z || a[1] - b[1]).flatMap(([s]) => solid(t)(s)))()
+/** A piece's markup (tagged `data-p` with its kind). */
+export const wrapKind = (kind: string | undefined, inner: string) => (kind ? `<g data-p="${kind}">${inner}</g>` : inner)
+export const piece = (t: Turn) => (p: Piece) => wrapKind(p.kind, shapes(t)(p).map(html).join(''))
 // ---- painter order: a piece's world box; two pieces whose screen boxes overlap are ordered by the axis that separates them (toward the viewer under the turn), else bottom-up, else by depth; a topological pass then draws far to near
 export interface Box3 {x0: number; y0: number; x1: number; y1: number; z0: number; z1: number}
 export const extent = (p: Piece): Box3 => ((ps = p.solids.flatMap(s => s.foot), zs = p.solids.flatMap(s => [s.z, s.z + s.h])) =>
@@ -57,22 +82,26 @@ const E = 0.25
 const sep = (a0: number, a1: number, b0: number, b1: number) => (a1 <= b0 + E ? -1 : b1 <= a0 + E ? 1 : 0)
 const sgn = (n: number) => (Math.abs(n) < 1e-6 ? 0 : Math.sign(n))
 /** < 0: draw `a` first. */
-export const before = (t: Turn) => (a: Box3, b: Box3, da: number, db: number) => {
-  const [d, ox, oy] = [toward(t), sep(a.x0, a.x1, b.x0, b.x1), sep(a.y0, a.y1, b.y0, b.y1)]
+const beforeWith = (d: V2) => (a: Box3, b: Box3, da: number, db: number) => {
+  const [ox, oy] = [sep(a.x0, a.x1, b.x0, b.x1), sep(a.y0, a.y1, b.y0, b.y1)]
   const [kx, ky] = [ox * sgn(d[0]), oy * sgn(d[1])]
   const stack = !ox && !oy ? sep(a.z0, a.z1, b.z0, b.z1) : 0
   return kx && ky && kx !== ky ? da - db : kx || ky || stack || da - db
 }
+export const before = (t: Turn) => beforeWith(toward(t))
 type Sb = [x0: number, y0: number, x1: number, y1: number]
-const screenBox = (t: Turn, b: Box3): Sb => ((ps = [b.x0, b.x1].flatMap(x => [b.y0, b.y1].flatMap(y => [b.z0, b.z1].map(z => proj(t)([x, y, z]))))) =>
-  [Math.min(...ps.map(p => p[0])), Math.min(...ps.map(p => p[1])), Math.max(...ps.map(p => p[0])), Math.max(...ps.map(p => p[1]))] as Sb)()
+const screenBox = (t: Turn, b: Box3): Sb => {
+  const qs = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(p => spin(t)(p as V2))
+  const [xs, ys] = [qs.map(q => (q[0] - q[1]) * C), qs.map(q => (q[0] + q[1]) / 2)]
+  return [Math.min(...xs), Math.min(...ys) - b.z1, Math.max(...xs), Math.max(...ys) - b.z0]
+}
 const meet = (a: Sb, b: Sb) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 /** Draw order (indices) for items with world boxes: edges only between screen-overlapping pairs; ties and cycles fall back to depth. */
 export const order = (t: Turn, items: {box: Box3; at: V2}[]): number[] => {
-  const [ds, sb] = [items.map(i => depth(t)(i.at)), items.map(i => screenBox(t, i.box))]
+  const [ds, sb, bf] = [items.map(i => depth(t)(i.at)), items.map(i => screenBox(t, i.box)), beforeWith(toward(t))]
   const after: number[][] = items.map(() => []), need = items.map(() => 0)
   const byX = items.map((_, i) => i).sort((i, j) => sb[i]![0] - sb[j]![0])
-  const edge = (i: number, j: number) => ((s = before(t)(items[i]!.box, items[j]!.box, ds[i]!, ds[j]!)) => s && (s < 0 ? (after[i]!.push(j), need[j]!++) : (after[j]!.push(i), need[i]!++)))()
+  const edge = (i: number, j: number) => ((s = bf(items[i]!.box, items[j]!.box, ds[i]!, ds[j]!)) => s && (s < 0 ? (after[i]!.push(j), need[j]!++) : (after[j]!.push(i), need[i]!++)))()
   /** Sweep: from each item, only the next ones (by screen x) whose x range starts before it ends. */
   const run = (k: number, m = k + 1): void => void (m < byX.length && sb[byX[m]!]![0] < sb[byX[k]!]![2] && (meet(sb[byX[k]!]!, sb[byX[m]!]!) && edge(byX[k]!, byX[m]!), run(k, m + 1)))
   byX.forEach((_, k) => run(k))
@@ -108,8 +137,8 @@ const isFree = (cls: string) => cls === SEAT.free
 /** A chair at `c` facing angle `a`: four legs, a seat, a backrest on the far edge, no arms; `seat` = seat height (a high chair is the same, taller). */
 export const chair = (c: V2, a: number, d: number, seat: number, cls: string): Piece => {
   const [at, h, l] = [frame(c, a), d / 2, 1.6]
-  const legs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]): Solid => ({foot: [at(u! * (h - l / 2), v! * (h - l / 2))], z: 0, h: seat - 2, cls: ROD, post: l}))
-  return {at: c, kind: 'chair', solids: [...legs, {foot: quad(at, -h, h, -h, h), z: seat - 2, h: 2, cls, flat: true}, {foot: quad(at, -h, -h + 2, -h, h), z: seat, h: Z.back, cls, flat: isFree(cls)}]}
+  const legs: Solid = {foot: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => at(u! * (h - l / 2), v! * (h - l / 2))), z: 0, h: seat - 2, cls: ROD, post: l, legs: true}
+  return {at: c, kind: 'chair', solids: [legs, {foot: quad(at, -h, h, -h, h), z: seat - 2, h: 2, cls, flat: true}, {foot: quad(at, -h, -h + 2, -h, h), z: seat, h: Z.back, cls, flat: isFree(cls)}]}
 }
 /** A stool: round base, a post, a round seat. */
 export const stool = (c: V2, r: number, seat: number, cls: string): Piece =>

@@ -21,7 +21,7 @@ const mount = (ents: Entity[]) => {
   const s: State = {...seed(), now: N}
   s.world.ents = Object.fromEntries([{id: 'f1', floor: {name: 'Main', active: true}}, host, rot, ...ents].map((e): [string, Entity] => [e.id, e]))
   const sent: Cmd[] = []
-  const act: HostEngine['act'] = (p, w, now, cmd) => (sent.push(cmd), Engine.act!(p, w, now, cmd))
+  const act: HostEngine['act'] = (p, w, now, cmd) => (cmd.do === 'seat' || sent.push(cmd), Engine.act!(p, w, now, cmd))
   const app = App.create(s).use(a => a.provide('engine', {...Engine, act} as HostEngine).provide('policy', defaultPolicy)).use(ui)
   app.mount(el)
   uiOf(app).rate = 0

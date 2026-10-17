@@ -1,16 +1,16 @@
 // Reservations (lane U14): a three-step booking wizard checked live against the booking desk's availability, and the day's bookings by time slot with filters;
 // each row opens its details and the actions its state allows. Inputs are static (never repainted, so typing survives ticks); chips, availability and the list are panels.
 import {bookOf} from '../contracts/index.ts'
-import type {App, Avail, BookCmd, BookFilter, Draft, Policy, ResRow, ResSlot, ResState} from '../contracts/index.ts'
+import type {App, Avail, BookCmd, BookFilter, Draft, Policy, ResRow, ResSlot, ResState, BookView} from '../contracts/index.ts'
 import {policyOf} from './ask.ts'
-import {at, bk, book, hm, ymd} from './bookask.ts'
+import {at, bk, book, hm, keep, noteBox, planLine, planName, noteLine, noteOf, saveNote, ymd} from './bookask.ts'
 import {arg, esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {btn, card, ctaSm, field, ghost, help, ok, on} from './tone.ts'
 const FIELDS = ['name', 'size', 'phone', 'date', 'time', 'dur', 'notes'] as const
 type Field = (typeof FIELDS)[number]
 export type BkDraft = Record<Field, string> & {feats: string[]; flags: string[]; area: string}
-export interface Bk {cta: string; step: number; on: Record<string, boolean>; edit: string; draft: BkDraft; fill: number; rev: number; f: {state: string; size: string; area: string; day: number | null}; open: string}
+export interface Bk {cta: string; step: number; on: Record<string, boolean>; edit: string; draft: BkDraft; fill: number; rev: number; f: {state: string; size: string; area: string; day: number | null; q: string}; open: string}
 declare module '../contracts/kernel.ts' {
   interface UiState {bk?: Bk}
 }
@@ -18,7 +18,7 @@ const bkOf = (app: App) => uiOf(app).bk!
 const Q = 15 * 60000
 const blank = (now: number): BkDraft => ((t = Math.ceil((now + 30 * 60000) / Q) * Q) => ({name: '', size: '2', phone: '', date: ymd(t), time: hm(t), dur: '', notes: '', feats: [], flags: [], area: ''}))()
 const steps = (n: number) => Object.fromEntries([1, 2, 3].map(i => [i, i === n]))
-const fresh = (now: number): Bk => ({cta: 'Book', step: 1, on: steps(1), edit: '', draft: blank(now), fill: 0, rev: 0, f: {state: 'open', size: 'any', area: 'all', day: null}, open: ''})
+const fresh = (now: number): Bk => ({cta: 'Book', step: 1, on: steps(1), edit: '', draft: blank(now), fill: 0, rev: 0, f: {state: 'open', size: 'any', area: 'all', day: null, q: ''}, open: ''})
 
 // ---- the wizard: Who -> When and where -> Notes and confirm; Book is always one click away once the party has a size
 const inp = (n: Field, label: string, type = 'text', extra = '') => `<label class="grid gap-0.5 text-xs"><span class="text-slate-600 dark:text-slate-300">${label}</span><input name="${n}" type="${type}" ${extra} data-on="input:bk-in change:bk-in" class="${field} w-full" /></label>`
@@ -31,11 +31,11 @@ const featChips = (app: App) => Object.entries(policyOf(app).host.feats).map(([i
 const chips = (draw: (app: App) => string) => (app: App) => `<div class="flex flex-wrap gap-1">${draw(app)}</div>`
 const qOf = (app: App) => ((d = bkOf(app).draft) => ({size: Math.max(1, Number(d.size) || 1), at: at(d.date, d.time), durationMin: Number(d.dur) || undefined, feats: d.feats, area: d.area || null, skip: bkOf(app).edit || undefined}))()
 const spotChip = (s: Avail['spots'][number]) => `<span data-tid="${esc(s.tables[0])}" class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-950 dark:bg-emerald-950 dark:text-emerald-50">${esc(s.label)}</span>`
-const alt = (t: number) => `<button type="button" data-act="bk-alt" data-at="${t}" class="${ghost}">${hm(t)}</button>`
+const alt = (app: App) => (t: number) => `<button type="button" data-act="bk-alt" data-at="${t}" class="${ghost}">${hm(t)} · ${esc(planName(app, {...qOf(app), at: t}))}</button>`
 const availDraw = (app: App) => {
   const a = bk(app, 'avail', qOf(app))
   const head = a?.ok ? `<p class="text-sm font-semibold text-emerald-700 dark:text-emerald-300"><span aria-hidden="true">✓</span> Available at ${hm(a.at)}</p>` : `<p class="text-sm font-semibold text-rose-700 dark:text-rose-300"><span aria-hidden="true">✕</span> Not available at ${hm(a?.at ?? 0)}</p>`
-  return a ? `${head}<p class="${help}">${esc(a.why)}${a.taken ? ` · ${a.taken} taken by other bookings in that window` : ''}</p><div class="mt-1 flex flex-wrap gap-1">${a.spots.slice(0, 8).map(spotChip).join('')}</div>${a.alts.length ? `<p class="mt-1 text-xs">Nearby times that work: ${a.alts.map(alt).join(' ')}</p>` : ''}` : `<p class="${help}">Booking desk not available.</p>`
+  return a ? `${head}${planLine(app, qOf(app))}<p class="${help}">${esc(a.why)}${a.taken ? ` · ${a.taken} taken by other bookings in that window` : ''}</p><div class="mt-1 flex flex-wrap gap-1">${a.spots.slice(0, 8).map(spotChip).join('')}</div>${a.alts.length ? `<p class="mt-1 text-xs">Nearby times that work: ${a.alts.map(alt(app)).join(' ')}</p>` : ''}` : `<p class="${help}">Booking desk not available.</p>`
 }
 const summary = (app: App) => ((d = bkOf(app).draft, p = policyOf(app)) =>
   `<p class="text-sm">${esc(d.name || 'Guest')} x${esc(d.size)} on ${esc(d.date)} at ${esc(d.time)}${d.area ? `, ${esc(p.service.areas[d.area]?.label ?? d.area)}` : ''}${d.feats.length ? `, wants ${esc(d.feats.map(f => p.host.feats[f]?.label ?? f).join(', '))}` : ''}${d.flags.length ? ` · ${esc(d.flags.map(f => bookOf(p).flags[f]?.label ?? f).join(', '))}` : ''}</p>`)()
@@ -68,25 +68,29 @@ const DO: Record<string, [label: string, cls: string]> = {arrive: ['Arrived', bt
 const acts = (r: ResRow) => r.acts.map(a => (a === 'seat' ? `<button type="button" data-act="seat" data-id="${esc(r.party)}" class="${ok}">Seat</button>` : `<button type="button" data-act="bk-do" data-to="${a}" data-id="${esc(r.party)}" class="${DO[a][1]}">${DO[a][0]}</button>`)).join('')
 const where = (r: ResRow) => (r.table ? `<span data-tid="${esc(r.table.tables[0])}" title="${r.table.planned ? 'Where the plan puts it' : 'Its own table'}" class="text-xs tabular-nums">${r.table.planned ? 'plan ' : ''}${esc(r.table.label)}</span>` : '<span class="text-xs text-slate-500">no table yet</span>')
 const marks = (p: Policy, r: ResRow) => r.flags.map(f => `<span class="rounded bg-violet-100 px-1 text-xs text-violet-950 dark:bg-violet-950 dark:text-violet-50">${esc(bookOf(p).flags[f]?.label ?? f)}</span>`).join('')
-const details = (p: Policy, r: ResRow) => `<dl data-bkdetail="${esc(r.party)}" class="mt-1 grid grid-cols-[6rem_1fr] gap-x-2 rounded bg-slate-50 p-2 text-xs dark:bg-slate-900">
-<dt>When</dt><dd>${hm(r.at)} for ${r.durationMin}m${r.lateMin ? `, ${r.lateMin}m late` : ''}</dd><dt>Phone</dt><dd>${esc(r.phone || '-')}</dd><dt>Notes</dt><dd>${esc(r.notes || '-')}</dd>
+const details = (app: App, p: Policy, r: ResRow) => `<dl data-bkdetail="${esc(r.party)}" class="mt-1 grid grid-cols-[6rem_1fr] gap-x-2 rounded bg-slate-50 p-2 text-xs dark:bg-slate-900">
+<dt>When</dt><dd>${hm(r.at)} for ${r.durationMin}m${r.lateMin ? `, ${r.lateMin}m late` : ''}</dd><dt>Phone</dt><dd>${esc(r.phone || '-')}</dd><dt>Notes</dt><dd>${noteBox(r.party, noteOf(app, r.party) || r.notes)}</dd>
 <dt>Wishes</dt><dd>${esc(r.feats.map(f => p.host.feats[f]?.label ?? f).join(', ') || '-')}</dd><dt>Area</dt><dd>${esc(r.area ? (p.service.areas[r.area]?.label ?? r.area) : 'any')}</dd><dt>Table</dt><dd>${where(r)}</dd></dl>`
 const resRow = (app: App, p: Policy) => (r: ResRow) =>
   `<li data-res="${esc(r.party)}" class="py-1"><div class="flex flex-wrap items-center gap-2 text-sm"><span class="w-12 font-mono tabular-nums">${hm(r.at)}</span><b class="w-14">${esc(r.label)}</b>
 <button type="button" data-act="bk-open" data-id="${esc(r.party)}" aria-expanded="${bkOf(app).open === r.party}" class="grow text-left underline-offset-2 hover:underline">${esc(r.name)} x${r.size}</button>${marks(p, r)}${where(r)}
-<span class="rounded-full px-2 py-0.5 text-xs ${PILL[r.state]}">${SAY[r.state]}${r.lateMin ? ` ${r.lateMin}m` : ''}</span>${acts(r)}</div>${bkOf(app).open === r.party ? details(p, r) : ''}</li>`
+<span class="rounded-full px-2 py-0.5 text-xs ${PILL[r.state]}">${SAY[r.state]}${r.lateMin ? ` ${r.lateMin}m` : ''}</span>${acts(r)}</div>${noteLine(noteOf(app, r.party) || r.notes)}${bkOf(app).open === r.party ? details(app, p, r) : ''}</li>`
 const BAR = ['w-1', 'w-2', 'w-4', 'w-8', 'w-12', 'w-16', 'w-20', 'w-24', 'w-28', 'w-32'] // literal widths (Tailwind builds only literal classes)
 const slot = (app: App, p: Policy, max: number) => (s: ResSlot) =>
   `<li data-slot="${s.start}" class="py-1"><div class="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300"><span class="w-12 tabular-nums">${hm(s.start)}</span><span class="h-1.5 rounded bg-sky-500 ${BAR[Math.round((s.covers / max) * (BAR.length - 1))]}" aria-hidden="true"></span><span class="tabular-nums">${s.covers} covers</span></div>
 <ul class="divide-y divide-slate-200 pl-2 dark:divide-slate-700">${s.rows.map(resRow(app, p)).join('')}</ul></li>`
+/** The text filter: name, label, phone or notes contain every typed word. */
+const hay = (app: App, r: ResRow) => `${r.name} ${r.label} ${r.phone} ${noteOf(app, r.party) || r.notes}`.toLowerCase()
+const found = (app: App, r: ResRow) => bkOf(app).f.q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay(app, r).includes(w))
+const narrowed = (app: App, v: BookView): BookView => ((slots = v.slots.map(s => ({...s, rows: s.rows.filter(r => found(app, r))})).filter(s => s.rows.length)) => ({...v, slots, total: slots.reduce((n, s) => n + s.rows.length, 0), covers: slots.reduce((n, s) => n + s.covers, 0)}))()
 const listDraw = (app: App) => {
-  const v = bk(app, 'list', filterOf(app))
+  const v = bk(app, 'list', filterOf(app)) && narrowed(app, bk(app, 'list', filterOf(app))!)
   const p = policyOf(app)
   const max = Math.max(1, ...(v?.slots ?? []).map(s => s.covers))
   return v ? `${dayBar(app)}<div class="mt-1">${filters(app, v.counts)}</div><p class="mt-1 ${help}">${v.total} booking(s), ${v.covers} covers expected.</p>${v.slots.length ? `<ul class="mt-1">${v.slots.map(slot(app, p, max)).join('')}</ul>` : `<p class="mt-2 ${help}">No bookings match.</p>`}` : `<p class="${help}">Booking desk not available.</p>`
 }
 export const bookPane = `<div class="grid gap-3 lg:grid-cols-[24rem_1fr]">${wizard}
-<div class="${card}"><h2 class="text-sm font-semibold">Reservations</h2><p class="mb-2 ${help}">The day by time slot; open a row for its details. Late = past its time plus grace.</p><div data-book="ui.rev"></div></div></div>`
+<div class="${card}"><h2 class="text-sm font-semibold">Reservations</h2><p class="mb-2 ${help}">The day by time slot; open a row for its details. Late = past its time plus grace.</p><label class="mb-1 grid gap-0.5 text-xs"><span class="text-slate-600 dark:text-slate-300">Search name, phone or notes</span><input name="bk-q" type="search" data-on="input:bk-q" class="${field} w-full" /></label><div data-book="ui.rev"></div></div></div>`
 
 // ---- acts
 const formOf = (ev: Event) => (ev.target as Element).closest('[data-form="book"]') ?? (ev.target as Element).ownerDocument.querySelector('[data-form="book"]')!
@@ -122,14 +126,16 @@ const ACTS: Record<string, (app: App, ev: Event) => unknown> = {
   'bk-do': (app, ev) => ROW[arg(ev, 'to')]?.(app, arg(ev, 'id')),
   'bk-open': (app, ev) => (bkOf(app).open = bkOf(app).open === arg(ev, 'id') ? '' : arg(ev, 'id')),
   'bk-filter': (app, ev) => FILTER[arg(ev, 'kind')]?.(bkOf(app), arg(ev, 'id')),
+  'bk-q': (app, ev) => (bkOf(app).f.q = (ev.target as HTMLInputElement).value),
   'bk-day': (app, ev) => (bkOf(app).f.day = Number(arg(ev, 'by')) ? (bkOf(app).f.day ?? app.store.state.now) + Number(arg(ev, 'by')) * DAY : null),
 }
 /** The wizard's inputs take the draft whenever `ui.bk.fill` moves (mount, edit, reset, a nearby time picked). */
 const fill = (app: App) => ({attr: 'data-bkfill', apply: (el: Element) => FIELDS.forEach(n => ((i = el.querySelector<HTMLInputElement>(`[name=${n}]`)) => i && (i.value = bkOf(app).draft[n]))())})
-const PANELS: [string, (app: App) => string][] = [['data-bksteps', stepTabs], ['data-bkflags', chips(flagChips)], ['data-bkareas', chips(areaChips)], ['data-bkfeats', chips(featChips)], ['data-avail', availDraw], ['data-bksum', summary], ['data-book', listDraw]]
+const PANELS: [string, (app: App) => string][] = [['data-bksteps', stepTabs], ['data-bkflags', chips(flagChips)], ['data-bkareas', chips(areaChips)], ['data-bkfeats', chips(featChips)], ['data-avail', availDraw], ['data-bksum', summary], ['data-book', keep(listDraw)]]
 export const reserve = (app: App) => {
   Object.assign(uiOf(app), {bk: uiOf(app).bk ?? fresh(app.store.state.now)})
   Object.entries(ACTS).forEach(([n, f]) => app.act(n, n === 'bk-in' ? (a, ev) => (f(a, ev), bkOf(a).rev++) : bump(f)))
+  app.act('note-save', saveNote)
   app.binder(fill(app))
   PANELS.forEach(([attr, draw]) => app.binder(panel(app, attr, draw)))
   app.store.watch('ui.rev', () => bkOf(app).rev++)

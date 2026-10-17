@@ -7,7 +7,7 @@ import {counter, gate} from './memo.ts'
 import {panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {btn, on} from './tone.ts'
-export const TABS = [['sim', 'Sim'], ['board', 'Dashboard'], ['queue', 'Queue'], ['book', 'Reservations'], ['staff', 'Staff'], ['alerts', 'Alerts']] as const
+export const TABS = [['sim', 'Sim'], ['board', 'Dashboard'], ['queue', 'Queue'], ['book', 'Reservations'], ['staff', 'Staff'], ['strategy', 'Strategy'], ['alerts', 'Alerts']] as const
 const tab = (app: App) => ([id, label]: (typeof TABS)[number]) => {
   const n = id === 'alerts' ? alertCount(app) : 0
   return `<button type="button" data-act="tab" data-id="${id}" aria-current="${uiOf(app).tab === id ? 'page' : 'false'}" class="${uiOf(app).tab === id ? on : btn}">${label}${n ? ` <b class="tabular-nums" aria-label="${n} alerts">${n}</b>` : ''}</button>`

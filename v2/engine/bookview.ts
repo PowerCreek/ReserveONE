@@ -1,6 +1,7 @@
 // Bookings read models (lane U14, E1): availability of a draft against the floor and the other bookings, and the reservation list by time slot.
 import {bookOf, having, partsOf} from '../contracts/index.ts'
-import type {Avail, AvailQ, BookAct, BookFilter, BookView, Ent, Entity, Id, Policy, ResRow, ResSlot, ResState, World} from '../contracts/index.ts'
+import type {Avail, AvailQ, BookAct, BookFilter, BookView, Ent, Entity, Id, Placed, Policy, ResRow, ResSlot, ResState, World} from '../contracts/index.ts'
+import {nextNum} from './ents.ts'
 import type {Pty} from './ents.ts'
 import {spots} from './spots.ts'
 import {mergesOf} from './merge.ts'
@@ -49,12 +50,24 @@ const near = (x: Probe, at: number) => {
   const step = bookOf(x.p).slotMin / 2
   return Array.from({length: 16}, (_, i) => at + (i % 2 ? -1 : 1) * (Math.floor(i / 2) + 1) * step * MIN).filter(t => t >= x.now && check(x, t).left.length).slice(0, bookOf(x.p).altMax).sort((a, b) => a - b)
 }
-export const avail = (p: Policy, w: World, now: number, q: AvailQ): Avail => {
+/** What the plan will give this draft once booked: the draft goes in as a table-less booking and the planner (the one placement list `ResRow.table` reads) places it; null = no spot free in time.
+ *  The planning window stretches to the draft's time so a far booking previews too. The planner weighs size and time only (not area or wishes). */
+export const preview = (p: Policy, w: World, now: number, q: AvailQ): Placed | null => {
+  const num = nextNum(w)
+  const id = `pty${num}`
+  const res = {at: q.at, durationMin: q.durationMin ?? p.seat.turnDefault, table: null, status: 'BOOKED' as const, phone: '', notes: ''}
+  const e: Entity = {id, party: {num, label: '', prefix: '', kind: 'R', name: '', size: q.size}, reservation: res}
+  const wide = {...p, plan: {...p.plan, horizonMin: Math.max(p.plan.horizonMin, (q.at - now) / MIN)}}
+  return planned(wide, {...w, ents: {...w.ents, [id]: e}}, now, q.skip).find(x => x.party === id && x.spot) ?? null
+}
+/** The planner's choice leads `spots` (so the first spot is the table the plan will give) and rides along as `plan`. */
+const leading = (a: Avail, plan: Placed | null): Avail & {plan: Placed | null} => ({...a, plan, spots: [...a.spots.filter(s => s.id === plan?.spot), ...a.spots.filter(s => s.id !== plan?.spot)]})
+export const avail = (p: Policy, w: World, now: number, q: AvailQ): Avail & {plan: Placed | null} => {
   const x: Probe = {p, w, now, q, all: pool(p, w, q), free: tableFreeAt(p, w, now), hs: holds(p, w, now, q.skip)}
   const open = openAt(x, q.at)
   const {left, taken} = claim(open, rivals(p, w, now, q, q.at))
   const a = {n: x.all.length, open: open.length, left: left.length, t: hhmm(q.at), q}
-  return {ok: !!left.length, at: q.at, spots: left.map(s => ({id: s.id, label: s.spot.label, tables: s.spot.tables, area: areaOf(w.ents[s.spot.tables[0]!])})), taken, why: WHY.find(([t]) => t(a))![1](a), alts: left.length ? [] : near(x, q.at)}
+  return leading({ok: !!left.length, at: q.at, spots: left.map(s => ({id: s.id, label: s.spot.label, tables: s.spot.tables, area: areaOf(w.ents[s.spot.tables[0]!])})), taken, why: WHY.find(([t]) => t(a))![1](a), alts: left.length ? [] : near(x, q.at)}, preview(p, w, now, q))
 }
 
 // ---- reservation list: one row per booking (cancelled ones keep theirs in `intake.was`), grouped into time slots

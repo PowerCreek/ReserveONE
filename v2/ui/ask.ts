@@ -13,7 +13,7 @@ type Fns = Record<string, ((...a: unknown[]) => unknown) | undefined>
 /** The policy every view and engine call reads: the provided one, else the default. */
 export const policyOf = (app: App): Policy => (app.services.policy as Policy | undefined) ?? defaultPolicy
 /** The pure reads: computed once per (world signature, now-minute, args) in the memo seam, however many panels ask. Writers (act, ask, seat, spawn, tick, reconcile) are never remembered. */
-const READS = new Set<Key>(['board', 'stand', 'eta', 'fit', 'alerts', 'holds', 'modeAt', 'rotate', 'bus', 'outlook', 'assign', 'serverFor'])
+const READS = new Set<Key>(['board', 'stand', 'eta', 'fit', 'alerts', 'holds', 'modeAt', 'rotate', 'bus', 'outlook', 'assign', 'serverFor', 'strategy'])
 const call = (app: App, k: Key, a: unknown[]) => {
   const {world, now} = app.store.state
   return (app.services.engine as unknown as Fns | undefined)?.[k]?.(policyOf(app), raw(world), now, ...a) // the engine only reads: hand it the plain world, not a Proxy that wraps every property

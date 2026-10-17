@@ -7,6 +7,7 @@ import {along, axes, axisOf, fitOf, zoomTo} from './isocam.ts'
 import {seen} from './geo.ts'
 import type {Ctx} from './iso.ts'
 import {click, rig} from './rig.ts'
+import {syncIso} from './layersiso.ts'
 import type {Entity, World} from '../contracts/index.ts'
 const t = (id: string, floor: string, x: number, y: number, extra: Partial<Entity> = {}): Entity =>
   ({id, pos: {floor, x, y, w: 40, h: 40}, table: {label: id.toUpperCase(), capacity: 4, min: 1, shape: 'rect', status: 'available', waiter: null, section: null}, ...extra})
@@ -217,7 +218,7 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   await settle()
   assert.ok(f().querySelector('[data-floors]'))
 })
-test('layers: a table state change redraws only that table; a unit move only the unit; the static layers stay the same nodes', async () => {
+test('layers: a table state change redraws only that table; a unit move only the unit numbers; the static layers stay the same nodes', async () => {
   const {app, el} = rig()
   app.apply([...Object.values(world().ents), {id: 'u1', body: {role: 'guest' as const, x: 120, y: 120, speed: 1, task: null, backlog: [], party: null}}].map(ent => ({op: 'add' as const, ent})))
   await settle()
@@ -237,13 +238,33 @@ test('layers: a table state change redraws only that table; a unit move only the
   assert.ok(nodes('[data-tid="far"][data-frag]').every((n, i) => n !== far[i])) // the changed table was redrawn
   assert.match(svg().querySelector('[data-tid="far"] title')!.textContent!, /occupied/)
   assert.equal(nodes('[data-unit]')[0], unit)
+  const cx = unit.querySelector('circle')!.getAttribute('cx')
   app.apply([{op: 'set', id: 'u1', parts: {body: {...app.store.state.world.ents.u1!.body!, x: 200}}}])
   await settle()
-  assert.notEqual(nodes('[data-unit]')[0], unit) // the unit node was swapped...
+  assert.equal(nodes('[data-unit]')[0], unit) // the unit node stays, its numbers move...
+  assert.notEqual(unit.querySelector('circle')!.getAttribute('cx'), cx)
   assert.deepEqual(nodes('[data-tid="near"][data-frag]'), near) // ...and nothing else
   assert.equal(first(0, 'base'), slab)
   svg().dispatchEvent(new window.WheelEvent('wheel', {bubbles: true, cancelable: true, deltaY: -100}))
   await new Promise(r => setTimeout(r, 400))
   assert.equal(first(0, 'base'), slab) // zoom moves the viewBox only
   assert.ok(Number((app.store.state.ui as any).iso.cam.z) > 1)
+})
+
+/** What a frame shows: its piece kinds, labels, grids, slabs, zones, hit footprints and units, as counts. */
+const kinds = (svg: Element) => ['[data-p="chair"]', '[data-p="table"]', '[data-p="bench"]', 'text', '[data-igrid] polyline', '[data-slab]', '[data-izone]', '[data-taken]', '[data-unit]', '[data-layer="furn"] polygon', '[data-layer="furn"] path']
+  .map(q => `${q}:${svg.querySelectorAll(q).length}`).join(' ')
+test('a drag-turn frame draws the same piece kinds as the resting frame, and the release matches a fresh draw', () => {
+  const c = ctx()
+  c.w.ents.u1 = {id: 'u1', body: {role: 'guest', x: 120, y: 120, speed: 1, task: null, backlog: [], party: null}} as Entity
+  const [svg, ref] = [1, 2].map(() => document.createElementNS('http://www.w3.org/2000/svg', 'svg'))
+  syncIso(svg!, c, ISO, [])
+  const o = tweak(ISO, 'rot', '40')
+  syncIso(svg!, c, o, [], true)
+  ref!.innerHTML = isoSvg(c, o).replace(/^<svg[^>]*>|<\/svg>$/g, '')
+  assert.equal(kinds(svg!), kinds(ref!))
+  assert.match(kinds(svg!), /"table"\]:[1-9] .*text:[1-9]/)
+  assert.match(kinds(svg!), /igrid\] polyline:[1-9]/)
+  syncIso(svg!, c, o, [])
+  assert.equal(svg!.innerHTML.length, ref!.innerHTML.length)
 })

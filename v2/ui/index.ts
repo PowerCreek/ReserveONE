@@ -18,15 +18,16 @@ import {shell, tabs} from './shell.ts'
 import {init, uiOf as view} from './state.ts'
 import {staff, staffPane} from './staff.ts'
 import {stand, standPane} from './stand.ts'
+import {strategy, strategyPane} from './strategy.ts'
 export * from './state.ts'
 export {step, spawn} from './sim.ts'
 export {load, START} from './scenario.ts'
 export {presets} from './presets.ts'
 const simPane = `${kpiPane}<div class="grid gap-3 lg:grid-cols-[1fr_22rem]"><div class="space-y-3">${controlsPane}${nextPane}${floorPane}</div><div class="space-y-3">${standPane}${logPane}</div></div>`
-const panes = {sim: simPane, board: boardPane, queue: queuePane, book: bookPane, staff: staffPane, alerts: alertsPane}
+const panes = {sim: simPane, board: boardPane, queue: queuePane, book: bookPane, staff: staffPane, strategy: strategyPane, alerts: alertsPane}
 /** Any change to the world or the clock bumps `ui.rev`, the one path every repainting panel binds to. */
 const live = (app: App) => ['world', 'now'].forEach(p => app.store.watch(p, () => view(app).rev++))
-const parts: Plugin[] = [history, tabs, controls, floor, prefs, queue, seat, reserve, staff, assign, stand, board, alerts, clock, runner, live]
+const parts: Plugin[] = [history, tabs, controls, floor, prefs, queue, seat, reserve, staff, assign, stand, strategy, board, alerts, clock, runner, live]
 export const ui: Plugin = app => {
   init(app)
   app.provide('card', {open: (a: App, t: string) => openCard(a, t)}) // the table card (U10a) for every panel's table chips
