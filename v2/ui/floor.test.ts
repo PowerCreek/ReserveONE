@@ -286,3 +286,24 @@ test('a corner booth rounds only its bench corner; the bench follows it; feature
   assert.match(svg, /class="group cursor-pointer"/)
   assert.equal(chips(T as never), '')
 })
+
+test('2D layers: a table change swaps that table only, a unit move swaps the unit only, the zones layer stays', async () => {
+  const {app, el} = rig()
+  load(app, 'rush')
+  await settle()
+  const q = (s: string) => [...el.querySelectorAll(`[data-floor] svg[data-plan] ${s}`)]
+  const [zones, t1, t2] = [q('[data-layer="zones"]')[0]!, q('[data-tid="t1"]')[0]!, q('[data-tid="t2"]')[0]!]
+  const w = app.store.state.world
+  app.apply([{op: 'set', id: 't1', parts: {table: {...w.ents.t1!.table!, status: 'occupied'}}}])
+  await settle()
+  assert.notEqual(q('[data-tid="t1"]')[0], t1)
+  assert.equal(q('[data-tid="t2"]')[0], t2)
+  assert.equal(q('[data-layer="zones"]')[0], zones)
+  const g = q('[data-layer="units"] > g')
+  const host = app.store.state.world.ents.host!
+  app.apply([{op: 'set', id: 'host', parts: {body: {...host.body!, x: host.body!.x + 30}}}])
+  await settle()
+  const g2 = q('[data-layer="units"] > g')
+  assert.equal(g2.filter((n, i) => n !== g[i]).length, 1)
+  assert.equal(q('[data-tid="t2"]')[0], t2)
+})

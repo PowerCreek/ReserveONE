@@ -55,9 +55,9 @@ const PAINT: Record<Pal, (c: Ctx) => (t: T) => Paint> = {
 const G = defaultPolicy.sim.grid
 const SLAB = ['fill-slate-200 stroke-slate-400 dark:fill-slate-700 dark:stroke-slate-500', 'fill-indigo-50/70 stroke-indigo-400 dark:fill-indigo-950/70 dark:stroke-indigo-500']
 const LIFT = 6, MARGIN = 40
-const tablesAt = (w: World, lv: number): T[] => having(w, 'table', 'pos').filter(t => levelOf(w, t.pos.floor) === lv)
+export const tablesAt = (w: World, lv: number): T[] => having(w, 'table', 'pos').filter(t => levelOf(w, t.pos.floor) === lv)
 const zonesAt = (w: World, lv: number) => having(w, 'zone', 'pos').filter(z => levelOf(w, z.pos.floor) === lv)
-const shownLevels = (w: World, o: Iso) => levels(w).filter(lv => !o.hide[lv])
+export const shownLevels = (w: World, o: Iso) => levels(w).filter(lv => !o.hide[lv])
 /** The turn's centre and reach: every level's tables and zones (shown or not), so neither hiding nor moving a level changes the fit. */
 const reach = (w: World) => ((b = hull([...having(w, 'table', 'pos'), ...having(w, 'zone', 'pos')].map(e => e.pos)) ?? {x: 0, y: 0, w: W, h: H}) => ({c: mid(b), r: Math.hypot(b.w, b.h) / 2}))()
 export const turnOf = (w: World, o: Iso): Turn => ({deg: o.rot, c: reach(w).c})
@@ -93,15 +93,15 @@ const ZEDGE: Record<string, string> = {stand: 'stroke-indigo-500 dark:stroke-ind
 const QUIET = ['divider', 'prop'] // never named on the plan
 const STANDING = ['wall', 'divider']
 const txt = (p: V2, cls: string, s: unknown, anchor = 'middle') => `<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
-const zone = (t: Turn) => (z: Ent<'zone' | 'pos'>) =>
-  `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${pts(flat(t, z.pos, 0.5))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
-  (QUIET.includes(z.zone.kind) ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
+const zone = (t: Turn, lite = false) => (z: Ent<'zone' | 'pos'>) =>
+  `<g data-izone="${esc(z.zone.kind)}">${lite ? '' : `<title>${esc(z.zone.label)}</title>`}<polygon points="${pts(flat(t, z.pos, 0.5))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
+  (QUIET.includes(z.zone.kind) || lite ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
 /** Standing zones: a wall box (counter height), a line wall at wall height, a divider at shoulder height. */
 const WALL = 'fill-stone-300 stroke-stone-500 stroke-[0.5px] dark:fill-stone-600 dark:stroke-stone-400'
 const standing = (t: Turn) => (z: Ent<'zone' | 'pos'>): Frag[] => ((h = z.zone.kind === 'divider' ? Z.divider : z.pos.w && z.pos.h ? Z.bar : Z.wall) =>
   wall(z.pos, h, WALL, G).map((p, i) => frag(p, `<g data-izone="${esc(z.zone.kind)}">${i ? '' : `<title>${esc(z.zone.label)}</title>`}${piece(t)(p)}</g>`)))()
 // ---- tables as furniture; every piece is its own fragment so the painter can sort it among its neighbours (a table's pieces repeat its data-tid, marked data-frag)
-type Frag = {at: V2; box: Box3; html: string}
+export type Frag = {at: V2; box: Box3; html: string}
 const frag = (p: Piece, html: string): Frag => ({at: p.at, box: extent(p), html})
 type Side = 't' | 'r' | 'b' | 'l'
 const sideOf = (p: Box, b: Box): Side => (b.y + b.h <= p.y + 0.5 ? 't' : b.y >= p.y + p.h - 0.5 ? 'b' : b.x + b.w <= p.x + 0.5 ? 'l' : 'r')
@@ -142,6 +142,10 @@ const along = (bands: V2[][], cls: string[]) => ((n = bands.reduce((a, b) => a +
   strip(b.slice(0, k), b.slice(k).reverse(), G, f => cls[Math.min(cls.length - 1, Math.floor(((done + f * k) / n) * cls.length))] ?? SEAT.bench))()))()
 const dedupe = (ps: V2[]) => ps.filter((q, i) => i === 0 || i < ps.length - 1 || q[0] !== ps[0]![0] || q[1] !== ps[0]![1])
 const box = (ps: V2[]): Box => ((xs = ps.map(q => q[0]), ys = ps.map(q => q[1])) => ({x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys)}))()
+/** A table's build depends on its geometry only: keep it between frames (the turn and the state change, the geometry does not). */
+const builds = new Map<string, {sig: string; b: Build}>()
+const buildOf = (t: T): Build => ((sig = `${t.pos.x},${t.pos.y},${t.pos.w},${t.pos.h},${t.table.shape},${kindOf(t)},${JSON.stringify(t.seating ?? 0)}`, hit = builds.get(t.id)) =>
+  hit?.sig === sig ? hit.b : ((b = BUILD[kindOf(t)]!(t)) => (builds.set(t.id, {sig, b}), b))())()
 const fixed = (t: T) => !t.seating?.bench?.length && !Object.values(t.seating?.chairs ?? {}).some(n => n)
 const kindOf = (t: T) => (t.seating?.top?.length ? 'bar' : t.seating?.open || t.seating?.bench?.length ? 'shaped' : t.table.shape === 'booth' ? (fixed(t) ? 'booth' : 'rect') : t.table.shape)
 /** Occupancy: a seated table's first `n` places taken (filled red), the rest outlined red; an unseated table's seats plain (a lone stool wears the palette). */
@@ -154,43 +158,58 @@ const ring3 = (c: Ctx, t: T, tu: Turn, b: Build) => ((r = ringOf(c, t)) => (r ? 
 const INK_BIG = 'text-[11px] font-bold [paint-order:stroke] stroke-white/80 stroke-[2px] dark:stroke-slate-900/80'
 const INK_SMALL = 'text-[8px] font-bold [paint-order:stroke] stroke-white/80 stroke-[2px] dark:stroke-slate-900/80'
 /** A table: its hit footprint (first, under everything; carries the title and seat count), its pieces as fragments, and its ring and label (over the level). */
-type Block = {at: V2; hit: string; frags: Frag[]; over: string}
-const block = (c: Ctx, o: Iso, tu: Turn) => (t: T): Block => {
-  const [paint, b, tag] = [PAINT[o.pal](c)(t), BUILD[kindOf(t)]!(t), `data-act="tcard" data-tid="${esc(t.id)}"`]
-  const cls = finish(c, t, b, paint)
+export type Block = {at: V2; hit: string; frags: Frag[]; over: string}
+/** `lite` (a drag-turn frame): the table's body only, no seats, footprint or name; the release redraws in full. */
+export const block = (c: Ctx, o: Iso, tu: Turn, lite = false) => (t: T): Block => {
+  const [paint, b, tag] = [PAINT[o.pal](c)(t), buildOf(t), `data-act="tcard" data-tid="${esc(t.id)}"`]
+  const cls = lite ? [] : finish(c, t, b, paint)
   const nb = b.benches ? b.places.filter(q => q.kind === 'bench').length : 0
-  const parts = [...b.body(paint), ...(b.benches?.(cls.slice(0, nb)) ?? []), ...b.places.map((pl, i) => (i < nb ? undefined : SEATS[pl.kind](t, pl, cls[i]!))).filter((x): x is Piece => !!x)]
-  const label = txt(proj(tu)([...centroid(b.top), b.th + 1] as P3), `${paint.ink} ${t.pos.w < 2 * G || t.pos.h < 2 * G || b.own ? INK_SMALL : INK_BIG}`, t.table.label)
-  return {at: mid(t.pos), hit: `<g ${tag} data-taken="${seatedAt(c.w, t.id)}" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title><polygon points="${pts(flat(tu, t.pos))}" class="fill-transparent"/></g>`,
-    frags: parts.map(p => frag(p, `<g ${tag} data-frag class="cursor-pointer">${piece(tu)(p)}</g>`)), over: `<g ${tag} data-frag data-over class="cursor-pointer">${ring3(c, t, tu, b)}${label}</g>`}
+  const parts = lite ? b.body(paint) : [...b.body(paint), ...(b.benches?.(cls.slice(0, nb)) ?? []), ...b.places.map((pl, i) => (i < nb ? undefined : SEATS[pl.kind](t, pl, cls[i]!))).filter((x): x is Piece => !!x)]
+  const label = lite ? '' : txt(proj(tu)([...centroid(b.top), b.th + 1] as P3), `${paint.ink} ${t.pos.w < 2 * G || t.pos.h < 2 * G || b.own ? INK_SMALL : INK_BIG}`, t.table.label)
+  return lite ? {at: mid(t.pos), hit: '', over: '', frags: parts.map((p, i) => frag(p, `<g ${tag} data-frag data-fi="${i}">${piece(tu)(p)}</g>`))} : {at: mid(t.pos), hit: `<g ${tag} data-taken="${seatedAt(c.w, t.id)}" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title><polygon points="${pts(flat(tu, t.pos))}" class="fill-transparent"/></g>`,
+    frags: parts.map((p, i) => frag(p, `<g ${tag} data-frag data-fi="${i}" class="cursor-pointer">${piece(tu)(p)}</g>`)), over: `<g ${tag} data-frag data-over class="cursor-pointer">${ring3(c, t, tu, b)}${label}</g>`}
 }
 const NAME = 'fill-slate-600 stroke-white stroke-[3px] text-[13px] font-semibold uppercase tracking-wide [paint-order:stroke] dark:fill-slate-300 dark:stroke-slate-900'
 /** A floor's name off its slab's far corner (top of the screen under the turn). */
 const name = (tu: Turn) => ([f, b]: [Ent<'floor'>, Box]) => ((cs = rect(b).map(p => proj(tu)([p[0], p[1], 0])), top = cs.reduce((a, p) => (p[1] < a[1] ? p : a))) => txt([top[0], top[1] - 8], NAME, f.floor.name))()
-const unit = (tu: Turn) => (e: Ent<'body'>) => ((p = proj(tu)([e.body.x, e.body.y, 22])) =>
+export const unit = (tu: Turn) => (e: Ent<'body'>) => ((p = proj(tu)([e.body.x, e.body.y, 22])) =>
   `<g data-unit="${esc(e.id)}"><title>${esc(e.id)} ${e.body.role} ${esc(e.body.task?.do ?? 'idle')}</title><circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="7" class="${ROLE[e.body.role]} stroke-white stroke-2"/></g>`)()
-const ping = (tu: Turn) => (f: Fx) => ((p = proj(tu)([f.x, f.y, 8])) =>
+export const ping = (tu: Turn) => (f: Fx) => ((p = proj(tu)([f.x, f.y, 8])) =>
   `<circle data-ping cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>`)()
-const tr = (v: V2) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
-const level = (c: Ctx, o: Iso, fx: Fx[], live = false) => (lv: number) => {
+export const tr = (v: V2) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
+/** What a level draws, by layer (bottom to top): base = slabs, zone outlines, grid; hits = table footprints; furn = furniture back to front; over = rings and table names; names = floor names; units, pings = the movers. */
+export const LAYERS = ['base', 'hits', 'furn', 'over', 'names', 'units', 'pings'] as const
+export type Layers = Record<typeof LAYERS[number], string>
+export const levelParts = (c: Ctx, o: Iso, fx: Fx[], live: boolean, lv: number): Layers => {
   const tu = turnOf(c.w, o)
   const raw = having(c.w, 'floor').filter(f => levelOf(c.w, f.id) === lv).map(f => [f, slabOf(c.w, lv)(f)] as const).filter((x): x is [Ent<'floor'>, Box] => !!x[1])
   const fs = raw.map(([f, b]): [Ent<'floor'>, Box] => [f, reachTo(raw.map(x => x[1]))(b)])
   const zs = zonesAt(c.w, lv)
-  const bs = tablesAt(c.w, lv).map(block(c, o, tu)).sort((a, b) => depthOf(tu, a.at) - depthOf(tu, b.at))
+  const bs = tablesAt(c.w, lv).map(block(c, o, tu, live)).sort((a, b) => depthOf(tu, a.at) - depthOf(tu, b.at))
   const fr = [...bs.flatMap(b => b.frags), ...zs.filter(z => STANDING.includes(z.zone.kind)).flatMap(standing(tu))]
-  const us = o.units ? having(c.w, 'body').filter(b => levelOf(c.w, floorOf(c.w, b.id)) === lv) : []
-  const ps = o.pings ? fx.filter(f => levelOf(c.w, f.floor) === lv) : []
-  return `<g data-level="${lv}" opacity="${(o.op[lv] ?? 100) / 100}" transform="${tr(lift(c.w, o, lv))}">${fs.map(slab(tu, lv)).join('')}${zs.filter(z => !STANDING.includes(z.zone.kind)).map(zone(tu)).join('')}${live ? '' : gridOf(tu, lv, fs.map(x => x[1]))}` +
-    bs.map(b => b.hit).join('') + (live ? fr.map((_, i) => i).sort((i, j) => depthOf(tu, fr[i]!.at) - depthOf(tu, fr[j]!.at)) : order(tu, fr)).map(i => fr[i]!.html).join('') + bs.map(b => b.over).join('') + fs.map(name(tu)).join('') + us.map(unit(tu)).join('') + ps.map(ping(tu)).join('') + '</g>'
+  return {
+    base: fs.map(slab(tu, lv)).join('') + zs.filter(z => !STANDING.includes(z.zone.kind)).map(zone(tu, live)).join('') + (live ? '' : gridOf(tu, lv, fs.map(x => x[1]))),
+    hits: bs.map(b => b.hit).join(''),
+    furn: (live ? fr.map((_, i) => i).sort((i, j) => depthOf(tu, fr[i]!.at) - depthOf(tu, fr[j]!.at)) : order(tu, fr)).map(i => fr[i]!.html).join(''),
+    over: bs.map(b => b.over).join(''), names: live ? '' : fs.map(name(tu)).join(''), ...movers(c, o, fx, lv),
+  }
 }
+/** Units and pings of a level (the mover layers), keyed for in-place updates. */
+export const unitsOf = (c: Ctx, o: Iso, lv: number) => (o.units ? having(c.w, 'body').filter(b => levelOf(c.w, floorOf(c.w, b.id)) === lv) : [])
+export const pingsOf = (c: Ctx, o: Iso, fx: Fx[], lv: number) => (o.pings ? fx.filter(f => levelOf(c.w, f.floor) === lv) : [])
+const movers = (c: Ctx, o: Iso, fx: Fx[], lv: number) => ((tu = turnOf(c.w, o)) => ({units: unitsOf(c, o, lv).map(unit(tu)).join(''), pings: pingsOf(c, o, fx, lv).map(ping(tu)).join('')}))()
+export const levelOpen = (c: Ctx, o: Iso, lv: number) => `<g data-level="${lv}" opacity="${(o.op[lv] ?? 100) / 100}" transform="${tr(lift(c.w, o, lv))}">`
+export const wrapLayers = (p: Layers) => LAYERS.map(k => `<g data-layer="${k}">${p[k]}</g>`).join('')
+const level = (c: Ctx, o: Iso, fx: Fx[], live = false) => (lv: number) => levelOpen(c, o, lv) + wrapLayers(levelParts(c, o, fx, live, lv)) + '</g>'
 const depthOf = (tu: Turn, p: V2) => depth(tu)(p)
 /** The svg's insides (live redraws during a drag swap these and the viewBox, keeping the svg element; `live` skips the grids and sorts by depth only; the release repaints in full). */
 export const isoInner = (c: Ctx, o: Iso, fx: Fx[] = [], live = false) => shownLevels(c.w, o).map(level(c, o, fx, live)).join('')
 export const isoBox = (c: Ctx, o: Iso) => viewBox(isoFit(c.w, o), o.cam)
 const HINT = 'isometric floors: drag empty space to turn, drag a level to move it along x, y or z, shift or right drag to pan, wheel to zoom'
-export const isoSvg = (c: Ctx, o: Iso, fx: Fx[] = []) =>
-  `<svg data-iso viewBox="${isoBox(c, o)}" class="max-h-[78vh] w-full cursor-grab touch-none select-none rounded bg-slate-50 active:cursor-grabbing dark:bg-slate-900" role="img" aria-label="${HINT}">${isoInner(c, o, fx)}</svg>`
+/** The svg around the layers: the live panel paints this and the layers fill it (layers.iso.ts); `isoSvg` is the same with everything inside as one string. */
+export const isoShell = (c: Ctx, o: Iso, inner = '') =>
+  `<svg data-iso viewBox="${isoBox(c, o)}" class="max-h-[78vh] w-full cursor-grab touch-none select-none rounded bg-slate-50 active:cursor-grabbing dark:bg-slate-900" role="img" aria-label="${HINT}">${inner}</svg>`
+export const isoSvg = (c: Ctx, o: Iso, fx: Fx[] = []) => isoShell(c, o, isoInner(c, o, fx))
 // Controls (keyboard focusable buttons; radio groups carry role=radio + aria-checked, toggles aria-pressed).
 const ROLE_OF: Record<string, (on: boolean) => string> = {radio: on => `role="radio" aria-checked="${on}"`, toggle: on => `aria-pressed="${on}"`, button: () => ''}
 const press = (k: string, v: string | number, label: string, on: boolean, role = 'radio', aria = '') =>
@@ -214,3 +233,12 @@ export const isoControls = (c: Ctx, o: Iso) =>
   `<div class="flex flex-wrap gap-x-4 gap-y-1.5">${levels(c.w).map(levelRow(o)).join('')}${group('Spacing', GAPS.map((_, i) => press('gap', i, ['flat', 'S', 'M', 'L'][i]!, o.gap === i, 'radio', `level spacing ${i}`)).join(''))}` +
   group('Turn', press('rot', -90, '↺', false, 'button', 'turn left') + `<span data-rot class="w-9 text-center text-xs tabular-nums">${Math.round(o.rot)}°</span>` + press('rot', 90, '↻', false, 'button', 'turn right') + press('reset', 0, 'Reset view', false, 'button'), 'group') +
   group('Show', press('units', 1, 'units', o.units, 'toggle') + press('pings', 1, 'pings', o.pings, 'toggle'), 'group') + `</div>${legend(c, o)}</div>`
+
+// ---- change keys: a layer is redrawn only when its key moves
+const staffIds = (w: World) => having(w, 'staff').map(x => x.id).join(',')
+/** Layout: everything the static layers draw (floors, table bodies and seating, zones). */
+export const layoutKey = (w: World) => [having(w, 'floor').map(f => `${f.id}:${f.floor.level ?? 0}:${f.floor.name}`), (having(w, 'table', 'pos') as T[]).map(t => `${t.id}${t.pos.floor}:${t.pos.x},${t.pos.y},${t.pos.w},${t.pos.h}:${t.table.shape}:${t.table.label}:${JSON.stringify(t.seating ?? 0)}:${t.area?.id ?? ''}:${t.feat?.tags.join('+') ?? ''}`),
+  having(w, 'zone', 'pos').map(z => `${z.id}${z.pos.floor}:${z.pos.x},${z.pos.y},${z.pos.w},${z.pos.h}:${z.zone.kind}:${z.zone.label}`)].join('#')
+/** What a table's state pieces show (status, seats taken, server, section, outline, palette); the context part is shared by all tables. */
+export const stateKey = (c: Ctx, o: Iso) => ((ex = `${o.pal}|${c.pick ?? ''}|${staffIds(c.w)}`) => (t: T) =>
+  `${ex}|${t.table.status}|${t.table.capacity}|${seatedAt(c.w, t.id)}|${slotAt(c.w, t.id) ? 1 : 0}|${c.w.ents[t.table.section ?? '']?.section?.color ?? ''}|${c.alerts?.[t.id]?.level ?? ''}|${titleOf(c.w, c.holds)(t)}|${c.areas[t.area?.id ?? 'main']?.label ?? ''}`)()

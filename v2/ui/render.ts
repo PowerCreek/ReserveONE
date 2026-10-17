@@ -6,6 +6,8 @@ export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ESC[
 export const arg = (ev: Event, k: string) => (ev.target as Element).closest('[data-act]')?.getAttribute(`data-${k}`) ?? ''
 /** Panel roots: a parent's morph keeps their attributes in step and leaves their insides to their own panel. */
 const owned = new WeakSet<Node>()
+/** A layered view claims a node: the morph keeps its attributes in step but never touches its children (the owner paints them). */
+export const own = (n: Node) => void owned.add(n)
 const attrs = (a: Element, b: Element) => {
   ;[...a.attributes].filter(x => !b.hasAttribute(x.name)).forEach(x => a.removeAttribute(x.name))
   ;[...b.attributes].filter(x => a.getAttribute(x.name) !== x.value).forEach(x => a.setAttribute(x.name, x.value))
@@ -28,7 +30,8 @@ let pressed: Element | null = null
 const later = new Set<() => void>()
 const hold = (d: Document) => (owned.has(d) || (owned.add(d), d.addEventListener('pointerdown', e => (pressed = e.target as Element), true), d.addEventListener('pointerup', release, true), d.addEventListener('pointercancel', release, true)))
 const release = () => setTimeout(() => ((pressed = null), [...later].forEach(f => (later.delete(f), f()))))
-export const panel = (app: App, attr: string, draw: (app: App) => string): Binder => {
+/** `after(el)` runs after every paint (also when the html is unchanged): layered views sync their own nodes there. */
+export const panel = (app: App, attr: string, draw: (app: App) => string, after?: (el: Element) => void): Binder => {
   const last = new WeakMap<Element, string>()
   const wait = new WeakSet<Element>()
   const paint = (el: Element): void => {
@@ -37,6 +40,7 @@ export const panel = (app: App, attr: string, draw: (app: App) => string): Binde
     wait.delete(el)
     const had = last.has(el)
     last.get(el) !== html && (last.set(el, html), had ? kids(el, fresh(el, html)) : (el.innerHTML = html))
+    after?.(el)
   }
   return {attr, apply: el => (owned.add(el), hold(el.ownerDocument), wait.has(el) || (wait.add(el), queueMicrotask(() => paint(el))))}
 }

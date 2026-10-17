@@ -187,7 +187,7 @@ export const unit = (w: World) => (e: Ent<'body'>) => (sitting(w, e) ? '' :
 export const ping = (f: Fx) =>
   `<g><circle cx="${f.x}" cy="${f.y}" r="16" fill="none" stroke-width="3" class="${RING[f.kind] ?? HRING[f.kind] ?? RING.left} origin-center animate-ping [transform-box:fill-box]"/>` +
   txt(f.x, f.y - 22, 'fill-slate-700 text-[10px] font-semibold dark:fill-slate-200', f.kind) + '</g>'
-export const door = `<g><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
+export const door = `<g data-door><rect x="${DOOR.x - 14}" y="${DOOR.y - 24}" width="8" height="48" class="fill-slate-500"/>${txt(DOOR.x - 2, DOOR.y + 40, 'fill-slate-500 text-[10px]', 'DOOR')}</g>`
 export const STAFF = ['fill-sky-600', 'fill-emerald-600', 'fill-amber-600', 'fill-rose-600', 'fill-violet-600', 'fill-teal-600', 'fill-orange-600', 'fill-pink-600']
 /** A coloured initial on the table corner for whoever holds it now (colour = the holder's place in the crew). */
 export const badge = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'>) => {
@@ -330,3 +330,7 @@ export type Alerts = Record<Id, {level: Insight['level']; msg: string}>
 export const alertsOf = (is: Insight[] = []): Alerts => is.filter(i => i.level !== 'info').reduce<Alerts>((m, i) => ({...m, ...Object.fromEntries(i.tables.filter(t => m[t]?.level !== 'crit').map(t => [t, {level: i.level, msg: i.msg}]))}), {})
 export const outline = (a: Alerts) => (t: Ent<'table' | 'pos'>) => ((x = a[t.id]) => (x ? `<g data-insight="${x.level}" data-tid-alert="${esc(t.id)}"><title>${esc(x.msg)}</title><rect x="${t.pos.x - 4}" y="${t.pos.y - 4}" width="${t.pos.w + 8}" height="${t.pos.h + 8}" rx="8" fill="none" stroke-width="3" class="${ALERT[x.level]}${x.level === 'crit' ? ' animate-pulse' : ''}"/></g>` : ''))()
 export const picked = (t?: Ent<'table' | 'pos'>) => (t ? `<rect data-picked x="${t.pos.x - 6}" y="${t.pos.y - 6}" width="${t.pos.w + 12}" height="${t.pos.h + 12}" rx="10" fill="none" stroke-width="2" stroke-dasharray="4 3" class="pointer-events-none stroke-sky-500"/>` : '')
+
+/** What a table's 2D markup depends on beyond its layout: status, capacity, covers seated, the seated party, label and hover line. */
+export const tableSig = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) => ((x = slotAt(w, t.id), p = w.ents[x?.s.slot.party ?? '']?.party) =>
+  `${t.table.status}|${t.table.capacity}|${t.table.label}|${seatedAt(w, t.id)}|${x?.ts[0] === t.id ? `${p?.name}|${p?.size}|${p?.label}` : ''}|${titleOf(w, hs)(t)}|${t.pos.x},${t.pos.y},${t.pos.w},${t.pos.h}`)()

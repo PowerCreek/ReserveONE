@@ -4,20 +4,25 @@ import {having} from '../contracts/index.ts'
 import type {App, Hold, Id, Policy, World} from '../contracts/index.ts'
 import {policyOf} from './ask.ts'
 import {boardOf} from './board.ts'
-import {alertsOf, badge, chips, door, grid, gridLines, link, outline, picked, ping, section, table, unit, zonesOf} from './draw.ts'
+import {alertsOf, badge, door, grid, gridLines, link, outline, picked, ping, section, table, tableSig, unit, zonesOf} from './draw.ts'
 import type {Alerts} from './draw.ts'
 import {CAM, DOOR, H, LV, W, boxStr, doorFloor, fitBox, floorOf, floorsOf, hull, levelName, levelOf, levels, seen, zoomAt} from './geo.ts'
 import type {Box, Cam} from './geo.ts'
 import {cardHtml, closeCard, tableCard} from './card.ts'
-import {ISO, isoBox, isoControls, isoFit, isoInner, isoSvg, lift, turnOf, tweak} from './iso.ts'
+import type {Ctx} from './iso.ts'
+import {ISO, isoBox, isoControls, isoFit, isoShell, layoutKey, turnOf, tweak} from './iso.ts'
 import {isoDrag} from './isocam.ts'
+import {gesture} from './gesture.ts'
+import {fill, reconcile, reconcileSig, group} from './layers.ts'
+import {liftIso, resetIso, syncIso} from './layersiso.ts'
 import type {View} from './isocam.ts'
 import type {Iso} from './iso.ts'
 import {holdsOf, live} from './assign.ts'
 import {presets} from './presets.ts'
-import {arg, esc, panel} from './render.ts'
+import {arg, esc, own, panel} from './render.ts'
 import {btn, card, ctaSm, ghost, on} from './tone.ts'
 import {uiOf} from './state.ts'
+import {raw} from '../kernel/store.ts'
 import type {Fx} from './state.ts'
 declare module '../contracts/kernel.ts' {
   interface UiState {floorId?: string; floorView?: '2d' | 'iso'; iso?: Iso; cam?: Cam; grid?: boolean}
@@ -56,15 +61,40 @@ const named = (w: World, ts: {table: {section: Id | null}}[]) => having(w, 'sect
 export interface Look {cam?: Cam; grid?: boolean; alerts?: Alerts; pick?: Id}
 const SVG = 'block mx-auto aspect-[4/3] w-full max-w-[104vh] cursor-grab touch-none select-none rounded bg-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-500 active:cursor-grabbing dark:bg-slate-900'
 const HINT = 'restaurant floor: drag or arrow keys to pan, ctrl + wheel or + and - to zoom, 0 to fit'
+const PLAN = ['grid', 'zones', 'secs', 'links', 'tables', 'over', 'door', 'units', 'pings'] as const
+type Plan = ReturnType<typeof scope>
+/** The 2D plan's layers, each a thunk: zones (static), sections / links / tables / over (state), door, units + pings (movers). */
+const planLayers = (w: World, s: Plan, held: Holding, look: Look, v: Box): Record<typeof PLAN[number], () => string> => ({
+  grid: () => (look.grid === false ? '' : grid(v)), zones: () => zonesOf(w, s.zs, s.ts, named(w, s.ts)),
+  secs: () => having(w, 'section').map(x => section(x, s.ts.filter(t => t.table.section === x.id), held.live)).join(''), links: () => s.links.map(link(w)).join(''),
+  tables: () => s.ts.map(table(w, held.holds)).join(''),
+  over: () => s.ts.map(outline(look.alerts ?? {})).join('') + picked(s.ts.find(t => t.id === look.pick)) + s.ts.map(badge(w, held.holds)).join(''),
+  door: () => (s.door && !s.zs.some(z => z.zone.kind === 'door') ? door : ''), units: () => s.units.map(unit(w)).join(''), pings: () => s.fx.map(ping).join(''),
+})
+const planShell = (fit: Box, v: Box, inner = '') => `<svg data-plan data-fit="${boxStr(fit)}" viewBox="${boxStr(v)}" tabindex="0" data-on="keydown:floorKey" class="${SVG}" role="group" aria-label="${HINT}">${inner}</svg>`
+const planView = (w: World, fx: Fx[], fid: Id | undefined, look: Look) => ((s = scope(w, fx, fid)) => ({s, fit: fitOf(s), v: seen(fitOf(s), look.cam ?? CAM)}))()
 export const floorSvg = (w: World, fx: Fx[], fid?: Id, held: Holding = {holds: [], live: true}, look: Look = {}) => {
-  const s = scope(w, fx, fid)
-  const [fit, secs] = [fitOf(s), having(w, 'section').map(x => section(x, s.ts.filter(t => t.table.section === x.id), held.live))]
-  const v = seen(fit, look.cam ?? CAM)
-  const doorMark = s.door && !s.zs.some(z => z.zone.kind === 'door')
-  return `<svg data-plan data-fit="${boxStr(fit)}" viewBox="${boxStr(v)}" tabindex="0" data-on="keydown:floorKey" class="${SVG}" role="group" aria-label="${HINT}">` + [
-    ...(look.grid === false ? [] : [grid(v)]), zonesOf(w, s.zs, s.ts, named(w, s.ts)), ...secs, ...s.links.map(link(w)), ...s.ts.map(table(w, held.holds)), ...s.ts.map(outline(look.alerts ?? {})), picked(s.ts.find(t => t.id === look.pick)),
-    ...s.ts.map(badge(w, held.holds)), ...s.ts.map(chips), ...(doorMark ? [door] : []), ...s.units.map(unit(w)), ...s.fx.map(ping),
-  ].join('') + '</svg>'
+  const {s, fit, v} = planView(w, fx, fid, look), ls = planLayers(w, s, held, look, v)
+  return planShell(fit, v, PLAN.map(k => k === 'grid' || k === 'door' ? ls[k]() : `<g data-layer="${k}">${ls[k]()}</g>`).join(''))
+}
+/** Keep the live plan svg in step: zones only when the layout changed, tables one by one when their state key moved, units and pings in place; the grid follows the viewBox. */
+const plans = new WeakMap<Element, Record<string, Element>>()
+const syncPlan = (svg: Element, w: World, fx: Fx[], fid: Id | undefined, held: Holding, look: Look) => {
+  const {s} = planView(w, fx, fid, look), vb = (svg.getAttribute('viewBox') ?? '0 0 1 1').split(' ').map(Number)
+  const v = {x: vb[0]!, y: vb[1]!, w: vb[2]!, h: vb[3]!}, ls = planLayers(w, s, held, look, v)
+  const at = plans.get(svg) ?? (plans.set(svg, Object.fromEntries(PLAN.filter(k => k !== 'grid' && k !== 'door').map(k => [k, group(svg.ownerDocument, {'data-layer': k})]))), plans.get(svg)!)
+  const gridG = svg.querySelector(':scope > [data-grid]')
+  look.grid === false ? gridG?.remove() : gridG ? undefined : svg.insertAdjacentHTML('afterbegin', grid(v))
+  look.grid === false || fill(svg.querySelector(':scope > [data-grid]')!, boxStr(v), () => gridLines(v))
+  fill(at.zones!, `${layoutKey(w)}|${fid}`, ls.zones)
+  ;(['secs', 'links', 'over'] as const).forEach(k => ((h = ls[k]()) => fill(at[k]!, h, () => h))())
+  reconcileSig(at.tables!, s.ts.map(t => [t.id, tableSig(w, held.holds)(t), () => table(w, held.holds)(t)]))
+  reconcile(at.units!, s.units.map(b => [b.id, unit(w)(b)]))
+  reconcile(at.pings!, s.fx.map((f, i) => [`${i}:${f.kind}:${f.x}:${f.y}`, ping(f)]))
+  const doorH = ls.door(), dEl = svg.querySelector(':scope > [data-door]')
+  doorH ? dEl || svg.insertAdjacentHTML('beforeend', door) : dEl?.remove()
+  const want = [...(svg.querySelector(':scope > [data-grid]') ? [svg.querySelector(':scope > [data-grid]')!] : []), at.zones!, at.secs!, at.links!, at.tables!, at.over!, ...(svg.querySelector(':scope > [data-door]') ? [svg.querySelector(':scope > [data-door]')!] : []), at.units!, at.pings!]
+  want.length === svg.children.length && want.every((n, i) => n === svg.children[i]) || svg.replaceChildren(...want)
 }
 const tab = (w: World, p: Policy, fid?: Id) => (t: Tab) => {
   const ts = having(w, 'table', 'pos').filter(x => t.ids.includes(x.pos.floor) && !p.seat.selfSeat.includes(x.table.shape)) // stools are first come, first served: not the host's to count
@@ -74,19 +104,25 @@ const tab = (w: World, p: Policy, fid?: Id) => (t: Tab) => {
 /** Tabs only when there is a choice to make. */
 export const tabsOf = (w: World, p: Policy, fid?: Id) =>
   having(w, 'floor').length > 1 ? `<nav data-floors role="radiogroup" aria-label="floor" class="mb-2 flex flex-wrap gap-1">${tabList(w).map(tab(w, p, fid)).join('')}</nav>` : ''
-const isoOf = (app: App) => ({...ISO, ...uiOf(app).iso})
+/** Read-only drawing reads the unproxied world (every Proxy hop costs; the layers never write). */
+const fxOf = (app: App) => raw(uiOf(app).fx)
+const worldOf = (app: App) => raw(app.store.state.world)
+/** The camera mid-gesture lives here, not in the store: ui writes repaint every panel bound to `ui`, so the settled view is committed once at the end. */
+const glide = new WeakMap<App, {iso?: Partial<Iso>; cam?: Cam}>()
+const isoOf = (app: App): Iso => ({...ISO, ...uiOf(app).iso, ...glide.get(app)?.iso})
 const held = (app: App): Holding => ({holds: holdsOf(app), live: live(app)})
 /** Board insights as outlines, from the one shared board read per repaint (ui/board.ts `boardOf`; read only). */
 const alertsNow = (app: App) => alertsOf(boardOf(app)?.insights)
-const ctx = (app: App, alerts: Alerts) => ({w: app.store.state.world, holds: holdsOf(app), areas: policyOf(app).service.areas, alerts, pick: uiOf(app).card?.table})
-const camOf = (app: App) => ({...CAM, ...uiOf(app).cam})
+const ctx = (app: App, alerts: Alerts) => ({w: worldOf(app), holds: holdsOf(app), areas: policyOf(app).service.areas, alerts, pick: uiOf(app).card?.table})
+const camOf = (app: App) => ({...CAM, ...uiOf(app).cam, ...glide.get(app)?.cam})
 const flat = (app: App, alerts: Alerts) => {
-  const [w, fid] = [app.store.state.world, shown(app.store.state.world, uiOf(app).floorId)]
-  return tabsOf(w, policyOf(app), fid) + floorSvg(w, uiOf(app).fx, fid, held(app), {cam: camOf(app), grid: uiOf(app).grid ?? true, alerts, pick: uiOf(app).card?.table})
+  const [w, fid] = [worldOf(app), shown(worldOf(app), uiOf(app).floorId)]
+  const {fit, v} = planView(w, fxOf(app), fid, {cam: camOf(app)})
+  return tabsOf(w, policyOf(app), fid) + planShell(fit, v)
 }
 const VIEWS: Record<string, (app: App, alerts: Alerts) => string> = {
   '2d': flat,
-  iso: (app, alerts) => isoControls(ctx(app, alerts), isoOf(app)) + isoSvg(ctx(app, alerts), isoOf(app), uiOf(app).fx),
+  iso: (app, alerts) => isoControls(ctx(app, alerts), isoOf(app)) + isoShell(ctx(app, alerts), isoOf(app)),
 }
 const viewOf = (app: App) => uiOf(app).floorView ?? '2d'
 const toggle = (v: string) => `<div role="radiogroup" aria-label="floor view" class="inline-flex gap-1">${[['2d', '2D'], ['iso', 'Iso']].map(([k, l]) =>
@@ -97,7 +133,16 @@ const camBar = (app: App) => `<div role="group" aria-label="camera" class="inlin
   camBtn('out', '−', 'zoom out') + `<span class="w-11 text-center text-xs tabular-nums text-slate-500">${Math.round(camOf(app).z * 100)}%</span>` + camBtn('in', '+', 'zoom in') + camBtn('fit', 'Fit', 'fit the floor') + '</div>'
 const BARS: Record<string, (app: App) => string> = {'2d': camBar, iso: () => ''}
 const bar = (app: App) => `<div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">${toggle(viewOf(app))}${BARS[viewOf(app)]!(app)}</div>`
-const draw = (app: App) => (having(app.store.state.world, 'table', 'pos').length ? bar(app) + VIEWS[viewOf(app)]!(app, alertsNow(app)) + cardHtml(app) : empty)
+const MODE = new WeakMap<Element, string>()
+/** After each panel paint: the svg is the layers' own; sync them with the world (skipped layers cost nothing). */
+const sync = (app: App, el: Element) => ((svg = el.querySelector('svg[data-plan], svg[data-iso]'), w = worldOf(app)) => {
+  if (!svg) return
+  own(svg)
+  const mode = svg.hasAttribute('data-iso') ? 'iso' : 'plan'
+  MODE.get(svg) !== mode && (svg.replaceChildren(), resetIso(svg), plans.delete(svg), MODE.set(svg, mode))
+  mode === 'iso' ? turning.has(app) || syncIso(svg, (last.set(app, ctx(app, alertsNow(app))), last.get(app)!), isoOf(app), fxOf(app)) : syncPlan(svg, w, fxOf(app), shown(w, uiOf(app).floorId), held(app), {cam: camOf(app), grid: uiOf(app).grid ?? true, alerts: alertsNow(app), pick: uiOf(app).card?.table})
+})()
+const draw = (app: App) => (having(worldOf(app), 'table', 'pos').length ? bar(app) + VIEWS[viewOf(app)]!(app, alertsNow(app)) + cardHtml(app) : empty)
 /** Repaint replaces the panel's buttons: put keyboard focus back on the one just pressed. */
 const refocus = (ev: Event) => {
   const b = (ev.target as Element).closest('[data-act]')
@@ -129,45 +174,35 @@ const ACTS: Record<string, (app: App, ev: Event) => void> = {
   grid: a => (uiOf(a).grid = !(uiOf(a).grid ?? true)),
   cam: (a, ev) => (uiOf(a).cam = (CAMS[arg(ev, 'k')] ?? camOf)(a)),
 }
-/** Drag pans (a press that moves under 4 px stays a click, so tables still open their card); ctrl/meta + wheel zooms about the cursor (a plain wheel scrolls the page). */
-const drag = (app: App, el: Element) => {
-  const d = {on: false, moved: false, x: 0, y: 0, k: 1}
-  const per = (svg: SVGSVGElement) => ((r = svg.getBoundingClientRect(), f = svg.viewBox.baseVal) => (r.width ? f.width / r.width : 1))()
-  const down = (ev: PointerEvent) => ((svg = (ev.target as Element).closest?.('[data-floor] svg[data-plan]') as SVGSVGElement | null) => svg && ev.button === 0 && Object.assign(d, {on: true, moved: false, x: ev.clientX, y: ev.clientY, k: per(svg)}))()
-  const far = (ev: PointerEvent) => d.moved || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) >= 4
-  const move = (ev: PointerEvent) => d.on && far(ev) && (!d.moved && closeCard(app), Object.assign(d, {moved: true}), pan(app, (d.x - ev.clientX) * d.k, (d.y - ev.clientY) * d.k), Object.assign(d, {x: ev.clientX, y: ev.clientY}))
-  const up = () => Object.assign(d, {on: false})
-  const swallow = (ev: Event) => d.moved && (ev.stopPropagation(), ev.preventDefault(), (d.moved = false))
-  const wheel = (ev: WheelEvent) => ((svg = (ev.target as Element).closest?.('[data-floor] svg[data-plan]') as SVGSVGElement | null) => svg && (ev.ctrlKey || ev.metaKey) && zoomWheel(app, svg, ev))()
-  const on: [keyof DocumentEventMap, (ev: PointerEvent) => unknown][] = [['pointerdown', down], ['pointermove', move], ['pointerup', up], ['pointercancel', up]]
-  on.forEach(([t, f]) => el.ownerDocument.addEventListener(t, f as unknown as EventListener))
-  el.addEventListener('click', swallow, true)
-  el.addEventListener('wheel', wheel as EventListener, {passive: false})
-}
-const zoomWheel = (app: App, svg: SVGSVGElement, ev: WheelEvent) => {
-  const [r, fit] = [svg.getBoundingClientRect(), fitNow(app)]
-  ev.preventDefault()
-  return fit && r.width && ((uiOf(app).cam = zoomAt(fit, camOf(app), camOf(app).z * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), (ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height)), uiOf(app).rev++)
-}
-// ---- iso camera: a drag or wheel writes the view to state and redraws the live svg in place (one frame at a time); the release repaints the panel
+// ---- gestures (gesture.ts): drag, wheel and pinch only pile deltas up; each animation frame applies them once, eased. Pan and zoom move the viewBox of the cached layers, a turn re-projects once per frame, the release repaints in full.
+const planGesture = (app: App, el: Element) => gesture({
+  root: el, sel: '[data-floor] svg[data-plan]', fling: ['pan'], tau: 60,
+  mode: ev => (ev.button === 0 ? 'pan' : undefined), push: {pan: (dx, dy) => ({px: dx, py: dy})},
+  wheel: ev => ev.ctrlKey || ev.metaKey, begin: () => closeCard(app),
+  apply: (d, g, settled) => {
+    const fit = fitNow(app) ?? {x: 0, y: 0, w: W, h: H}
+    const z = d.lz ? zoomAt(fit, camOf(app), camOf(app).z * Math.exp(d.lz), g.anchor[0], g.anchor[1]) : camOf(app)
+    glide.set(app, {...glide.get(app), cam: {...z, x: z.x - (d.px ?? 0) * g.k, y: z.y - (d.py ?? 0) * g.k}})
+    repan(app)
+    settled && (Object.assign(uiOf(app), {cam: camOf(app)}), glide.delete(app), uiOf(app).rev++)
+  },
+})
+// ---- iso camera: the sampler's frames call `put`; a turn redraws the live layers once per frame, a level move sets translates, pan and zoom only the viewBox; `done` repaints in full
 const isoEl = (): SVGSVGElement | null => globalThis.document?.querySelector('[data-floor] svg[data-iso]') ?? null
-const frame = (f: () => void) => (globalThis.requestAnimationFrame ?? ((g: () => void) => setTimeout(g, 16)))(f)
-/** What a live change redraws: pan/zoom only the viewBox, a level move its translate, a turn the insides (and the turn readout). */
-const tr = (v: [number, number]) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
-const LIVE: Record<string, (app: App, svg?: SVGSVGElement, live?: boolean) => void> = {
-  box: () => undefined,
-  lift: (app, svg) => svg?.querySelectorAll('[data-level]').forEach(g => g.setAttribute('transform', tr(lift(app.store.state.world, isoOf(app), Number(g.getAttribute('data-level')))))),
-  all: (app, svg, live = true) => svg && ((svg.innerHTML = isoInner(ctx(app, alertsNow(app)), isoOf(app), uiOf(app).fx, live)), svg.ownerDocument.querySelector('[data-floor] [data-rot]')?.replaceChildren(`${Math.round(isoOf(app).rot)}°`)),
-}
-const redraw = (app: App, p: Partial<View>) => ((svg = isoEl()) => svg && (svg.setAttribute('viewBox', isoBox(ctx(app, {}), isoOf(app))), LIVE[p.rot !== undefined ? 'all' : p.shift ? 'lift' : 'box']!(app, svg)))()
-const isoHooks = (app: App) => {
-  const st = {due: false, p: {} as Partial<View>}
-  const flush = () => ((st.due = false), redraw(app, st.p), (st.p = {}))
-  return {
-    view: () => isoOf(app), turn: () => turnOf(app.store.state.world, isoOf(app)), fit: () => isoFit(app.store.state.world, isoOf(app)), close: () => closeCard(app), grid: policyOf(app).sim.grid,
-    put: (v: Partial<View>, done: boolean) => ((uiOf(app).iso = {...isoOf(app), ...v}), done ? ((st.p = {}), LIVE.all!(app, isoEl() ?? undefined, false), uiOf(app).rev++) : ((st.p = {...st.p, ...v}), st.due || ((st.due = true), frame(flush)))),
-  }
-}
+/** A drag-turn is under way: the panel's own syncs wait, the release repaints in full. */
+const turning = new WeakSet<App>()
+const last = new WeakMap<App, Ctx>()
+const redraw = (app: App, p: Partial<View>) => ((svg = isoEl()) => {
+  if (!svg) return
+  const c = last.get(app) ?? ctx(app, alertsNow(app))
+  svg.setAttribute('viewBox', isoBox(c, isoOf(app)))
+  p.rot !== undefined && (turning.add(app), syncIso(svg, c, isoOf(app), fxOf(app), true), svg.ownerDocument.querySelector('[data-floor] [data-rot]')?.replaceChildren(`${Math.round(isoOf(app).rot)}°`))
+  p.shift && liftIso(svg, c, isoOf(app))
+})()
+const isoHooks = (app: App) => ({
+  view: () => isoOf(app), turn: () => turnOf(worldOf(app), isoOf(app)), fit: () => isoFit(worldOf(app), isoOf(app)), close: () => closeCard(app), grid: policyOf(app).sim.grid,
+  put: (v: Partial<View>, done: boolean) => (glide.set(app, {...glide.get(app), iso: {...glide.get(app)?.iso, ...v}}), done ? (turning.delete(app), (uiOf(app).iso = isoOf(app)), glide.delete(app), uiOf(app).rev++) : redraw(app, v)),
+})
 /** Opacity slider: state plus the live level and readout, no repaint (the slider keeps its drag). */
 const isoOp = (app: App, ev: Event) => ((el = ev.target as HTMLInputElement, lv = el.getAttribute('data-lv') ?? '') => {
   uiOf(app).iso = tweak(isoOf(app), 'op', `${lv}:${el.value}`)
@@ -179,5 +214,5 @@ export const floor = (app: App) => {
   app.act('floorKey', (a, ev) => key(a, ev as KeyboardEvent))
   app.act('isoOp', isoOp)
   app.use(tableCard)
-  app.binder(panel(app, 'data-floor', draw)).view(el => (drag(app, el), isoDrag(el, isoHooks(app))))
+  app.binder(panel(app, 'data-floor', draw, el => sync(app, el))).view(el => (planGesture(app, el), isoDrag(el, isoHooks(app))))
 }

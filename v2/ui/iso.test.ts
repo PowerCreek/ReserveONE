@@ -198,15 +198,17 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   assert.equal(svg().getAttribute('viewBox'), box)
   const ptr = (type: string, target: Element, x: number, y: number, o: object = {}) => target.dispatchEvent(new window.MouseEvent(type, {bubbles: true, clientX: x, clientY: y, button: 0, ...o}))
   const rot = () => (app.store.state.ui as any).iso.rot
+  const until = async (f: () => boolean) => { for (let i = 0; i < 150 && !f(); i++) await new Promise(r => setTimeout(r, 10)) } // frames ease the camera: wait for it to settle
   ptr('pointerdown', svg(), 10, 10); ptr('pointermove', svg(), 60, 10); ptr('pointerup', svg(), 60, 10)
-  await settle()
-  assert.equal(rot(), 20) // 50 px of orbit
+  await until(() => Math.abs(rot() - 20) < 1e-6)
+  await until(() => !!svg().querySelector('[data-layer="furn"] > *'))
+  assert.ok(Math.abs(rot() - 20) < 1e-6) // 50 px of orbit
   ptr('pointerdown', svg().querySelector('[data-slab]')!, 10, 10); ptr('pointermove', svg(), 10, -40); ptr('pointerup', svg(), 10, -40)
-  await settle()
+  await until(() => Math.abs((app.store.state.ui as any).iso.shift?.[0]?.[2] ?? 0) >= 16)
   assert.ok(Math.abs((app.store.state.ui as any).iso.shift[0][2]) >= 16) // straight up the screen = the z axis, snapped to a cell
   ptr('pointerdown', svg(), 10, 10, {shiftKey: true}); ptr('pointermove', svg(), 40, 10, {shiftKey: true}); ptr('pointerup', svg(), 40, 10)
-  await settle()
-  assert.ok((app.store.state.ui as any).iso.cam.x < 0 && rot() === 20)
+  await until(() => (app.store.state.ui as any).iso.cam.x < -1)
+  assert.ok((app.store.state.ui as any).iso.cam.x < 0 && Math.abs(rot() - 20) < 1e-6)
   const tb = svg().querySelector('[data-tid="far"] polygon')!
   ptr('pointerdown', tb, 10, 10); ptr('pointerup', tb, 12, 11); tb.dispatchEvent(new window.MouseEvent('click', {bubbles: true}))
   await settle()
@@ -214,4 +216,34 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   click(el, '[data-act="floorView"][data-id="2d"]')
   await settle()
   assert.ok(f().querySelector('[data-floors]'))
+})
+test('layers: a table state change redraws only that table; a unit move only the unit; the static layers stay the same nodes', async () => {
+  const {app, el} = rig()
+  app.apply([...Object.values(world().ents), {id: 'u1', body: {role: 'guest' as const, x: 120, y: 120, speed: 1, task: null, backlog: [], party: null}}].map(ent => ({op: 'add' as const, ent})))
+  await settle()
+  click(el, '[data-act="floorView"][data-id="iso"]')
+  await settle()
+  const svg = () => el.querySelector('[data-floor] svg[data-iso]')!
+  const lay = (lv: number, k: string) => svg().querySelector(`[data-level="${lv}"] > [data-layer="${k}"]`)!
+  const first = (lv: number, k: string) => lay(lv, k).firstElementChild!
+  const nodes = (sel: string) => [...svg().querySelectorAll(sel)]
+  assert.equal(svg().querySelectorAll('[data-level]').length, 2)
+  assert.equal(nodes('[data-unit]').length, 1)
+  const [slab, far, near, unit] = [first(0, 'base'), nodes('[data-tid="far"][data-frag]'), nodes('[data-tid="near"][data-frag]'), nodes('[data-unit]')[0]!]
+  app.apply([{op: 'set', id: 'far', parts: {table: {...world().ents.far!.table!, status: 'occupied'}}}])
+  await settle()
+  assert.equal(first(0, 'base'), slab) // static layer untouched
+  assert.deepEqual(nodes('[data-tid="near"][data-frag]'), near) // other tables keep their nodes
+  assert.ok(nodes('[data-tid="far"][data-frag]').every((n, i) => n !== far[i])) // the changed table was redrawn
+  assert.match(svg().querySelector('[data-tid="far"] title')!.textContent!, /occupied/)
+  assert.equal(nodes('[data-unit]')[0], unit)
+  app.apply([{op: 'set', id: 'u1', parts: {body: {...app.store.state.world.ents.u1!.body!, x: 200}}}])
+  await settle()
+  assert.notEqual(nodes('[data-unit]')[0], unit) // the unit node was swapped...
+  assert.deepEqual(nodes('[data-tid="near"][data-frag]'), near) // ...and nothing else
+  assert.equal(first(0, 'base'), slab)
+  svg().dispatchEvent(new window.WheelEvent('wheel', {bubbles: true, cancelable: true, deltaY: -100}))
+  await new Promise(r => setTimeout(r, 400))
+  assert.equal(first(0, 'base'), slab) // zoom moves the viewBox only
+  assert.ok(Number((app.store.state.ui as any).iso.cam.z) > 1)
 })
