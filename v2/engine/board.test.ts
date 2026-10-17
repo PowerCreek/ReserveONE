@@ -36,6 +36,7 @@ test('board ledger: blocked, seated with covers, lapsed, reserved with its time,
     open: [{spot: 't3', label: 'T3'}, {spot: 't4', label: 'T4'}],
     reserved: [{spot: 't9', label: 'T9', at: N - mins(20)}, {spot: 't10', label: 'T10', at: N + mins(10)}], leased: [],
     seated: [{spot: 't1', label: 'T1', covers: 3}], lapsed: [{spot: 't2', label: 'T2'}], blocked: [{spot: 'p1', label: 'P1'}],
+    held: [],
   })
 })
 test('board activity: seat (+) and clear (-) today per 15m interval, newest first, net per interval', () => {
@@ -105,4 +106,27 @@ test('board kpis: labels short enough for a narrow card, the interval follows iv
 test('board kpi tones read policy.board.limits', () => {
   const p = {...P, board: {...P.board, limits: {...P.board.limits, bus: {warn: 5, crit: 9}, today: {warn: 1, crit: 5}}}}
   assert.deepEqual(board(p, room(), N).kpis.filter(k => ['bus', 'today'].includes(k.id)).map(k => k.tone), ['ok', 'crit'])
+})
+const withHolds = () => {
+  const w = room()
+  const h = (id: string, t: string, o: object) => ({...w.ents[t]!, hold: {id, size: 4, why: `why ${id}`, until: N + mins(30), ...o}})
+  return world([...Object.values(w.ents).filter(e => !['t3', 't4', 't9', 't10'].includes(e.id)), h('hd1', 't3', {party: 'pty6'}), h('hd2', 't4', {gate: {kind: 'at', at: N + mins(10)}}), h('hd3', 't9', {gate: {kind: 'at', at: N - mins(5)}}), h('hd4', 't10', {until: N - mins(10)})])
+}
+test('board ledger held: one chip per live or gate-waiting hold (who, until, why); expired drop out; an open spot under a live hold leaves open', () => {
+  const b = board(P, withHolds(), N)
+  assert.deepEqual(b.ledger.held.map(c => [c.label, c.for, c.until, c.why, !!c.waiting]), [['T3', 'Wait x2', N + mins(30), 'why hd1', false], ['T4', 'any party', N + mins(30), 'why hd2', true], ['T9', 'any party', N + mins(30), 'why hd3', false]])
+  assert.deepEqual(b.ledger.open.map(c => c.label), ['T4'])
+  assert.deepEqual(b.ledger.reserved.map(c => c.label), ['T9', 'T10'])
+})
+test('board gantt: live and waiting holds are bars to their until; expired are not', () => {
+  const lane = (t: string) => board(P, withHolds(), N).gantt.lanes.find(l => l.table === t)?.bars.filter(x => x.kind === 'hold')
+  assert.deepEqual(lane('t3')!.map(x => [x.from, x.to, x.label, !!x.waiting]), [[N, N + mins(30), 'Wait x2', false]])
+  assert.deepEqual(lane('t4')!.map(x => [x.from, !!x.waiting]), [[N + mins(10), true]])
+  assert.deepEqual(lane('t10'), [])
+})
+test('board activity: gate opened and expiry are notes in their interval, once each, derived from now', () => {
+  const notes = (now: number) => board(P, withHolds(), now).activity.flatMap(a => a.notes.map(n => [n.hold, n.kind, n.at, n.tone]))
+  assert.deepEqual(notes(N).sort(), [['hd3', 'opened', N - mins(5), 'action'], ['hd4', 'expired', N - mins(10), 'warn']])
+  assert.deepEqual(notes(N + mins(20)).map(n => n[1]).sort(), ['expired', 'opened', 'opened'])
+  assert.match(board(P, withHolds(), N).activity[0].notes[0].text, /^Hold T\d+ \(\d+ seats\) for a party of 4 until \d\d:\d\d: why hd\d - (gate opened|expired)$/)
 })

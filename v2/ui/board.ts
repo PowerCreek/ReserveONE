@@ -1,7 +1,7 @@
 // Dashboard (U8b, U10b): one engine.board read per repaint feeds every panel. Reads top-down by urgency: the task readout, KPIs, Insights, the timeline, then Turnover | Ledger | Servers.
 // Cross-highlight: a picked table (`ui.board.pick`) marks every reference to it (and its link group) across the dashboard; Escape or a second click clears it.
 import {having} from '../contracts/index.ts'
-import type {Activity, App, Bar, Board, Bucket, BusItem, Id, Insight, Kpi, Policy, Lane, LedgerChip, Quote, SectionRow, ServerRow, SpotState, Tick, World} from '../contracts/index.ts'
+import type {Activity, App, Bar, HoldNote, Board, Bucket, BusItem, Id, Insight, Kpi, Policy, Lane, LedgerChip, Quote, SectionRow, ServerRow, SpotState, Tick, World} from '../contracts/index.ts'
 import {ask, policyOf} from './ask.ts'
 import {hms} from './geo.ts'
 import {counter, stamp, tag} from './memo.ts'
@@ -123,18 +123,18 @@ const BAR: Record<string, string> = {
   slot: 'fill-rose-200 stroke-rose-600 dark:fill-rose-900 dark:stroke-rose-400', over: 'fill-rose-400 stroke-rose-800 dark:fill-rose-700 dark:stroke-rose-300',
   done: 'fill-slate-200 stroke-slate-400 dark:fill-slate-700 dark:stroke-slate-500', res: 'fill-sky-100 stroke-sky-600 dark:fill-sky-950 dark:stroke-sky-400',
   late: 'fill-amber-200 stroke-amber-600 dark:fill-amber-900 dark:stroke-amber-400', plan: 'fill-white stroke-sky-500 dark:fill-slate-900 dark:stroke-sky-400',
-  event: 'fill-violet-100 stroke-violet-600 dark:fill-violet-950 dark:stroke-violet-400',
+  waiting: 'fill-white stroke-orange-500 dark:fill-slate-900 dark:stroke-orange-400', event: 'fill-violet-100 stroke-violet-600 dark:fill-violet-950 dark:stroke-violet-400', hold: 'fill-orange-100 stroke-orange-600 dark:fill-orange-950 dark:stroke-orange-400',
 }
-const NAME: Record<string, string> = {slot: 'Seated', over: 'Past turn time', done: 'Finished', res: 'Reservation', late: 'Late reservation', plan: 'Planned (no table yet)', event: 'Private event'}
-const DASH: Record<string, string> = {plan: ' stroke-dasharray="4 3"'}
-const flag = (b: Bar) => (b.over && 'over') || (b.late && 'late') || b.kind
+const NAME: Record<string, string> = {slot: 'Seated', over: 'Past turn time', done: 'Finished', res: 'Reservation', late: 'Late reservation', plan: 'Planned (no table yet)', event: 'Private event', hold: 'Hold', waiting: 'Hold (waiting on its gate)'}
+const DASH: Record<string, string> = {plan: ' stroke-dasharray="4 3"', hold: ' stroke-dasharray="2 2"', waiting: ' stroke-dasharray="1 3"'}
+const flag = (b: Bar) => (b.over && 'over') || (b.late && 'late') || (b.waiting && 'waiting') || b.kind
 const fit = (s: string, px: number) => (s.length * 6 <= px - 6 ? s : px < 24 ? '' : `${s.slice(0, Math.floor((px - 6) / 6) - 1)}…`)
 const barSvg = (c: Ctx, g: Geo, y: number, t: Id | null) => (b: Bar) => {
   const [x0, x1] = [X(g, b.from), X(g, b.to)]
   const w = Math.max(3, x1 - x0)
   const tag = t ? ` data-act="bpick" data-tid="${esc(t)}"${marked(c, [t])}` : ''
-  return `<g${tag} class="cursor-pointer"><title>${esc(`${NAME[flag(b)]}: ${b.label || '-'} x${b.size} ${span(b.from, b.to)}`)}</title><rect x="${x0}" y="${y + 3}" width="${w}" height="${ROW - 6}" rx="3" class="${BAR[flag(b)]} ${t && c.pick.has(t) ? 'stroke-2' : ''}"${DASH[b.kind] ?? ''}/>` +
-    `<text x="${x0 + 3}" y="${y + 16}" class="pointer-events-none fill-slate-800 text-[10px] dark:fill-slate-100">${esc(fit(`${b.label} ${b.size}`, w))}</text></g>`
+  return `<g${tag} class="cursor-pointer"><title>${esc(`${NAME[flag(b)]}: ${b.label || '-'} x${b.size} ${span(b.from, b.to)}`)}</title><rect x="${x0}" y="${y + 3}" width="${w}" height="${ROW - 6}" rx="3" class="${BAR[flag(b)]} ${t && c.pick.has(t) ? 'stroke-2' : ''}"${DASH[flag(b)] ?? ''}/>` +
+    `<text x="${x0 + 3}" y="${y + 16}" class="pointer-events-none fill-slate-800 text-[10px] dark:fill-slate-100">${esc(fit(`${b.kind === 'hold' ? 'HOLD ' : ''}${b.label} ${b.size}`, w))}</text></g>`
 }
 const band = (g: Geo, y: number, cls: string) => `<rect x="0" y="${y}" width="${g.width}" height="${ROW}" class="${cls}"/>`
 const TRACK: Record<string, (c: Ctx, g: Geo, y: number, r: Row) => string> = {
@@ -158,7 +158,7 @@ const track = (c: Ctx) => {
     c.b.gantt.ticks.map(tick(c, g, every)).join('') + rows.map((r, i) => TRACK[kindOf(r)](c, g, HEAD + i * ROW, r)).join('') +
     `<line x1="${nx}" x2="${nx}" y1="0" y2="${h + 4}" class="stroke-rose-500 stroke-2"/><text x="${nx + 3}" y="${h + 12}" class="fill-rose-600 text-[10px] font-semibold dark:fill-rose-400">now ${hm(c.b.gantt.now)}</text></svg>`
 }
-const LEGEND: [string, string][] = [['slot', 'seated'], ['over', 'past turn'], ['done', 'finished'], ['res', 'reserved'], ['late', 'late'], ['plan', 'planned'], ['event', 'event']]
+const LEGEND: [string, string][] = [['slot', 'seated'], ['over', 'past turn'], ['done', 'finished'], ['res', 'reserved'], ['late', 'late'], ['plan', 'planned'], ['event', 'event'], ['hold', 'held'], ['waiting', 'hold (gate)']]
 const legend = `<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">${LEGEND.map(([k, l]) =>
   `<span class="inline-flex items-center gap-1 whitespace-nowrap"><svg width="14" height="10"><rect x="1" y="1" width="12" height="8" rx="2" class="${BAR[k]}"${DASH[k] ?? ''}/></svg>${l}</span>`).join('')}</div>`
 const emptyGantt = '<p class="py-6 text-center text-sm text-slate-600 dark:text-slate-300">Nothing seated, booked or planned in this window.</p>'
@@ -190,15 +190,18 @@ const GROUPS: [SpotState, string, string][] = [
   ['seated', 'Seated', 'bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100'], ['leased', 'Leased', 'bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100'],
   ['lapsed', 'To bus', 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100'], ['reserved', 'Reserved', 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100'],
   ['open', 'Open', 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100'], ['blocked', 'Blocked', 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'],
+  ['held', 'Held', 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-100'],
 ]
-const sup = (ch: LedgerChip) => (ch.covers !== undefined ? `<sup>${ch.covers}</sup>` : ch.at !== undefined ? `<sup>${hm(ch.at)}</sup>` : '')
+const sup = (ch: LedgerChip) => (ch.until !== undefined ? `<sup>${esc(ch.for ?? '')} to ${hm(ch.until)}${ch.waiting ? ' (gate)' : ''}: ${esc(ch.why ?? '')}</sup>` : ch.covers !== undefined ? `<sup>${ch.covers}</sup>` : ch.at !== undefined ? `<sup>${hm(ch.at)}</sup>` : '')
 const spotChip = (c: Ctx, cls: string) => (ch: LedgerChip) => tref(c, tablesOf(c.w, ch.spot)[0], `${esc(ch.label)}${sup(ch)}`, `rounded px-1.5 py-0.5 text-xs ${cls}`)
 const chipRow = (label: string, n: string, chips: string) =>
   `<div class="flex items-start gap-2 py-0.5"><span class="w-28 shrink-0 whitespace-nowrap pt-0.5 text-xs text-slate-600 dark:text-slate-300">${label} ${n}</span><div class="flex min-w-0 flex-wrap gap-1">${chips || '<span class="text-xs text-slate-500 dark:text-slate-400">—</span>'}</div></div>`
 const states = (c: Ctx) => GROUPS.map(([k, l, cls]) => chipRow(l, `(${(c.b.ledger[k] ?? []).length})`, (c.b.ledger[k] ?? []).map(spotChip(c, cls)).join(''))).join('')
+const NOTE: Record<HoldNote['tone'], string> = {ok: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100', warn: 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-100', action: 'bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100'}
+const note = (c: Ctx) => (n: HoldNote) => tref(c, n.table, `${hm(n.at)} ${esc(n.kind === 'expired' ? 'hold expired' : 'gate opened')} ${esc(n.label)}: ${esc(n.text)}`, `rounded px-1.5 py-0.5 text-xs ${NOTE[n.tone]}`)
 const MOVE = {in: 'bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100', out: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100'}
 const moves = (c: Ctx) => (a: Activity) => chipRow(`${span(a.start, a.end)}`, `<b>${signed(a.net)}</b>`,
-  a.moves.map(m => tref(c, m.table, `${esc(m.label)}<sup>${m.kind === 'in' ? '+' : '−'}${m.covers}</sup>`, `rounded px-1.5 py-0.5 text-xs ${MOVE[m.kind]}`)).join(''))
+  a.moves.map(m => tref(c, m.table, `${esc(m.label)}<sup>${m.kind === 'in' ? '+' : '−'}${m.covers}</sup>`, `rounded px-1.5 py-0.5 text-xs ${MOVE[m.kind]}`)).join('') + a.notes.map(note(c)).join(''))
 const ledgerPanel = (c: Ctx) => head('Ledger', 'Every spot by state (covers or next booking time). Activity: seated + and cleared − covers per interval, newest first.') +
   `<div data-ledger>${states(c)}</div><h3 class="mt-3 text-sm font-semibold">Activity today</h3><div data-activity>${c.b.activity.slice(0, 8).map(moves(c)).join('') || '<p class="text-xs text-slate-600 dark:text-slate-300">No seatings yet today.</p>'}</div>`
 

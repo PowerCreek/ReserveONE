@@ -68,7 +68,7 @@ export const planLine = (app: App, q: AvailQ, lead = 'The plan will seat this bo
 
 // ---- where a fast seat goes: the real `act` run without committing, read by one function for the preview (buttons, door rows, stand cards) and for the confirmation, so they cannot differ
 /** `where` = `T12 (Main, Ana)`; `tables` = the ones taken (several = pushed together); `text` = the confirmation line. */
-export interface Dest {ok: boolean; who: string; where: string; tables: Id[]; text: string; err: string}
+export interface Dest {ok: boolean; who: string; where: string; tables: Id[]; text: string; err: string; held?: import('../contracts/index.ts').HeldRef}
 type Part = 'table' | 'party' | 'staff'
 const parts = (o: Extract<Outcome, {ok: true}>, k: Part) => o.patches.flatMap(p => ((x: Partial<Components> | undefined) => (x?.[k] ? [{id: p.op === 'set' ? p.id : p.op === 'add' ? p.ent.id : '', v: x[k] as never}] : []))(p.op === 'set' ? p.parts : p.op === 'add' ? p.ent : undefined))
 const seatedAt = (o: Extract<Outcome, {ok: true}>) => parts(o, 'table').filter(t => (t.v as Components['table']).status === 'occupied')
@@ -81,7 +81,7 @@ const spotAt = (w: World, o: Extract<Outcome, {ok: true}>) => ((ts = seatedAt(o)
 })()
 export const describe = (w: World, o: Outcome): Dest => o.ok
   ? ((where = spotAt(w, o), who = WHO(o)) => ({ok: true, who, where, tables: seatedAt(o).map(t => t.id), text: `${who} -> ${where}`, err: ''}))()
-  : {ok: false, who: '', where: '', tables: [], text: '', err: o.err}
+  : {ok: false, who: '', where: '', tables: [], text: '', err: o.err, ...(o.held ? {held: o.held} : {})}
 /** The dry run of `cmd`: engine.act on the plain world, remembered per world signature and minute. */
 export const dest = (app: App, cmd: Cmd): Dest => describe(app.store.state.world, memo(app, policyOf(app), 'dry', [cmd], () => ask(app, 'act', cmd)) ?? {ok: false, err: 'The engine is not available'})
 export interface Landed {text: string; tables: Id[]}

@@ -25,7 +25,7 @@ const mount = async () => {
   const el = dom().getElementById('app')!
   const s = seed()
   const st = (id: string, name: string): Entity => ({id, staff: {name, active: true, sections: [], lastSeatedAt: null, tally: 0, skip: 0, maxCovers: 40}})
-  s.world.ents = Object.fromEntries([{id: 'f1', floor: {name: 'Main', active: true}}, {id: 's1', section: {name: 'Window', color: '#0ea5e9'}}, tb('t1', 'T1', 's1'), tb('t2', 'T2', 's1'), tb('t3', 'T3', 's1'), tb('t4', 'T4', null), st('a', 'Ana'), st('b', 'Bo')].map((e): [string, Entity] => [e.id, e]))
+  s.world.ents = Object.fromEntries([{id: 'f1', floor: {name: 'Main', active: true}}, {id: 's1', section: {name: 'Window', color: '#0ea5e9'}}, tb('t1', 'T1', 's1'), {...tb('t2', 'T2', 's1'), table: {...tb('t2', 'T2', 's1').table!, status: 'occupied'}} as Entity, tb('t3', 'T3', 's1'), tb('t4', 'T4', null), st('a', 'Ana'), st('b', 'Bo')].map((e): [string, Entity] => [e.id, e]))
   const calls: StratCtl[] = []
   const app = App.create(s).use(a => a.provide('engine', {...fake(), strategy: strategist(calls)} as Partial<HostEngine> as HostEngine)).use(ui)
   app.mount(el)
@@ -80,7 +80,7 @@ test('levers: a hold with a gate is saved to the world through the desk, drawn o
   await go('[data-act="strat-hold"]')
   const h = app.store.state.world.ents.t1!.hold!
   assert.deepEqual([h.size, h.gate, h.why], [3, {kind: 'free', table: 't2'}, 'R-1 at 8'])
-  assert.match(el.querySelector(`[data-hold="${h.id}"]`)!.textContent!, /T1.*for a 3.*when T2 frees \(opens in 40m\).*R-1 at 8.*Release/)
+  assert.match(el.querySelector(`[data-hold="${h.id}"]`)!.textContent!, /^Hold T1 \(4 seats\) for a party of 3 until \d\d:\d\d: R-1 at 8 · opens when T2 frees\s*waiting on gate\s*Release$/)
   assert.ok(el.querySelector('[data-lane][data-tid="t1"] [data-bar="gate"]') && el.querySelector('[data-lane][data-tid="t1"] [data-bar="hold"]'))
   assert.deepEqual(calls.at(-1)!.holds, []) // saved holds are world state; ctl.holds carries drafts only
   await go(`[data-act="strat-unhold"][data-id="${h.id}"]`)

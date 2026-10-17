@@ -6,10 +6,9 @@ import type {App, Ent, Entity, Id} from '../contracts/index.ts'
 import type {Gate, Lane, StratHold, StratView} from '../contracts/strategy.ts'
 import {run} from './act.ts'
 import {esc} from './render.ts'
-import {forWho, worldHolds} from './strategyheld.ts'
+import {forWho, holdSay, isOpen, seatsOf, worldHolds} from './strategyheld.ts'
 import {MIN, blankDraft, clamp, hhmm, stratOf, str} from './strategykit.ts'
 import type {Draft} from './strategykit.ts'
-import {opensIn} from './strategyline.ts'
 import {btn, choice, field, ghost, help, ok} from './tone.ts'
 const val = (ev: Event) => (ev.target as HTMLInputElement).value
 const draft = (app: App) => stratOf(app).draft
@@ -59,27 +58,24 @@ const durations = (d: Draft) => LONG.map(m => ((p = !d.custom && d.forMin === m)
 const partyPick = (app: App, d: Draft) => `<label class="flex flex-wrap items-center gap-2 text-xs">For party <select data-on="change:strat-party" class="${field}"><option value="">Any party of the size</option>${waiting(app).map(p =>
   `<option value="${esc(p.id)}"${p.id === d.party ? ' selected' : ''}>${esc(`${p.party.label}${p.party.name ? ` ${p.party.name}` : ''} x${p.party.size} (${kind(p)})`)}</option>`).join('')}</select></label>`
 const sizeRow = (d: Draft) => `<div class="flex flex-wrap items-center gap-2 text-sm"><span>Size</span><button type="button" data-act="strat-hsize-less" aria-label="Hold for one fewer" class="${btn}">−</button><b class="w-8 text-center tabular-nums">${d.size}</b><button type="button" data-act="strat-hsize-more" aria-label="Hold for one more" class="${btn}">+</button></div>`
-const holdBtn = (d: Draft, v: StratView) => `<button type="button" data-act="strat-hold" ${d.tables.length ? '' : 'disabled'} class="${ok}">Hold ${esc(d.tables.length ? v.lanes.filter(l => d.tables.includes(l.table)).map(l => l.label).join('+') : 'tables')} for ${d.size}</button>`
+/** The button reads as the hold it will save: 'Hold T9 + T10 (8 seats) for W-1 Patel x3'. */
+const holdBtn = (app: App, d: Draft) => ((w = app.store.state.world) => `<button type="button" data-act="strat-hold" ${d.tables.length ? '' : 'disabled'} class="${ok}">Hold ${esc(d.tables.length ? seatsOf(w, d.tables) : 'tables')} for ${esc(forWho(w, d.party ? {party: d.party, size: d.size} : {size: d.size}))}</button>`)()
 const form = (app: App, v: StratView) => ((d = draft(app), now = app.store.state.now) =>
-  `<div data-holdform class="space-y-2"><div role="group" aria-label="Tables to hold" class="flex max-h-32 flex-wrap gap-1 overflow-y-auto">${v.lanes.map(pick(d)).join('')}</div>${partyPick(app, d)}${sizeRow(d)}` +
+  `<div data-holdform class="space-y-2"><div role="group" aria-label="Tables to hold" class="flex max-h-32 flex-wrap gap-1 overflow-y-auto">${v.lanes.map(pick(d)).join('')}</div>${partyPick(app, d)}${d.party ? '' : sizeRow(d)}` +
   `<div role="radiogroup" aria-label="How long" class="flex flex-wrap items-center gap-2">${durations(d)}</div>` +
   `<div role="radiogroup" aria-label="Gate" class="flex flex-wrap gap-2">${gateRadio(d)}</div>${GATE_UI[d.gate](d, v, now)}` +
-  `<label class="grid gap-0.5 text-xs"><span class="text-slate-600 dark:text-slate-300">Reason</span><input type="text" data-on="input:strat-why" value="${esc(d.why)}" placeholder="8:00 Rossi x6 needs T20+T21" class="${field} w-full" /></label>${holdBtn(d, v)}</div>`)()
-const GATE_SAY: Record<string, (h: StratHold, v: StratView) => string> = {
-  none: () => 'now', free: (h, v) => `when ${v.lanes.find(l => l.table === (h.gate as {table: string}).table)?.label ?? 'its table'} frees`, at: h => `at ${hhmm((h.gate as {at: number}).at)}`,
-}
+  `<label class="grid gap-0.5 text-xs"><span class="text-slate-600 dark:text-slate-300">Reason</span><input type="text" data-on="input:strat-why" value="${esc(d.why)}" placeholder="8:00 Rossi x6 needs T20+T21" class="${field} w-full" /></label>${holdBtn(app, d)}</div>`)()
 /** live / waiting on its gate / expired (until passed; it no longer blocks, Release tidies it away). */
 const STATE: Record<string, string> = {
   live: '<span data-state="live" class="rounded bg-amber-200 px-1 text-amber-950">live</span>',
   waiting: '<span data-state="waiting" class="rounded border border-dashed border-amber-600 px-1">waiting on gate</span>',
   expired: '<span data-state="expired" class="rounded bg-slate-200 px-1 text-slate-700 dark:bg-slate-700 dark:text-slate-200">expired</span>',
 }
-const stateOf = (app: App, h: StratHold, v: StratView) => (h.until <= app.store.state.now ? 'expired' : v.waiting.includes(h.id) ? 'waiting' : 'live')
-const opening = (app: App, h: StratHold, v: StratView) => ((o = opensIn(h, v.lanes, app.store.state.now)) => (o > 0 ? ` (opens in ${Math.round(o)}m)` : ''))()
-const item = (app: App, v: StratView) => (h: StratHold) =>
-  `<li data-hold="${esc(h.id)}" class="flex flex-wrap items-center gap-2 py-1 text-xs">${h.tables.map(t => `<b data-tid="${esc(t)}">${esc(v.lanes.find(l => l.table === t)?.label ?? app.store.state.world.ents[t]?.table?.label ?? t)}</b>`).join('+')}` +
-  `<span>for ${esc(forWho(app.store.state.world, h))} until ${hhmm(h.until)}, gate ${GATE_SAY[h.gate?.kind ?? 'none']!(h, v)}${opening(app, h, v)}</span>${STATE[stateOf(app, h, v)]}` +
-  `<span class="grow text-slate-600 dark:text-slate-300">${esc(h.why || 'no reason given')}</span><button type="button" data-act="strat-unhold" data-id="${esc(h.id)}" class="${ghost}">Release</button></li>`
+const stateOf = (app: App, h: StratHold) => (h.until <= app.store.state.now ? 'expired' : isOpen(app.store.state.world, app.store.state.now, h) ? 'live' : 'waiting')
+const item = (app: App) => (h: StratHold) =>
+  `<li data-hold="${esc(h.id)}" data-tid="${esc(h.tables.join(' '))}" class="flex flex-wrap items-center gap-2 py-1 text-xs">` +
+  `<span class="grow">${esc(holdSay(app.store.state.world, app.store.state.now, h))}</span>${STATE[stateOf(app, h)]}` +
+  `<button type="button" data-act="strat-unhold" data-id="${esc(h.id)}" class="${ghost}">Release</button></li>`
 export const levers = (app: App, v: StratView) => ((hs = worldHolds(app.store.state.world)) =>
   `${form(app, v)}<h3 class="mt-3 text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">Holds</h3>` +
-  (hs.length ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${hs.map(item(app, v)).join('')}</ul>` : `<p class="${help}">No holds. A saved hold keeps its tables from every other party until it ends; seat anyway is an explicit override.</p>`))()
+  (hs.length ? `<ul class="divide-y divide-slate-200 dark:divide-slate-700">${hs.map(item(app)).join('')}</ul>` : `<p class="${help}">No holds. A saved hold keeps its tables from every other party until it ends; seat anyway is an explicit override.</p>`))()

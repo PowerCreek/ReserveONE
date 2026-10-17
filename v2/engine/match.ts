@@ -12,7 +12,7 @@ import {set} from './patch.ts'
 import {MIN} from './time.ts'
 import {taker} from './rotate.ts'
 import {anyPrefs, lean} from './prefs.ts'
-import {holdOn} from './held.ts'
+import {holdOn, ownOf} from './held.ts'
 type Spot = Ent<'spot'>
 /** Never a candidate: blocked for an event, or leased to a party being led there. */
 const OUT: TStatus[] = ['blocked_private', 'leased']
@@ -48,7 +48,8 @@ export const env = (p: Policy, w: World, now: number, id: Id, within?: Id[]): En
   const [on, can] = [holdOn(p, w, now), (s: Spot) => !OUT.includes(s.spot.status) && !s.spot.tables.some(t => selfSeated(p, w.ents[t]!)) && s.spot.capacity >= size && (within ?? [s.id]).includes(s.id)]
   const ok = (s: Spot) => !!e && e.wants.every(x => x.level !== 'need' || meets(s, x)) && !on(s.spot.tables, size, party?.id)
   const by = Object.fromEntries([...all, ...pairs].map(s => [s.id, s]))
-  const rank = (ss: Spot[]) => (e ? ss.filter(s => can(s) && ok(s)).map(fitOf({...e, by})).sort(best({...e, by})) : [])
+  const own = ownOf(p, w, now, party?.id) // the party's own held tables rank first
+  const rank = (ss: Spot[]) => (e ? ss.filter(s => can(s) && ok(s)).map(fitOf({...e, by})).sort((a, b) => +own(by[b.spot]!.spot.tables) - +own(by[a.spot]!.spot.tables) || best({...e, by})(a, b)) : [])
   const fits = rank(all)
   const ready = rank(pairs).filter(f => f.ready)
   const plain = ready.filter(f => !by[f.spot].spot.last) // the centre lane is pushed together only when nothing else is ready

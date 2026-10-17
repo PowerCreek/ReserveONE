@@ -36,6 +36,7 @@ const holdT12 = async (m: M, size: number, partyId = '') => {
   await tab(m, 'strategy')
   await m.click('[data-act="strat-pick"][data-tid="t12"]')
   partyId && (await m.change('select[data-on="change:strat-party"]', partyId))
+  partyId && assert.deepEqual([m.el.querySelector('[data-act="strat-hsize-more"]'), m.el.querySelector('[data-act="strat-hold"]')!.textContent], [null, 'Hold T12 (4 seats) for W1 Chen x4']) // a named hold shows the party, never a size of its own
   for (let i = 2; !partyId && i < size; i++) await m.click('[data-act="strat-hsize-more"]')
   await m.click('[data-act="strat-hold"]')
 }
@@ -51,7 +52,7 @@ test('a saved hold: the preview skips T12, fast seat goes to T11, Release brings
   assert.ok(m.el.querySelector('[data-lane][data-tid="t12"] [data-lock]'))
   await tab(m, 'queue')
   assert.match(dests(m.el)[1]!, /Goes to T11/)
-  assert.match(m.el.querySelector('[data-override="t12"]')!.textContent!, /T12 is held .*6/)
+  assert.match(m.el.querySelector('[data-override="t12"]')!.textContent!, /^Hold T12 \(4 seats\) for a party of 6 until 17:30: no reason given · live now/)
   await m.click('[data-act="quick"]')
   assert.deepEqual([status(m, 't11'), status(m, 't12')], ['occupied', 'available'])
   await tab(m, 'strategy')
@@ -70,14 +71,14 @@ test('a hold for a named party: a walk-in of the same size is kept off, the part
   assert.match(walk!, /Goes to T11/)
   await tab(m, 'strategy')
   await m.click('[data-lane][data-tid="t12"] [data-act="ent"]') // the timeline label opens the card (Sim tab)
-  assert.match(m.el.querySelector('[data-card] [data-held-line]')!.textContent!, /held until 17:30 for W1 Chen x4/)
+  assert.match(m.el.querySelector('[data-card] [data-held-line]')!.textContent!, /Hold T12 \(4 seats\) for W1 Chen x4 until 17:30: no reason given · live now$/)
 })
 test('override: Seat anyway asks to confirm, then seats over the hold and the log says so', async () => {
   const m = await mount()
   await holdT12(m, 6)
   await tab(m, 'queue')
   await m.click('[data-act="strat-force"][data-tid="t12"]')
-  assert.ok(m.el.querySelector('[data-force-confirm]'))
+  assert.match(m.el.querySelector('[data-force-confirm]')!.textContent!, /over “Hold T12 \(4 seats\) for a party of 6 until 17:30/)
   assert.equal(status(m, 't12'), 'available')
   await m.click('[data-act="strat-force-yes"]')
   assert.equal(status(m, 't12'), 'occupied')

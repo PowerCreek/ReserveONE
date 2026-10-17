@@ -7,7 +7,7 @@ export type Decide<A extends unknown[], R> = (p: Policy, w: World, now: number, 
 export interface SeqItem {size: number; spot: Id | null; tables: Id[]; label: string; waitMin: number; at: number; code: Heat; ready: boolean}
 export interface Look {depth: number; code: Heat; msg: string; at: number | null}
 export interface SeatReq {size: number; kind: PType; prefix?: string; party?: Id; queue?: Id; reservation?: Id; tables?: Id[]; floor?: Id; durationMin?: number; force?: boolean} // force = seat over a live table hold (logged)
-export type Decision = {ok: true; patches: Patch[]; msg: string; tone: 'ok' | 'warn'} | {ok: false; err: string}
+export type Decision = {ok: true; patches: Patch[]; msg: string; tone: 'ok' | 'warn'} | {ok: false; err: string; held?: import('./desk.ts').HeldRef}
 export interface Quote {size: number; ahead: number; ready: boolean; none: boolean; waitMin: number; lo: number; hi: number; label: string; at: number | null}
 export interface Bucket {start: number; end: number; now: boolean; proj: boolean; inCovers: number; inParties: number; outCovers: number; outParties: number; net: number}
 export interface Ranked {staff: Id; score: number}

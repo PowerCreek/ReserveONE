@@ -34,7 +34,9 @@ export type Cmd =
   | {do: 'staff'; id: Id; to: 'duty' | 'skip'} // toggle on duty, or skip one turn of the rotation
 export type Told = SimEvent | HostEvent | ServiceEvent
 /** A command's result: patches to commit, events to narrate, one line for the log (`says` = the guest's words, when they answer). */
-export type Outcome = {ok: true; patches: Patch[]; events: Told[]; msg: string; tone: 'ok' | 'warn' | 'action'; says?: string} | {ok: false; err: string}
+export type Outcome = {ok: true; patches: Patch[]; events: Told[]; msg: string; tone: 'ok' | 'warn' | 'action'; says?: string} | {ok: false; err: string; held?: HeldRef}
+/** On a refusal: the live table hold that refused it (machine-readable; `party` = whom it is held for, if named). */
+export interface HeldRef {id: string; tables: Id[]; party?: Id; size: number; until: number}
 /** One party at the door, next first (policy.queue.tier, then waited). */
 export interface DoorRow {party: Id; label: string; name: string; size: number; kind: PType; waitedMin: number}
 /** A ladder rung the host can seat in one step, with who would serve it. */
@@ -62,15 +64,18 @@ export interface StandView {
 }
 /** Dashboard (wave 5): one read model for reading the service at a glance. Every number is derived from the world; the UI only lays it out. */
 export interface Kpi {id: string; label: string; value: string; tone: 'ok' | 'warn' | 'crit' | 'info'; hint: string} // value preformatted ("34/120", "62%", "12m")
-/** One bar on a table's timeline: `slot` seated now (to = turn time, `over` when past it), `done` finished seating, `res` a reservation holding this table, `plan` where the temporal plan puts an unassigned reservation, `event` a private-event lock. */
-export interface Bar {kind: 'slot' | 'done' | 'res' | 'plan' | 'event'; from: number; to: number; party: Id | null; label: string; size: number; late?: boolean; over?: boolean}
+/** One bar on a table's timeline: `slot` seated now (to = turn time, `over` when past it), `done` finished seating, `res` a reservation holding this table, `plan` where the temporal plan puts an unassigned reservation, `event` a private-event lock, `hold` a table hold to its `until` (`waiting` = its gate has not opened). */
+export interface Bar {kind: 'slot' | 'done' | 'res' | 'plan' | 'event' | 'hold'; from: number; to: number; party: Id | null; label: string; size: number; late?: boolean; over?: boolean; waiting?: boolean}
 export interface Lane {table: Id; label: string; floor: Id; capacity: number; bars: Bar[]}
 export interface Tick {start: number; end: number; turns: number} // header bucket: seatings due to turn in it (v1 deluge/drought)
 export interface Gantt {from: number; to: number; now: number; lanes: Lane[]; ticks: Tick[]; unplaced: Bar[]} // lanes for tables with any bar in the window; unplaced = reservations the plan cannot place
-export type SpotState = 'open' | 'reserved' | 'leased' | 'seated' | 'lapsed' | 'blocked'
-export interface LedgerChip {spot: Id; label: string; covers?: number; at?: number} // covers seated, or the next reservation time
+export type SpotState = 'open' | 'reserved' | 'leased' | 'seated' | 'lapsed' | 'blocked' | 'held'
+/** `held` chips are one per hold (not per spot): `until` its end, `for` the party ("Patel x3") or "any party", `why`, `waiting` = gate not open yet. Open spots under a live hold sit only there; a seated or reserved one stays in its own state too. */
+export interface LedgerChip {spot: Id; label: string; covers?: number; at?: number; until?: number; for?: string; why?: string; waiting?: boolean} // covers seated, or the next reservation time
 export interface Move {table: Id; label: string; kind: 'in' | 'out'; covers: number}
-export interface Activity {start: number; end: number; net: number; moves: Move[]} // seat (+) and clear (-) per interval, newest first
+/** A hold turning point today, derived from the world: its gate opened, or it expired (`until` passed). Created, released and forced-over lines are the host log's (act messages). */
+export interface HoldNote {hold: string; table: Id; label: string; kind: 'opened' | 'expired'; at: number; text: string; tone: 'ok' | 'warn' | 'action'}
+export interface Activity {start: number; end: number; net: number; moves: Move[]; notes: HoldNote[]} // seat (+) and clear (-) per interval, newest first, with hold notes
 export interface SectionRow {section: Id; name: string; occ: number; turns: number; need: number; under: boolean}
 /** One preference as the panels show it: set = established, nothing tested it yet; then the latest outcome on a seating (met / enforced / overridden, with why); bogged = the unit counts as bogged down now. */
 export interface PrefRow {pref: Pref; state: 'set' | PrefMark['state']; why: string; at: number | null}

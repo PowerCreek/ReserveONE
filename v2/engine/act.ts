@@ -21,7 +21,7 @@ import {expand} from './spots.ts'
 import {freeUp} from './free.ts'
 import {MIN} from './time.ts'
 import {bySize, door} from './desk.ts'
-import {heldWhy, holdErr, holdPatches, unholdPatches} from './held.ts'
+import {heldErr, holdErr, holdPatches, say, sayId, unholdPatches} from './held.ts'
 interface Ctx {p: Policy; w: World; now: number}
 type Of<K extends Cmd['do']> = Extract<Cmd, {do: K}>
 type Row<K extends Cmd['do']> = (c: Ctx, cmd: Of<K>) => Outcome
@@ -81,7 +81,7 @@ const nameOf = (c: Ctx, spot: Id) => spotOf(c.p, c.w, spot)?.spot.label ?? spot
 // ---- lease / release: the one way the stand places a party (one click); a lease settles into a seat by itself
 const keep = (o?: Offer) => (o?.declined ? {declined: o.declined} : {})
 const leaseErr = (c: Ctx, cmd: Of<'lease'>, who?: Pty) =>
-  why([[!who, `No party ${cmd.party}`], [!!where(c.w, cmd.party), `${who?.party.label} is already led or seated`], [!spotOf(c.p, c.w, cmd.spot), `No spot ${cmd.spot}`]]) ?? refuse(c.p, tablesOf(c.w, cmd.spot), who!.party.size) ?? heldWhy(c.p, c.w, c.now, partsOf(c.w, cmd.spot), who!.party.size, who!.id)
+  why([[!who, `No party ${cmd.party}`], [!!where(c.w, cmd.party), `${who?.party.label} is already led or seated`], [!spotOf(c.p, c.w, cmd.spot), `No spot ${cmd.spot}`]]) ?? refuse(c.p, tablesOf(c.w, cmd.spot), who!.party.size)
 const leased = (c: Ctx, cmd: Of<'lease'>, who: Pty): Outcome => {
   const offer = {...proposal(c.now, cmd.spot, cmd.step, rungOf(c, who.id, cmd.step, cmd.spot), 'accepted'), ...keep(who.offer)}
   const ps = [...hold(c.p, c.w, c.now, who, cmd.spot, cmd.step), set(who.id, {offer}), ...unclaim(c.w, who.id)]
@@ -90,7 +90,8 @@ const leased = (c: Ctx, cmd: Of<'lease'>, who: Pty): Outcome => {
 const leaseRow: Row<'lease'> = (c, cmd) => {
   const who = partyOf(c.w, cmd.party)
   const err = leaseErr(c, cmd, who)
-  return err ? fail(err) : leased(c, cmd, who!)
+  const h = err ? undefined : heldErr(c.p, c.w, c.now, partsOf(c.w, cmd.spot), who!.party.size, who!.id)
+  return err ? fail(err) : h ? {ok: false, ...h} : leased(c, cmd, who!)
 }
 /** The spot handed back joins the party's declined spots: the ladder never proposes it again. */
 const handBack = (c: Ctx, e: Leased): Offer => ({...proposal(c.now, e.lease.spot, e.lease.step, undefined, 'declined'), ...e.offer, status: 'declined', declined: [...(e.offer?.declined ?? []), e.lease.spot]})
@@ -224,8 +225,8 @@ const unprefRow: Row<'unpref'> = (c, cmd) => {
   return has ? done([set(cmd.staff, {staff: {...s!, prefs: s!.prefs!.filter(x => x.id !== cmd.id)}})], [], `${s!.name}: preference ${cmd.id} dropped`) : fail(s ? `${s.name} has no preference ${cmd.id}` : `No staff ${cmd.staff}`)
 }
 // ---- hold / unhold: tables kept clear for a party size (engine/held.ts), honoured by every placement path
-const holdRow: Row<'hold'> = (c, cmd) => { const err = holdErr(c.w, c.now, cmd); return err ? fail(err) : done(holdPatches(c.w, cmd), [], `Holding ${cmd.tables.map(t => tableName(c.w, t)).join('+')} for a ${cmd.size}: ${cmd.why}`) }
-const unholdRow: Row<'unhold'> = (c, cmd) => { const ps = unholdPatches(c.w, cmd.id); return ps.length ? done(ps, [], `Hold ${cmd.id} released`) : fail(`No hold ${cmd.id}`) }
+const holdRow: Row<'hold'> = (c, cmd) => { const err = holdErr(c.w, c.now, cmd); return err ? fail(err) : done(holdPatches(c.w, cmd), [], say(c.w, cmd)) }
+const unholdRow: Row<'unhold'> = (c, cmd) => { const ps = unholdPatches(c.w, cmd.id); return ps.length ? done(ps, [], `Released: ${sayId(c.w, cmd.id)}`) : fail(`No hold ${cmd.id}`) }
 const rows: {[K in Cmd['do']]: Row<K>} = {hold: holdRow, unhold: unholdRow, pref: prefRow, unpref: unprefRow, seat: seatRow, decline: declineRow, hear: hearRow, tell: tellRow, reply: replyRow, join: joinRow, reserve: reserveRow, mark: markRow, mode: modeRow, carve: carveRow, top: topRow, deal: dealRow, staff: staffRow, lease: leaseRow, release: releaseRow, extend: extendRow, clear: clearRow, reassign: reassignRow}
 /** Run one host/manager command: patches to commit, events to narrate, one log line; unknown or invalid input -> {ok: false, err}. */
 export const act: Desk['act'] = (p, w, now, cmd) => {

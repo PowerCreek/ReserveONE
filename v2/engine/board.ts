@@ -1,6 +1,6 @@
 // Dashboard read model (wave 5): the service at a glance, derived from world + policy only (E1, E2). Stages first, one fold in `board`.
 import {having, partsOf} from '../contracts/index.ts'
-import type {Activity, Bar, Board, BoardOpt, Desk, Ent, Entity, Gantt, Id, Kpi, Lane, LedgerChip, Move, Policy, Pref, PrefMark, PrefRow, SectionRow, ServerRow, SpotState, TStatus, Tick, World} from '../contracts/index.ts'
+import type {Activity, Bar, Board, HoldNote, BoardOpt, Desk, Ent, Entity, Gantt, Id, Kpi, Lane, LedgerChip, Move, Policy, Pref, PrefMark, PrefRow, SectionRow, ServerRow, SpotState, TStatus, Tick, World} from '../contracts/index.ts'
 import {expand, spots} from './spots.ts'
 import {turnover} from './turnover.ts'
 import {bus} from './bus.ts'
@@ -16,14 +16,16 @@ import {stand} from './desk.ts'
 import {insights} from './insight.ts'
 import {readout} from './readout.ts'
 import {bogged} from './prefs.ts'
+import {freeOf, opens, saved, say} from './held.ts'
+import type {StratHold} from '../contracts/strategy.ts'
 type Slot = Ent<'slot'>
 type Res = Ent<'party' | 'reservation'>
 type Opt = Required<BoardOpt>
 const DEF: Opt = {ivMin: 15, pastMin: 60, aheadMin: 180}
-interface Ctx {p: Policy; w: World; now: number; o: Opt; iv: number; d0: number; d1: number; slots: Slot[]; res: Res[]}
+interface Ctx {p: Policy; w: World; now: number; o: Opt; iv: number; d0: number; d1: number; slots: Slot[]; res: Res[]; hs: StratHold[]; free: (id: Id) => number}
 const ctx = (p: Policy, w: World, now: number, opt: BoardOpt = {}): Ctx => {
   const o = {...DEF, ...opt}
-  return {p, w, now, o, iv: o.ivMin * MIN, d0: midnight(now), d1: midnight(midnight(now) + 36 * 60 * MIN), slots: having(w, 'slot'), res: having(w, 'party', 'reservation')}
+  return {p, w, now, o, iv: o.ivMin * MIN, d0: midnight(now), d1: midnight(midnight(now) + 36 * 60 * MIN), slots: having(w, 'slot'), res: having(w, 'party', 'reservation'), hs: saved(w), free: freeOf(p, w, now)}
 }
 
 // ---- shared reads
@@ -41,9 +43,26 @@ const labeler = (w: World) => {
   return (t: Id) => ss.find(s => s.spot.tables.includes(t))?.spot.label ?? w.ents[t]?.table?.label ?? t
 }
 
+// ---- holds: saved holds read against now (expiry is derived, nothing is stored)
+type HState = 'live' | 'waiting' | 'expired'
+const hstate = (c: Ctx) => (h: StratHold): HState => (h.until <= c.now ? 'expired' : opens(c.free, c.now, h) <= c.now ? 'live' : 'waiting')
+const kept = (c: Ctx, st: HState[]) => c.hs.filter(h => st.includes(hstate(c)(h)))
+const forWho = (w: World, h: StratHold) => ((e = w.ents[h.party ?? '']?.party) => (e ? `${e.name || e.label} x${e.size}` : 'any party'))()
+const names = (c: Ctx, h: StratHold) => [...new Set(h.tables.map(labeler(c.w)))].sort(nat).join('+')
+const holdChip = (c: Ctx) => (h: StratHold): LedgerChip =>
+  ({spot: spots(c.w).find(s => s.spot.tables.some(t => h.tables.includes(t)))?.id ?? h.tables[0], label: names(c, h), until: h.until, for: forWho(c.w, h), why: h.why, ...(hstate(c)(h) === 'waiting' ? {waiting: true} : {})})
+const holdPins = (c: Ctx): Pin[] => kept(c, ['live', 'waiting']).flatMap(h => h.tables.map((t): Pin =>
+  [t, bar('hold', Math.max(c.now, opens(c.free, c.now, h)), h.until, h.party ?? null, forWho(c.w, h), h.size, {waiting: hstate(c)(h) === 'waiting'})]))
+const HOLD_AT = {opened: (c: Ctx, h: StratHold) => opens(c.free, c.now, h), expired: (_c: Ctx, h: StratHold) => h.until}
+const HOLD_TEXT = {opened: 'gate opened', expired: 'expired'}
+const HOLD_TONE: Record<HoldNote['kind'], HoldNote['tone']> = {opened: 'action', expired: 'warn'}
+const noteOf = (c: Ctx, h: StratHold) => (kind: HoldNote['kind']): HoldNote => ({hold: h.id, table: h.tables[0], label: names(c, h), kind, at: HOLD_AT[kind](c, h), text: `${say(c.w, h)} - ${HOLD_TEXT[kind]}`, tone: HOLD_TONE[kind]})
+/** Today's hold turning points: gate opened (a gate only), expired (until passed), each once. */
+const holdNotes = (c: Ctx): HoldNote[] => c.hs.flatMap(h => (['opened', 'expired'] as const).filter(k => (k === 'expired' || !!h.gate) && sofar(c)(HOLD_AT[k](c, h))).map(noteOf(c, h)))
+
 // ---- ledger: every host-seated spot in one state
 const STATE: Record<TStatus, SpotState> = {leased: 'leased', blocked_private: 'blocked', occupied: 'seated', lapsed: 'lapsed', available: 'open'}
-const STATES: SpotState[] = ['open', 'reserved', 'leased', 'seated', 'lapsed', 'blocked']
+const STATES: SpotState[] = ['open', 'reserved', 'leased', 'seated', 'lapsed', 'blocked', 'held']
 /** The next live reservation holding any of these tables later today. */
 const heldBy = (c: Ctx, ts: Id[]) => c.res
   .filter(r => LIVE[r.reservation.status] && !!r.reservation.table && partsOf(c.w, r.reservation.table).some(t => ts.includes(t)) && r.reservation.at < c.d1 && r.reservation.at + r.reservation.durationMin * MIN > c.now)
@@ -55,9 +74,12 @@ const chip = (c: Ctx) => (s: Ent<'spot'>): [SpotState, LedgerChip] => {
   const n = covers(c, active(c).filter(x => s.spot.tables.includes(x.slot.table)))
   return [st, {spot: s.id, label: s.spot.label, ...EXTRA[st]?.(n, r)}]
 }
+/** An open spot under a live hold is held, not free: it leaves the open count (the hold's own chip lists it). */
+const heldOpen = (c: Ctx) => (r: [SpotState, LedgerChip]) => r[0] === 'open' && kept(c, ['live']).some(h => spots(c.w).find(s => s.id === r[1].spot)?.spot.tables.some(t => h.tables.includes(t)))
 const ledger = (c: Ctx): Board['ledger'] => {
-  const rows = spots(c.w).filter(s => !s.spot.tables.some(t => selfSeated(c.p, c.w.ents[t] ?? {}))).map(chip(c)).sort((a, b) => nat(a[1].label, b[1].label))
-  return Object.fromEntries(STATES.map(k => [k, rows.filter(r => r[0] === k).map(r => r[1])])) as Board['ledger']
+  const rows = spots(c.w).filter(s => !s.spot.tables.some(t => selfSeated(c.p, c.w.ents[t] ?? {}))).map(chip(c)).filter(r => !heldOpen(c)(r)).sort((a, b) => nat(a[1].label, b[1].label))
+  const held = kept(c, ['live', 'waiting']).map(holdChip(c)).sort((a, b) => nat(a.label, b.label))
+  return Object.fromEntries(STATES.map(k => [k, k === 'held' ? held : rows.filter(r => r[0] === k).map(r => r[1])])) as Board['ledger']
 }
 
 // ---- activity: seat (+) and clear (-) today, per interval, newest first
@@ -66,11 +88,12 @@ const SIGN: Record<Move['kind'], number> = {in: 1, out: -1}
 const key = (c: Ctx, at: number) => Math.floor((at - c.d0) / c.iv)
 const movesOf = (c: Ctx, name: (t: Id) => string) => (s: Slot): At[] => ([['in', s.slot.seatedAt], ['out', s.slot.endedAt]] as const)
   .filter(([, at]) => sofar(c)(at)).map(([kind, at]) => ({at: at!, table: s.slot.table, label: name(s.slot.table), kind, covers: size(c.w, s.slot.party)}))
-const interval = (c: Ctx, k: number, xs: At[]): Activity =>
-  ({start: c.d0 + k * c.iv, end: c.d0 + (k + 1) * c.iv, net: xs.reduce((n, x) => n + SIGN[x.kind] * x.covers, 0), moves: xs.map(({at: _, ...m}) => m)})
+const interval = (c: Ctx, k: number, xs: At[], ns: HoldNote[]): Activity =>
+  ({start: c.d0 + k * c.iv, end: c.d0 + (k + 1) * c.iv, net: xs.reduce((n, x) => n + SIGN[x.kind] * x.covers, 0), moves: xs.map(({at: _, ...m}) => m), notes: ns.sort((a, b) => a.at - b.at)})
 const activity = (c: Ctx): Activity[] => {
   const ms = c.slots.flatMap(movesOf(c, labeler(c.w))).sort((a, b) => a.at - b.at)
-  return [...new Set(ms.map(m => key(c, m.at)))].sort((a, b) => b - a).map(k => interval(c, k, ms.filter(m => key(c, m.at) === k)))
+  const ns = holdNotes(c)
+  return [...new Set([...ms, ...ns].map(m => key(c, m.at)))].sort((a, b) => b - a).map(k => interval(c, k, ms.filter(m => key(c, m.at) === k), ns.filter(n => key(c, n.at) === k)))
 }
 
 // ---- gantt: per table bars around now
@@ -103,7 +126,7 @@ const ticks = (c: Ctx, from: number, to: number): Tick[] => {
 }
 const gantt = (c: Ctx): Gantt => {
   const [from, to, plan] = [c.now - c.o.pastMin * MIN, c.now + c.o.aheadMin * MIN, outlook(c.p, c.w, c.now)]
-  const pins = [...c.slots.flatMap(s => slotPins(c, s)), ...resPins(c), ...eventPins(c), ...planPins(c, plan)].filter(([, b]) => b.from < to && b.to > from)
+  const pins = [...c.slots.flatMap(s => slotPins(c, s)), ...resPins(c), ...eventPins(c), ...holdPins(c), ...planPins(c, plan)].filter(([, b]) => b.from < to && b.to > from)
   const lanes = having(c.w, 'table').filter(t => pins.some(x => x[0] === t.id)).map(lane(pins)).sort(order(c.w))
   return {from, to, now: c.now, lanes, ticks: ticks(c, from, to), unplaced: plan.filter(x => !x.spot).map(x => resBar(c, c.w.ents[x.party] as Res, 'res'))}
 }

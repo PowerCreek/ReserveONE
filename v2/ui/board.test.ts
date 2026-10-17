@@ -145,3 +145,14 @@ test('Servers cards: preference chips with state, bogged badge, quick add / remo
   assert.deepEqual(app.store.state.world.ents[ben].staff!.prefs, [])
   assert.equal(el.querySelectorAll('[data-servers] [data-bogged]').length, ask(app, 'board', {})!.servers.filter(s => s.bogged).length)
 })
+test('Ledger Held group and hold bars: a hold chip names party, end and reason and opens the table card; Activity lists the hold notes', async () => {
+  const {el, app} = busy()
+  const t = (Object.values(app.store.state.world.ents).find(e => e.table?.status === 'available') ?? assert.fail('no free table')).id
+  const now = ask(app, 'board', {})!.gantt.now
+  assert.ok(run(app, {do: 'hold', tables: [t], size: 4, until: now + 3600000, why: 'VIP'}).ok)
+  await open(el)
+  const chip = el.querySelector('[data-ledger] [data-act="bpick"][data-tid]:is(.bg-orange-100)') ?? assert.fail('no held chip')
+  assert.match(chip.textContent!, /any party to \d\d:\d\d.*VIP/)
+  assert.ok([...el.querySelectorAll('[data-gtrack] title')].some(x => /^Hold:/.test(x.textContent!)))
+  assert.equal(ask(app, 'board', {})!.ledger.held.length, 1)
+})

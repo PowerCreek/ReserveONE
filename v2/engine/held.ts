@@ -1,11 +1,10 @@
 // Table holds (E1): the host keeps tables clear for a party size until a time, once a gate opens (a table frees, or a clock minute). Saved holds are the `hold` component on each held table;
 // this file is the one reader every placement path asks (fit, match/ladder, seat, lease) and the strategy reuses (`opens`, `mine`). Expiry is `until` against `now`: nothing to clean up.
 import {having, partsOf} from '../contracts/index.ts'
-import type {Ent, Entity, Id, Patch, Policy, World} from '../contracts/index.ts'
+import type {Ent, Entity, HeldRef, Id, Patch, Policy, World} from '../contracts/index.ts'
 import type {Gate, StratHold} from '../contracts/strategy.ts'
 import {tableFreeAt} from './avail.ts'
 import {add} from './patch.ts'
-import {minuteOfDay} from './time.ts'
 type Free = (id: Id) => number
 const GATE: Record<Gate['kind'], (free: Free, g: Gate) => number> = {free: (f, g) => f((g as Extract<Gate, {kind: 'free'}>).table), at: (_f, g) => (g as Extract<Gate, {kind: 'at'}>).at}
 /** When a hold starts keeping its tables: its gate's time, else now. */
@@ -25,11 +24,26 @@ export const holdOn = (p: Policy, w: World, now: number) => {
   const on = hs.length ? hs.filter(live(freeOf(p, w, now), now)) : []
   return (tables: Id[], _size: number, party?: Id): StratHold | undefined => on.find(h => !mine(w, party)(h) && h.tables.some(t => tables.includes(t)))
 }
-const clock = (ms: number) => ((m: number) => `${Math.floor(m / 60) % 12 || 12}:${String(m % 60).padStart(2, '0')}`)(minuteOfDay(ms))
+/** Clock as the panels show it (UTC HH:MM, ui/strategyheld.ts). */
+const clock = (ms: number) => new Date(ms).toISOString().slice(11, 16)
 const names = (w: World, h: StratHold, tables: Id[]) => h.tables.filter(t => tables.includes(t)).map(t => w.ents[t]?.table?.label ?? t).join('+')
-/** Why these tables cannot take the party: 'T12 is held (for a 4) until 7:30: <why>', or undefined. */
-export const heldWhy = (p: Policy, w: World, now: number, tables: Id[], size: number, party?: Id) =>
-  ((h?: StratHold) => (h ? `${names(w, h, tables)} is held (for a ${h.size}) until ${clock(h.until)}: ${h.why}` : undefined))(holdOn(p, w, now)(tables, size, party))
+const whom = (w: World, h: StratHold) => ((e = w.ents[h.party ?? '']?.party) => (e ? `${e.label}${e.name ? ` ${e.name}` : ''} x${e.size}` : h.party ?? `a ${h.size}`))()
+const seats = (w: World, ts: Id[]) => `${ts.map(t => w.ents[t]?.table?.label ?? t).join(' + ')} (${ts.reduce((n, t) => n + (w.ents[t]?.table?.capacity ?? 0), 0)} seats)`
+const forWho = (w: World, h: {party?: Id; size: number}) => ((e = w.ents[h.party ?? '']?.party) => (e ? `${e.label}${e.name ? ` ${e.name}` : ''} x${e.size}` : `a party of ${h.size}`))()
+/** The one hold sentence (pure; the log and the dashboard use it): 'Hold T9 + T10 (8 seats) for W-1 Patel x3 until 14:15: <reason or no reason given>'. */
+export const say = (w: World, h: {tables: Id[]; party?: Id; size: number; until: number; why?: string}) => `Hold ${seats(w, h.tables)} for ${forWho(w, h)} until ${clock(h.until)}: ${h.why || 'no reason given'}`
+/** The saved hold `id`, said (undefined when there is none). */
+export const sayId = (w: World, id: string) => ((h = saved(w).find(x => x.id === id)) => (h ? say(w, h) : undefined))()
+const ref = (h: StratHold): HeldRef => ({id: h.id, tables: h.tables, ...(h.party ? {party: h.party} : {}), size: h.size, until: h.until})
+/** The refusal for these tables, or undefined: 'T17 is held for W-1 Patel x3 until 14:15: <why>' (an unnamed hold: 'held for a 3'), with the hold as data. */
+export const heldErr = (p: Policy, w: World, now: number, tables: Id[], size: number, party?: Id): {err: string; held: HeldRef} | undefined =>
+  ((h?: StratHold) => (h ? {err: `${names(w, h, tables)} is held for ${whom(w, h)} until ${clock(h.until)}: ${h.why}`, held: ref(h)} : undefined))(holdOn(p, w, now)(tables, size, party))
+/** `own(tables)`: these tables all sit in a live hold that names `party` (its seating goes there first). */
+export const ownOf = (p: Policy, w: World, now: number, party?: Id) => {
+  const hs = party ? saved(w).filter(h => h.party === party) : []
+  const ids = hs.length ? hs.filter(live(freeOf(p, w, now), now)).flatMap(h => h.tables) : []
+  return (tables: Id[]) => ids.length > 0 && tables.every(t => ids.includes(t))
+}
 const strip = (e: Entity): Entity => Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'hold')) as Entity
 const drop = (w: World, ids: string[]): Patch[] => having(w, 'hold').filter(e => ids.includes(e.hold.id)).map(e => add(strip(e)))
 /** A seating on held tables releases every hold there that is not still waiting on its gate (put these patches first: they replace the table entities). */

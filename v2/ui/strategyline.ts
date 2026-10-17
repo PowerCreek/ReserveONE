@@ -26,8 +26,8 @@ const GATE: Record<string, (h: StratHold, ls: Lane[], now: number) => number> = 
   none: () => 0, free: (h, ls) => ls.find(l => l.table === (h.gate as {table: string}).table)?.freeIn ?? 0, at: (h, _l, now) => ((h.gate as {at: number}).at - now) / MIN,
 }
 export const opensIn = (h: StratHold, ls: Lane[], now: number) => Math.max(0, GATE[h.gate?.kind ?? 'none']!(h, ls, now))
-const held = (ls: Lane[], hs: StratHold[], now: number) => (l: Lane) => hs.filter(h => h.tables.includes(l.table)).map(h => ((o = opensIn(h, ls, now)) =>
-  (o > 0 ? bar('gate', 0, o, `${l.label}: hold for ${h.size} waits ${Math.round(o)}m for its gate`) : '') + bar('hold', o, (h.until - now) / MIN, `${l.label}: held for ${h.size} until ${hhmm(h.until)} (${h.why || 'no reason'})`))()).join('')
+const held = (app: App, ls: Lane[], hs: StratHold[], now: number) => (l: Lane) => hs.filter(h => h.tables.includes(l.table)).map(h => ((o = opensIn(h, ls, now), say = lockSay(app, h)) =>
+  (o > 0 ? bar('gate', 0, o, `${say} (gate in ${Math.round(o)}m)`) : '') + bar('hold', o, (h.until - now) / MIN, say))()).join('')
 const paired = (ps: Pair[]) => (l: Lane) => ps.filter(p => p.tables.includes(l.table)).map(p => bar('pair', p.at, p.at + 3, `${p.labels.join('+')} link for ${p.size} in ${p.at}m: ${p.why}`)).join('')
 const nat = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true})
 const groupOf = (app: App, w: World) => (l: Lane) => (l.section && w.ents[l.section]?.section?.name) || policyOf(app).service.areas[w.ents[l.table]?.area?.id ?? '']?.label || 'Other'
@@ -40,7 +40,7 @@ const links = (l: Lane, labels: Record<string, string>) => (l.run.length ? `<spa
 const lock = (app: App, l: Lane) => ((h = holdAt(app, l.table)) => (h ? `<span data-lock title="${esc(lockSay(app, h))}" class="text-amber-700 dark:text-amber-300"><span aria-hidden="true">🔒</span><span class="sr-only">${esc(lockSay(app, h))}</span></span>` : ''))()
 const row = (app: App, v: StratView, labels: Record<string, string>) => (l: Lane) => ((now = app.store.state.now) =>
   `<li data-tid="${esc(l.table)}" data-lane class="grid grid-cols-[6.5rem_1fr] items-center gap-2"><div class="flex items-center gap-1 truncate text-xs">${ref(l.table, l.label)}${links(l, labels)}${lock(app, l)}</div>` +
-  `<div class="relative h-6 rounded bg-slate-100 dark:bg-slate-900">${seated(l)}${planned(now)(l)}${held(v.lanes, worldHolds(app.store.state.world).filter(h => h.until > now), now)(l)}${paired(v.pairs)(l)}</div></li>`)()
+  `<div class="relative h-6 rounded bg-slate-100 dark:bg-slate-900">${seated(l)}${planned(now)(l)}${held(app, v.lanes, worldHolds(app.store.state.world).filter(h => h.until > now), now)(l)}${paired(v.pairs)(l)}</div></li>`)()
 const TICKS = [0, 30, 60, 90, 120, 150]
 const axis = (now: number) => `<div aria-hidden="true" class="grid grid-cols-[6.5rem_1fr] gap-2 text-xs text-slate-600 dark:text-slate-300"><span>Table</span><div class="relative h-4">${TICKS.map(m => `<span class="absolute -translate-x-1/2 tabular-nums" style="left:${pct(m)}">${m ? `+${m}m` : hhmm(now)}</span>`).join('')}</div></div>`
 const legend = `<ul aria-label="Legend" class="mb-2 flex flex-wrap gap-3 text-xs">${Object.entries(BAR).map(([k, b]) => `<li data-legend="${k}" class="flex items-center gap-1"><span aria-hidden="true" class="inline-block h-3 w-5 rounded-sm ${b.cls}"></span>${b.say}</li>`).join('')}</ul>`
