@@ -101,7 +101,7 @@ test('level 0 is one frame: the bar sits right of the walkway along T4/T15/T16/T
   assert.deepEqual([w.ents.rf_b15!.table!.capacity, w.ents.rf_b13!.table!.capacity], [4, 2], 'B15 a 4-top, B13 a 2-top')
   assert.equal(p('b14').x + p('b14').w + G, right, 'B14 against the right bar wall')
   assert.deepEqual([p('b16').x === p('b20').x, p('b15').x - (p('b16').x + p('b16').w) === p('b14').x - (p('b15').x + p('b15').w)], [true, true], 'B16 under B20, B15 balanced between B16 and B14')
-  assert.ok(p('b13').y === p('b12').y && p('b13').x > p('b12').x + p('b12').w && w.ents.rf_b13!.seating!.chairs.b === 1, 'B13 stays right of the counter on B12\'s row, its chair tucked under it')
+  assert.ok(p('b13').y < p('b12').y + G && p('b13').x > p('b12').x + p('b12').w && w.ents.rf_b13!.seating!.chairs.b === 1, 'B13 stays right of the counter, level with the foot, its chair tucked under it')
   assert.ok(!zones.some(z => z.zone.label === 'Spare chair') && p('b4').x - (zone('Walkway').x + zone('Walkway').w) === 3 * G, 'B13\'s one stowed chair is its seat (no spare); the stool column three cells off the walkway')
   assert.deepEqual([p('b22').x - (p('b21').x + p('b21').w), p('b21').x - (p('b20').x + p('b20').w)], [G, G], 'B20, B21, B22 one cell apart')
   assert.ok(p('b3').y + p('b3').h === zone('Bar counter').y && p('b3').w === G && p('b9').y === zone('Bar counter').y + zone('Bar counter').h && p('b3').x === zone('Bar counter').x, 'stools hug the counter')

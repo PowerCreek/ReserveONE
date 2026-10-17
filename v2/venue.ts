@@ -15,7 +15,7 @@ const KIND = {
   stool: [1, 1, 'stool'], round6: [3, 3, 'round', {chairs: {}, ring: 6}],
   hi4: [2, 3, 'rect', {chairs: {l: 2, r: 2}, high: true}], hi2: [2, 2, 'rect', {chairs: {l: 1, r: 1}, high: true}], hi6: [2, 5, 'rect', {chairs: {l: 3, r: 3}, high: true}],
   /** The roof bar: one L counter (front arm down, foot arm right), 6 high stools facing it from the left, 4 under the foot. */
-  barL: [6, 8, 'stool', {chairs: {}, high: true, top: [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]], at: [...[1, 2, 3, 4, 5, 6].map((y): [number, number, Side] => [-1, y, 'r']), ...[2, 3, 4, 5].map((x): [number, number, Side] => [x, 8, 't'])]}],
+  barL: [6, 8, 'stool', {chairs: {}, high: true, top: [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]], at: [...[1, 2, 3, 4, 5, 6].map((y): [number, number, Side] => [-1, y, 'r']), ...[0, 1, 2, 3].map((x): [number, number, Side] => [x, 8, 't'])]}],
 } as const satisfies Record<string, readonly [number, number, Shape, Seating?]>
 type Kind = keyof typeof KIND
 /** One table: [id, label, capacity, kind, left, top] (cells, in its floor's frame). */
@@ -23,7 +23,7 @@ type Row = [id: string, label: string, cap: number, kind: Kind, x: number, y: nu
 const r = (id: string, label: string, cap: number, kind: Kind, x: number, y: number): Row => [`rf_${id}`, label, cap, kind, x, y]
 const t = (n: number, cap: number, kind: Kind, x: number, y: number) => r(String(n), `T${n}`, cap, kind, x, y)
 /** Ground frame (cells), top to bottom: grotto and restrooms (y 0-11), booths T1-T4 on the top wall flush on the booth aisle (y 12-13), the middle band (quads and T9-T12) beside the host stand, the banquette aisle (y 18), banquettes T17-T23 and T24 on the bottom wall (y 23). The left strip (x 0-8) holds restrooms, stairs, stair wall, host stand and lobby; the restroom aisle (x 9-11) runs up the grotto's left wall; the lobby reaches the grotto's third cell, where the POS by T17 starts, and T1-T24 sit right of it; the walkway (x 58-60) parts main from the bar. */
-const BOOTH_Y = 9, MID_Y = 14, BQ_Y = 20, BOTTOM = 23, WALK_X = 58, BAR_X = 62, CX = BAR_X + 2, BAR_Y = 6
+const BOOTH_Y = 9, MID_Y = 14, BQ_Y = 20, BOTTOM = 23, WALK_X = 58, BAR_X = 62, CX = BAR_X + 2, BAR_Y = 7
 const main: Row[] = [
   t(1, 6, 'booth', 31, BOOTH_Y), t(2, 6, 'booth', 46, BOOTH_Y), t(3, 6, 'booth', 50, BOOTH_Y), t(4, 6, 'booth', 54, BOOTH_Y),
   t(5, 2, 'quad', 18, MID_Y), t(6, 2, 'quad', 18, MID_Y + 2), t(7, 2, 'quad', 24, MID_Y), t(8, 2, 'quad', 24, MID_Y + 2),
@@ -38,7 +38,7 @@ const stools = (ns: number[], at: (i: number) => Pt) => ns.map((n, i) => r(`b${n
 const bar: Row[] = [
   r('b20', 'B20', 3, 'smallTL', BAR_X + 1, BAR_Y), r('b21', 'B21', 4, 'bqTop', BAR_X + 4, BAR_Y), r('b22', 'B22', 3, 'desk', BAR_X + 8, BAR_Y),
   ...stools([3, 2, 1], i => [CX + 1 + i, BAR_Y + 4]), ...stools([4, 5, 6, 7, 8], i => [CX, BAR_Y + 5 + i]), ...stools([9, 10, 11, 12], i => [CX + 1 + i, BAR_Y + 10]),
-  r('b13', 'B13', 2, 'two', BAR_X + 11, BAR_Y + 10),
+  r('b13', 'B13', 2, 'two', BAR_X + 11, 16),
   r('b16', 'B16', 3, 'smallBL', BAR_X + 1, BQ_Y), r('b15', 'B15', 4, 'bq4', BAR_X + 5, BQ_Y), r('b14', 'B14', 3, 'smallBR', BAR_X + 10, BQ_Y),
 ]
 const patio: Row[] = [
