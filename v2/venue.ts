@@ -34,7 +34,7 @@ const main: Row[] = [
 /** Bar (right of the walkway, same frame, same height): B20 B21 B22 on its top wall, stools B1-B3 over the counter's top arm, B4-B8 down its walkway arm, B9-B12 under its bottom arm, B13 (a 2-top, its one stowed chair tucked under it) next to B12; the stools, counter and B13 sit two cells in from the walkway; then B16 B15 B14 on the bottom wall two cells apart. */
 const stools = (ns: number[], at: (i: number) => Pt) => ns.map((n, i) => r(`b${n}`, `B${n}`, 1, 'stool', ...at(i)))
 const bar: Row[] = [
-  r('b20', 'B20', 3, 'smallTL', BAR_X + 1, BAR_Y), r('b21', 'B21', 4, 'bqTop', BAR_X + 4, BAR_Y), r('b22', 'B22', 4, 'hi4', BAR_X + 8, BAR_Y),
+  r('b20', 'B20', 3, 'smallTL', BAR_X + 1, BAR_Y), r('b21', 'B21', 4, 'bqTop', BAR_X + 4, BAR_Y), r('b22', 'B22', 4, 'hi4', BAR_X + 9, BAR_Y),
   ...stools([3, 2, 1], i => [CX + 1 + i, BAR_Y + 4]), ...stools([4, 5, 6, 7, 8], i => [CX, BAR_Y + 5 + i]), ...stools([9, 10, 11, 12], i => [CX + 1 + i, BAR_Y + 10]),
   r('b13', 'B13', 2, 'two', BAR_X + 11, 16),
   r('b16', 'B16', 3, 'smallBL', BAR_X + 1, BQ_Y), r('b15', 'B15', 4, 'bq4', BAR_X + 5, BQ_Y), r('b14', 'B14', 3, 'smallBR', BAR_X + 10, BQ_Y),
@@ -105,7 +105,7 @@ const adjoin = (e: Entity): Entity => (NEIGHBOURS[e.id] ? {...e, adj: {with: NEI
 type ZoneRow = [id: string, floor: string, label: string, kind: Components['zone']['kind'], r: Rect, at?: Pt, poly?: [number, number][]]
 const LOBBY: Rect = [0, 18, 14, 5], DOOR: Rect = [1, BOTTOM, 2, 1], PATIO_DOOR: Rect = [10, BOTTOM, 3, 1], HOST: Rect = [0, 14, 9, 4], STAIR_WALL: Rect = [0, 14, 9, 0]
 const BOOTH_AISLE: Rect = [9, 12, WALK_X - 9, 2], BANQUETTE_AISLE: Rect = [14, 18, WALK_X - 14, 1], WALKWAY: Rect = [WALK_X, 0, 3, BOTTOM]
-const RR_AISLE: Rect = [9, 10, 3, 2], RR_WALK: Rect = [0, 7, 12, 3], MENS: Rect = [9, 0, 3, 7], LADIES: Rect = [0, 0, 6, 7]
+const RR_WALK: Rect = [0, 7, 12, 5], RR_POLY: [number, number][] = [[0, 0], [12, 0], [12, 5], [9, 5], [9, 3], [0, 3]], MENS: Rect = [9, 0, 3, 7], LADIES: Rect = [0, 0, 6, 7]
 const GROTTO_WALLS: Rect[] = [[12, 12, 6, 0], [20, 12, 6, 0], [12, 0, 14, 0], [12, 0, 0, 12], [26, 0, 0, 12]], GROTTO_DOOR: Rect = [18, 12, 2, 0]
 const POS1: Rect = [14, BQ_Y - 1, 6, 4], POS2: Rect = [51, BQ_Y, WALK_X - 53, 3], EXIT: Rect = [WALK_X, BOTTOM, 3, 1]
 /** Shoulder-height dividers: the quads' cross (lines on cell edges, no margin across them). */
@@ -118,7 +118,7 @@ const ROOF_WALK: Rect = [0, 0, 13, 8], ROOF_STAIRS: Rect = [0, 0, STAIRS[2], STA
 const ZONES: ZoneRow[] = [
   ['z_lobby', 'rf1', 'Lobby', 'lobby', LOBBY], ['z_door', 'rf1', 'Front door', 'door', DOOR], ['z_patio_door', 'rf1', 'Patio entrance', 'door', PATIO_DOOR], ['z_host', 'rf1', 'Host stand', 'stand', HOST], ['z_stairs', 'rf1', 'Stairs to the roof', 'stairs', STAIRS], ['z_stair_wall', 'rf1', 'Stair wall', 'wall', STAIR_WALL],
   ['z_walkway', 'rf1', 'Walkway', 'walkway', WALKWAY], ['z_booth_aisle', 'rf1', 'Booth aisle', 'aisle', BOOTH_AISLE], ['z_banquette_aisle', 'rf1', 'Banquette aisle', 'aisle', BANQUETTE_AISLE],
-  ['z_rr_aisle', 'rf1', 'Restroom aisle', 'aisle', RR_AISLE], ['z_rr_walk', 'rf1', 'Restroom walk', 'walkway', RR_WALK], ['z_mens', 'rf1', "Men's room", 'room', MENS], ['z_ladies', 'rf1', "Ladies' room", 'room', LADIES],
+  ['z_rr_walk', 'rf1', 'Restroom walk', 'walkway', RR_WALK, undefined, RR_POLY], ['z_mens', 'rf1', "Men's room", 'room', MENS], ['z_ladies', 'rf1', "Ladies' room", 'room', LADIES],
   ...GROTTO_WALLS.map((r, i): ZoneRow => [`z_grotto_wall${i + 1}`, 'rf1', 'Grotto wall', 'wall', r]), ['z_grotto_door', 'rf1', 'Grotto entrance', 'door', GROTTO_DOOR],
   ['z_pos1', 'rf1', 'POS', 'stand', POS1], ['z_pos2', 'rf1', 'POS (walkway)', 'stand', POS2], ['z_exit', 'rf1', 'Exit (no re-entry)', 'door', EXIT],
   ...DIVIDERS.map((d, i): ZoneRow => [`z_div${i + 1}`, 'rf1', 'Divider', 'divider', d]),
@@ -136,13 +136,9 @@ const areaZones = (): ZoneRow[] => AREAS.map(([a, fid, label, r]) => [`z_${a}`, 
 const G = defaultPolicy.sim.grid
 const px = (g: number, [x, y, w, h]: Rect) => ({x: x * g, y: y * g, w: w * g, h: h * g})
 const mid = ([x, y]: Pt): Pt => [(x + O[0] + 0.5) * G, (y + O[1] + 0.5) * G]
-/** Where the crew stands at seed (policy px, cell centres, ground cells): the host at the stand, servers parked in the walkway, bartenders in the bar well, the busser in the banquette aisle; all clear of tables. */
-export const POSTS = {host: mid([4, 16]), bus: mid([30, 18]), servers: [2, 6, 10, 18].map(y => mid([WALK_X + 1, y])), pairs: [BAR_Y + 6, BAR_Y + 8].map(y => mid([CX + 3, y]))}
-/** The front door (policy px): the middle of its edge on the bottom wall (policy.sim.door is seeded to this). */
-export const DOOR_AT: Pt = [(DOOR[0] + O[0] + DOOR[2] / 2) * G, (DOOR[1] + O[1]) * G]
 const seating = (k: Kind) => ((s = seatOf(k)) => (s ? {seating: {...s, chairs: {...s.chairs}, ...(s.bench && {bench: [...s.bench]}), ...(s.top && {top: s.top.map(r => [...r])}), ...(s.at && {at: s.at.map(a => [...a])})} as Seating} : {}))()
 /** Entities for the 4 floors, 67 tables and the zones, on whole cells of `g`. */
-export const venue = (_floor?: [number, number], g = G): Entity[] => [
+const laid = (g: number): Entity[] => [
   ...floors.flatMap(([fid, name, , f]): Entity[] => [
     {id: fid, floor: {name, active: true, level: f.level}},
     ...LAID.filter(l => l.fid === fid).map(({row, r}): Entity => adjoin({
@@ -152,3 +148,20 @@ export const venue = (_floor?: [number, number], g = G): Entity[] => [
   ]),
   ...[...areaZones(), ...ZONES].map(([id, floor, label, kind, r, at, poly]): Entity => ({id, zone: {label, kind, ...(poly ? {poly} : {})}, pos: {floor, ...px(g, moved(at ?? O)(r))}})),
 ]
+/** The whole building turned half a circle about the middle of level 0 (owner: the host stand below the front door): positions mirror through `TURN`, every seat side swaps (l/r, t/b) and cell offsets inside a body or outline mirror with it. */
+const SWAP: Record<Side, Side> = {l: 'r', r: 'l', t: 'b', b: 't'}
+const level0 = (es: Entity[]) => es.filter(e => e.pos && es.find(f => f.id === e.pos!.floor)?.floor?.level === 0).map(e => e.pos!)
+const span = (ps: {x: number; y: number; w: number; h: number}[]): Pt => [Math.min(...ps.map(p => p.x)) + Math.max(...ps.map(p => p.x + p.w)), Math.min(...ps.map(p => p.y)) + Math.max(...ps.map(p => p.y + p.h))]
+const TURN: Pt = span(level0(laid(G)))
+const turnPt = ([x, y]: Pt): Pt => [TURN[0] - x, TURN[1] - y]
+const flip = <T,>(o: Partial<Record<Side, T>>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [SWAP[k as Side], v])) as Partial<Record<Side, T>>
+const turnSeating = (s: Seating, w: number, h: number): Seating => ({...s, chairs: flip(s.chairs) as Seating['chairs'], ...(s.bench && {bench: s.bench.map(b => SWAP[b])}), ...(s.open && {open: SWAP[s.open]}), ...(s.top && {top: s.top.map(([x, y]): [number, number] => [w - x, h - y])}), ...(s.at && {at: s.at.map(([x, y, f]): [number, number, Side] => [w - 1 - x, h - 1 - y, SWAP[f]])})})
+const turnEnt = (g: number) => (e: Entity): Entity => ((p = e.pos) => (!p ? e : {...e, pos: {...p, x: TURN[0] - p.x - p.w, y: TURN[1] - p.y - p.h}, ...(e.seating && {seating: turnSeating(e.seating, p.w / g, p.h / g)}), ...(e.zone?.poly && {zone: {...e.zone, poly: e.zone.poly.map(([x, y]): [number, number] => [p.w / g - x, p.h / g - y])}})}))()
+/** Entities for the 4 floors, 76 tables and the zones, on whole cells of `g`, turned. */
+export const venue = (_floor?: [number, number], g = G): Entity[] => laid(g).map(turnEnt(g))
+/** The same world back in the design frame (a half turn undoes itself): tables, zones, crew bodies and the door; tests state the owner's layout in this frame. */
+export const unturned = (es: Entity[], g = G): Entity[] => es.map(e => (e.body ? {...e, body: {...e.body, x: TURN[0] - e.body.x, y: TURN[1] - e.body.y}} : turnEnt(g)(e)))
+/** Where the crew stands at seed (policy px, cell centres, ground cells): the host at the stand, servers parked in the walkway, bartenders in the bar well, the busser in the banquette aisle; all clear of tables. */
+export const POSTS = {host: turnPt(mid([4, 16])), bus: turnPt(mid([30, 18])), servers: [2, 6, 10, 18].map(y => turnPt(mid([WALK_X + 1, y]))), pairs: [BAR_Y + 6, BAR_Y + 8].map(y => turnPt(mid([CX + 3, y])))}
+/** The front door (policy px): the middle of its edge on the bottom wall (policy.sim.door is seeded to this). */
+export const DOOR_AT: Pt = turnPt([(DOOR[0] + O[0] + DOOR[2] / 2) * G, (DOOR[1] + O[1]) * G])

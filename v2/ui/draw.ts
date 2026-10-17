@@ -167,7 +167,7 @@ export const table = (w: World, hs: Hold[]) => (t: TT) => ((k = bodyKind(t), f =
 export const section = (s: Ent<'section'>, ts: Ent<'table' | 'pos'>[], live = true) => {
   const lead = [...ts].sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x)[0]
   const tint = ts.map(t => `<rect x="${t.pos.x - 10}" y="${t.pos.y - 10}" width="${t.pos.w + 20}" height="${t.pos.h + 20}" rx="14" fill="${esc(s.section.color)}" fill-opacity="${live ? '.14' : '.05'}"/>`)
-  return lead ? tint.join('') + txt(lead.pos.x + lead.pos.w / 2, lead.pos.y - 14, 'fill-slate-500 text-[10px] uppercase dark:fill-slate-400', s.section.name) : ''
+  return lead ? tint.join('') : '' // the tint says where; whose it is shows on the Staff tab and in the card (no name on the plan)
 }
 export const link = (w: World) => (k: Ent<'link'>) => {
   const [a, ...rest] = k.link.members.map(m => locate(w, m))
@@ -279,8 +279,14 @@ const labOf = (w: World, z: Z, blocks: Box[]): Lab => {
   return side || (PLACE[z.zone.kind]?.(w, z, n) ?? free(p, n, blocks))
 }
 const nameAt = (z: Z, l: Lab) => `<text x="${f2(l.x)}" y="${f2(l.y)}" text-anchor="${l.anchor}"${l.turn ? ` dy="3" transform="rotate(-90 ${f2(l.x)} ${f2(l.y)})"` : ''} class="${ZINK[z.zone.kind]} ${LABEL}">${esc(z.zone.label)}</text>`
+/** Doors people use both ways (patio, grotto): two arrows side by side, out and in, and no name on the plan (the hover line has it). */
+export const BOTH = ['z_patio_door', 'z_grotto_door']
+/** Zones with no name on the plan: the two-way doors and the restroom walk (one L-shaped walk, not two partitions). */
+export const NAMELESS = [...BOTH, 'z_rr_walk']
+const pair = (w: World, z: Z) => ((c = mid2(z.pos), d = outward(w, z), s = {x: -d.y * 5, y: d.x * 5}) =>
+  arrow({x: c.x - d.x * 13 + s.x, y: c.y - d.y * 13 + s.y}, d, 26, DOOR_INK) + arrow({x: c.x + d.x * 13 - s.x, y: c.y + d.y * 13 - s.y}, {x: -d.x, y: -d.y}, 26, DOOR_INK))()
 const EXTRA: Partial<Record<Components['zone']['kind'], (w: World, z: Z) => string>> = {
-  door: (w, z) => arrow(mid2(z.pos), outward(w, z), 26, DOOR_INK),
+  door: (w, z) => (BOTH.includes(z.id) ? pair(w, z) : arrow(mid2(z.pos), outward(w, z), 26, DOOR_INK)),
   stairs: flight,
 }
 /** A partition between tables: one solid thin line along the rect's long axis (the rect may have no width or no height); no fill, no name. */
@@ -323,7 +329,7 @@ const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall',
 const pad = (t: FT): Box => ({x: t.pos.x - 8, y: t.pos.y - 18, w: t.pos.w + 16, h: t.pos.h + 20})
 const by = (ks: Components['zone']['kind'][]) => (a: Z, b: Z) => ks.indexOf(a.zone.kind) - ks.indexOf(b.zone.kind)
 const QUIET: Components['zone']['kind'][] = ['divider', 'prop'] // never named on the plan (the hover line says what they are)
-const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind) && !(z.zone.kind === 'wall' && thin(z))).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
+const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind) && !NAMELESS.includes(z.id) && !(z.zone.kind === 'wall' && thin(z))).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
   ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: ts.map(pad)}).at
 export const zonesOf = (w: World, zs: Z[], ts: FT[] = [], skip: string[] = []) => ((at = labels(w, zs, ts, skip)) => [...zs].sort(by(ORDER)).map(z => zoneOf(w, z, at.get(z.id))).join(''))()
 

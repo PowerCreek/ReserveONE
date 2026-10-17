@@ -1,7 +1,7 @@
 // Isometric floor view (U2): every level of the same world stacked in one 3D frame. Pure string builders; classes are literals here or in tone.ts, data colours come from entity data.
 import {defaultPolicy, having} from '../contracts/index.ts'
 import type {Components, Ent, Hold, Id, World} from '../contracts/index.ts'
-import {ALERT, STAFF, contour, seatedAt, seatsOf, serverOf, slotAt, titleOf} from './draw.ts'
+import {ALERT, NAMELESS, STAFF, contour, seatedAt, seatsOf, serverOf, slotAt, titleOf} from './draw.ts'
 import type {Alerts, Place} from './draw.ts'
 import {CAM, H, W, floorOf, hull, levelName, levelOf, levels} from './geo.ts'
 import type {Box} from './geo.ts'
@@ -97,7 +97,7 @@ const STANDING = ['wall', 'divider']
 const txt = (p: V2, cls: string, s: unknown, anchor = 'middle') => `<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
 const zone = (t: Turn) => (z: Ent<'zone' | 'pos'>) =>
   `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${pts(outlineOf(z).map(p => proj(t)([p[0], p[1], 0.5])))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
-  (QUIET.includes(z.zone.kind) || z.zone.poly ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
+  (QUIET.includes(z.zone.kind) || NAMELESS.includes(z.id) || z.zone.poly ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
 /** Standing zones: a wall box (counter height), a line wall at wall height, a divider at shoulder height. */
 const WALL = 'fill-stone-300 stroke-stone-500 stroke-[0.5px] dark:fill-stone-600 dark:stroke-stone-400'
 /** A fragment: one piece of furniture, its painter box and the markup around it (`open` / `close`); `key` names it within its level. Turned at draw time (`fhtml`, or moved in place by layersiso). */
