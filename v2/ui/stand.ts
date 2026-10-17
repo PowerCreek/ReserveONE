@@ -1,7 +1,8 @@
 // Host stand (U4, wave 4): renders the engine's StandView only (`ask(app, 'stand', focus)`) and dispatches Cmds through `run`.
 // Pick a party at the door, optionally ask about a qualifier, then one click leases it an offer: the party is led there and settles into a seat by itself
 // (or Seat now), unless it raises a concern; Release hands the spot back. Free play: no scoring.
-import type {App, DoorRow, Id, LeaseRow, Offer, Placed, Policy, ReqRow, SeatedRow, StandView, Want, World} from '../contracts/index.ts'
+import type {App, DoorRow, Id, LeaseRow, Offer, Placed, Policy, QRow, ReqRow, SeatedRow, StandView, Want, World} from '../contracts/index.ts'
+import {bk} from './bookask.ts'
 import {run} from './act.ts'
 import {ask, policyOf} from './ask.ts'
 import {crew, spotName} from './events.ts'
@@ -17,7 +18,7 @@ declare module '../contracts/kernel.ts' {
 }
 const st = (app: App) => uiOf(app).stand!
 const world = (app: App) => app.store.state.world
-interface Ctx {w: World; p: Policy; v: StandView; now: number; fast?: Id}
+interface Ctx {w: World; p: Policy; v: StandView; now: number; fast?: Id; q: Map<Id, QRow>} // q = the priority order (booking desk), by party
 
 // ---- pieces
 const pill = 'rounded-full bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700'
@@ -33,11 +34,13 @@ const named = (l: string) => l.replaceAll('+', ' + ') // labels show as stored; 
 const spot = spotName
 const KIND: Record<string, string> = {W: 'Walk-in', P: 'Priority', R: 'Reservation', V: 'VIP'}
 
-// ---- at the door: party cards as the radiogroup (selecting one focuses it; greeting is implicit)
+// ---- at the door: party cards as the radiogroup (selecting one focuses it; greeting is implicit), in the priority order; the head is the default focus
+const rankOf = (c: Ctx, r: DoorRow) => ((q = c.q.get(r.party)) => (q ? `<b title="${esc(q.why.map(t => `${t.label} ${t.pts}`).join(', '))}">#${q.rank}</b> ` : ''))()
+const ranked = (c: Ctx) => [...c.v.door].sort((a, b) => (c.q.get(a.party)?.rank ?? Infinity) - (c.q.get(b.party)?.rank ?? Infinity))
 const partyCard = (c: Ctx) => (r: DoorRow) =>
-  `<button type="button" role="radio" aria-checked="${r.party === c.v.focus}" data-act="stand-focus" data-id="${esc(r.party)}" class="${choice(r.party === c.v.focus)}"><span class="font-semibold">${esc(r.label)} x${r.size} ${esc(r.name)}</span><span class="tabular-nums text-slate-600 dark:text-slate-300">${KIND[r.kind] ?? r.kind}, waiting ${r.waitedMin}m</span>${c.fast === r.party ? fastMark : ''}</button>`
+  `<button type="button" role="radio" aria-checked="${r.party === c.v.focus}" data-act="stand-focus" data-id="${esc(r.party)}" class="${choice(r.party === c.v.focus)}"><span class="font-semibold">${esc(r.label)} x${r.size} ${esc(r.name)}</span><span class="tabular-nums text-slate-600 dark:text-slate-300">${rankOf(c, r)}${KIND[r.kind] ?? r.kind}, waiting ${r.waitedMin}m</span>${c.fast === r.party ? fastMark : ''}</button>`
 const door = (c: Ctx) => part(`At the door <span class="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs tabular-nums normal-case text-slate-900 dark:bg-slate-700 dark:text-slate-100">${c.v.door.length}</span>`,
-  c.v.door.length ? `<div role="radiogroup" aria-label="Parties at the door" class="flex max-h-60 flex-wrap gap-2 overflow-y-auto p-0.5">${c.v.door.map(partyCard(c)).join('')}</div>` : muted('Nobody at the door.'))
+  c.v.door.length ? `<div role="radiogroup" aria-label="Parties at the door" class="flex max-h-60 flex-wrap gap-2 overflow-y-auto p-0.5">${ranked(c).map(partyCard(c)).join('')}</div>` : muted('Nobody at the door.'))
 
 // ---- intake: recorded wants, then an optional compact "Ask about" row
 const want = (c: Ctx) => (x: Want) => `<span class="rounded-full px-2 py-0.5 text-xs ${LV[x.level]}" title="${esc(x.accord)} of the party">${x.avoid ? 'avoid ' : ''}${esc(feat(c, x.feat))} | ${x.level} | ${esc(c.p.host.whys[x.why]?.label ?? x.why)}</span>`
@@ -96,15 +99,18 @@ const AWARE: Record<SeatedRow['aware'], (who: string, r: SeatedRow) => string> =
 const sat = (c: Ctx) => (r: SeatedRow) =>
   `<li class="flex flex-wrap items-center gap-1 py-1 text-xs"><b>${esc(crew(c.w, r.party))}</b> at ${esc(spot(c.w, r.table))} (${esc(c.p.service.areas[r.area]?.label ?? r.area)}) ${AWARE[r.aware](c.w.ents[r.server ?? '']?.staff?.name ?? '', r)}</li>`
 const seated = (c: Ctx) => part('Seated: tell the server', c.v.seated.length ? `<div class="max-h-48 overflow-y-auto">${ul(c.v.seated.map(sat(c)))}</div>` : muted('Nobody seated.'))
+/** The party in focus: the one the host picked, else the head of the priority order that is at the door. */
+const focusOf = (app: App, q: QRow[]) => st(app).party || q.find(r => r.here)?.party
 const draw = (app: App) => {
-  const v = ask(app, 'stand', st(app).party)
-  const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now, fast: taker(app, v)}
+  const q = bk(app, 'wait')?.rows ?? []
+  const v = ask(app, 'stand', focusOf(app, q))
+  const c = v && {w: world(app), p: policyOf(app), v, now: app.store.state.now, fast: taker(app, v), q: new Map(q.map(r => [r.party, r]))}
   return c ? [door, focus, leased, coming, requests, seated].map(f => f(c)).join('') : muted('Engine host service not available.')
 }
 export const standPane = `<div data-stand="ui.rev" class="${card} space-y-3"></div>`
 
 // ---- acts: each one Cmd (the party in focus is the view's), then a `ui.rev` bump so the panel repaints
-const focused = (app: App) => ask(app, 'stand', st(app).party)?.focus ?? ''
+const focused = (app: App) => ask(app, 'stand', focusOf(app, bk(app, 'wait')?.rows ?? []))?.focus ?? ''
 const acts: Record<string, (app: App, ev: Event) => unknown> = {
   'stand-focus': (a, ev) => (st(a).party = arg(ev, 'id')),
   'stand-hear': (a, ev) => run(a, {do: 'hear', party: focused(a), feat: arg(ev, 'feat')}),

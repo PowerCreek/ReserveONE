@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {ZOOM, floorSvg, tabList} from './floor.ts'
-import {SEATED, alertsOf, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
+import {SEATED, alertsOf, chips, contour, seatedAt, seatsOf, table, unit, zonesOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
@@ -220,9 +220,9 @@ test('occupancy: a seated table fills its taken places red and outlines the rest
   assert.match(unit(world())(guest), /<circle/)
 })
 test('benches split into places: corner = 3 upholstered + a chair, small corner 2 + a chair, a banquette 4-top 2 + 2', () => {
-  const at = (w: number, h: number, seating: Entity['seating']) => seatsOf({id: 'x', pos: {floor: 'g', x: 0, y: 0, w: w * G, h: h * G}, seating} as never).places.map(p => p.kind)
+  const at = (w: number, h: number, seating: Entity['seating'], cap = 4) => seatsOf({id: 'x', pos: {floor: 'g', x: 0, y: 0, w: w * G, h: h * G}, seating, table: {capacity: cap}} as never).places.map(p => p.kind)
   assert.deepEqual(at(3, 2, {chairs: {t: 1}, bench: ['b', 'l']}), ['bench', 'bench', 'bench', 'chair'])
-  assert.deepEqual(at(2, 2, {chairs: {t: 1}, bench: ['b', 'l']}), ['bench', 'bench', 'chair'])
+  assert.deepEqual(at(2, 2, {chairs: {t: 1}, bench: ['b', 'l']}, 3), ['bench', 'bench', 'chair'])
   assert.deepEqual(at(3, 2, {chairs: {t: 2}, bench: ['b']}), ['bench', 'bench', 'chair', 'chair'])
   const w = world({...tb('q', 100, {chairs: {t: 1}, bench: ['b', 'l']}), pos: {floor: 'g', x: 100, y: 100, w: 48, h: 32}}, ...sat('p1', 'q', 3))
   const svg = table(w, [])(w.ents.q as never)
@@ -233,13 +233,13 @@ test('round tops are circles with petal chairs; high chairs get their own mark; 
   const w = world(
     {...tb('r', 100, {chairs: {}, ring: 6}, 'round', 6), pos: {floor: 'g', x: 100, y: 100, w: 48, h: 48}},
     tb('h', 200, {chairs: {l: 2, r: 2}, high: true}),
-    {...tb('l', 300, {chairs: {}, high: true, top: [[0, 0, 2, 8], [2, 6, 4, 2]], at: [[-1, 1, 'r'], [-1, 2, 'r'], [2, 8, 't']]}, 'stool', 10), pos: {floor: 'g', x: 300, y: 100, w: 96, h: 128}},
+    {...tb('l', 300, {chairs: {}, high: true, top: [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]], at: [[-1, 1, 'r'], [-1, 2, 'r'], [2, 8, 't']]}, 'stool', 10), pos: {floor: 'g', x: 300, y: 100, w: 96, h: 128}},
   )
   const [r, h, l] = ['r', 'h', 'l'].map(t => table(w, [])(w.ents[t] as never))
   assert.match(r!, /<circle cx="124" cy="124" r="24" stroke-width="2"/)
   assert.equal(r!.match(/data-petal/g)!.length, 6)
   assert.equal(h!.match(/data-high/g)!.length, 4)
-  assert.equal(l!.match(/data-top/g)!.length, 2)
+  assert.match(l!, /<polygon data-top points="300,100 332,100 332,196 396,196 396,228 300,228"/) // one L polygon
   assert.doesNotMatch(l!, /width="96" height="128"/) // no body rect under the counter
   assert.equal(l!.match(/data-stool/g)!.length, 3)
   assert.match(l!, /data-stool cx="292" cy="124"/) // a cell left of the counter, one down
@@ -253,4 +253,36 @@ test('a zero-thickness wall is a line; a door on it is an opening with jambs, it
   assert.match(svg, /data-opening>[^]*<polygon/)
   assert.doesNotMatch(svg, />WL<\/text>/)
   assert.match(svg, />DR<\/text>/)
+})
+test('an open booth is a D: the table rounds away from the open side, one bench contour hugs it inside the body, cut into a place per cover', () => {
+  const T = {...tb('bt', 100, {chairs: {}, open: 'b'}, 'booth', 6), pos: {floor: 'g', x: 100, y: 100, w: 64, h: 48}}
+  const c = contour(T as never)
+  const [xs, ys] = [c.table.map(p => p[0]), c.table.map(p => p[1])]
+  assert.deepEqual([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)], [114, 150, 114, 148]) // inset 14 on three sides, flush on the open bottom
+  assert.ok(c.table.some(p => Math.abs(p[0] - 132) < 0.01 && Math.abs(p[1] - 114) < 0.01) && !c.table.some(p => p[0] === 114 && p[1] === 114)) // the far side is a half-round
+  assert.equal(c.bench.length, 1)
+  const bx = c.bench[0]!.map(p => p[0]), by = c.bench[0]!.map(p => p[1])
+  assert.deepEqual([Math.min(...bx), Math.max(...bx), Math.min(...by), Math.max(...by)], [100, 164, 100, 148]) // the band fills the body to its edges
+  const places = seatsOf(T as never).places
+  assert.deepEqual(places.map(p => p.kind), Array(6).fill('bench'))
+  assert.ok(places.every(p => p.poly && p.poly.length > 3))
+  const w = world(T, ...sat('p1', 'bt', 4))
+  const svg = table(w, [])(w.ents.bt as never)
+  assert.match(svg, /<polygon data-shaped points=/)
+  assert.equal([count(svg, SEATED.on), count(svg, SEATED.off)].join(), '4,2')
+  assert.doesNotMatch(svg, /<rect x="100" y="100" width="64"/) // no square body
+  const up = contour({...T, seating: {chairs: {}, open: 't'}} as never).table.map(p => p[1])
+  assert.deepEqual([Math.min(...up), Math.max(...up)], [100, 134]) // open on top: flush there
+})
+test('a corner booth rounds only its bench corner; the bench follows it; feature chips show on hover only', () => {
+  const T = {...tb('cb', 100, {chairs: {t: 1}, bench: ['b', 'l']}), pos: {floor: 'g', x: 100, y: 100, w: 48, h: 32}, feat: {tags: ['banquette']}}
+  const c = contour(T as never)
+  assert.ok(!c.table.some(p => p[0] === 100 && p[1] === 132)) // the bottom-left corner is a quarter circle
+  assert.ok([[100, 100], [148, 100], [148, 132]].every(([x, y]) => c.table.some(p => p[0] === x && p[1] === y))) // the others stay square
+  assert.equal(c.bench.length, 1)
+  const svg = table(world(T), [])(T as never)
+  assert.equal(svg.match(/data-bench/g)!.length, 3)
+  assert.match(svg, /<g data-feats class="hidden group-hover:inline"><g data-feat="banquette">/)
+  assert.match(svg, /class="group cursor-pointer"/)
+  assert.equal(chips(T as never), '')
 })

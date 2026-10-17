@@ -1,4 +1,5 @@
 // Test rig: a mounted app with a small fake sim engine (contract-typed) plus the real desk (`act`, `stand`), so every write goes through the one seam.
+import {booking} from '../engine/booking.ts'
 import {having} from '../contracts/index.ts'
 import type {App as AppT, Engine, HostEngine, SimOut, State} from '../contracts/index.ts'
 import {App} from '../kernel/index.ts'
@@ -30,7 +31,7 @@ export const fake = (script: SimOut[] = []): Partial<HostEngine> => ({
 export const seed = (): State => ({now: 0, ui: {size: 2, pick: '', tone: ''}, world: {nextParty: 1, ents: {}}})
 export const rig = (script: SimOut[] = []) => {
   const el = dom().getElementById('app')!
-  const app: AppT = App.create(seed()).use(a => a.provide('engine', fake(script) as Engine)).use(ui)
+  const app: AppT = App.create(seed()).use(a => a.provide('engine', fake(script) as Engine).provide('booking', booking)).use(ui)
   app.mount(el)
   return {el, app}
 }

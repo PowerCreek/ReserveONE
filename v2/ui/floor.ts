@@ -154,10 +154,10 @@ const isoEl = (): SVGSVGElement | null => globalThis.document?.querySelector('[d
 const frame = (f: () => void) => (globalThis.requestAnimationFrame ?? ((g: () => void) => setTimeout(g, 16)))(f)
 /** What a live change redraws: pan/zoom only the viewBox, a level move its translate, a turn the insides (and the turn readout). */
 const tr = (v: [number, number]) => `translate(${v[0].toFixed(1)} ${v[1].toFixed(1)})`
-const LIVE: Record<string, (app: App, svg: SVGSVGElement) => void> = {
+const LIVE: Record<string, (app: App, svg?: SVGSVGElement, live?: boolean) => void> = {
   box: () => undefined,
-  lift: (app, svg) => svg.querySelectorAll('[data-level]').forEach(g => g.setAttribute('transform', tr(lift(app.store.state.world, isoOf(app), Number(g.getAttribute('data-level')))))),
-  all: (app, svg) => ((svg.innerHTML = isoInner(ctx(app, alertsNow(app)), isoOf(app), uiOf(app).fx)), svg.ownerDocument.querySelector('[data-floor] [data-rot]')?.replaceChildren(`${Math.round(isoOf(app).rot)}°`)),
+  lift: (app, svg) => svg?.querySelectorAll('[data-level]').forEach(g => g.setAttribute('transform', tr(lift(app.store.state.world, isoOf(app), Number(g.getAttribute('data-level')))))),
+  all: (app, svg, live = true) => svg && ((svg.innerHTML = isoInner(ctx(app, alertsNow(app)), isoOf(app), uiOf(app).fx, live)), svg.ownerDocument.querySelector('[data-floor] [data-rot]')?.replaceChildren(`${Math.round(isoOf(app).rot)}°`)),
 }
 const redraw = (app: App, p: Partial<View>) => ((svg = isoEl()) => svg && (svg.setAttribute('viewBox', isoBox(ctx(app, {}), isoOf(app))), LIVE[p.rot !== undefined ? 'all' : p.shift ? 'lift' : 'box']!(app, svg)))()
 const isoHooks = (app: App) => {
@@ -165,7 +165,7 @@ const isoHooks = (app: App) => {
   const flush = () => ((st.due = false), redraw(app, st.p), (st.p = {}))
   return {
     view: () => isoOf(app), turn: () => turnOf(app.store.state.world, isoOf(app)), fit: () => isoFit(app.store.state.world, isoOf(app)), close: () => closeCard(app), grid: policyOf(app).sim.grid,
-    put: (v: Partial<View>, done: boolean) => ((uiOf(app).iso = {...isoOf(app), ...v}), done ? uiOf(app).rev++ : ((st.p = {...st.p, ...v}), st.due || ((st.due = true), frame(flush)))),
+    put: (v: Partial<View>, done: boolean) => ((uiOf(app).iso = {...isoOf(app), ...v}), done ? ((st.p = {}), LIVE.all!(app, isoEl() ?? undefined, false), uiOf(app).rev++) : ((st.p = {...st.p, ...v}), st.due || ((st.due = true), frame(flush)))),
   }
 }
 /** Opacity slider: state plus the live level and readout, no repaint (the slider keeps its drag). */

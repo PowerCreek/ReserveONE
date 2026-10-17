@@ -1,4 +1,4 @@
-// Queue + fast seating: size stepper with the engine's best fit, a progressive size strip, and the waiting list in tier order.
+// Queue + fast seating: size stepper with the engine's best fit, a progressive size strip, the wait-list and call-ahead forms, and the priority queue (bookq.ts).
 // "From the door list" (on while anyone waits): the Seat button names the door party it takes (StandView.bySize) and seats it, so no unmarked
 // duplicate stays listed at the door; off, it seats a fresh walk-in. The party it would take is marked here and at the stand.
 import type {App, Id, StandView} from '../contracts/index.ts'
@@ -7,6 +7,7 @@ import {ask} from './ask.ts'
 import {esc, panel} from './render.ts'
 import {uiOf} from './state.ts'
 import {HEAT, btn, card, help, on, primary} from './tone.ts'
+import {qrows, queueHead, waitForms, waitlist} from './bookq.ts'
 declare module '../contracts/kernel.ts' {
   interface UiState {fromDoor?: boolean} // the fast-seat door toggle (default on)
 }
@@ -49,23 +50,16 @@ const fast = (app: App) => {
 }
 /** Fast-seat marker for the door party the Seat button would take (the queue rows and the stand's door cards). */
 export const fastMark = '<span data-fastmark title="Will be seated by Fast seating (Queue tab): this party leaves the door list" class="inline-flex items-center gap-1 rounded bg-indigo-100 px-1 text-xs font-semibold text-indigo-950 dark:bg-indigo-950 dark:text-indigo-50"><span aria-hidden="true">⇢</span>Fast seat takes them</span>'
-/** The waiting list in the engine's door order (policy.queue.tier, then waited); a booking shows no quote. */
-const quote = (app: App, id: string) => {
-  const q = app.store.state.world.ents[id]?.queue
-  return q ? ` · quote ${q.quotedMin}m` : ' · booked'
-}
-const rows = (app: App) => {
-  const v = doorView(app)
-  return (v?.door ?? []).map(r =>
-    `<li data-party="${esc(r.party)}" class="flex flex-wrap items-center gap-2 py-1 text-sm"><b class="w-12 tabular-nums">${esc(r.label)}</b><span class="grow">${esc(r.name)} x${r.size}</span>${taker(app, v) === r.party ? fastMark : ''}<span class="text-xs tabular-nums text-slate-600 dark:text-slate-300">waited ${r.waitedMin}m${quote(app, r.party)}</span><button type="button" data-act="seat" data-id="${r.party}" class="${on}">Seat</button></li>`).join('')
-}
-export const queuePane = `<div class="grid gap-3 md:grid-cols-2"><div class="${card}"><h2 class="text-sm font-semibold">Fast seating</h2><p class="mb-2 ${help}">Seat a party by size in one click, at the best table that fits now.</p>
+/** The priority queue (bookq.ts): everyone waiting in the booking desk's policy order, each row with why it sits there; the fast-seat marker on the party Seat takes. */
+const rows = (app: App) => ((t = taker(app)) => qrows(app, id => (t === id ? fastMark : '')))()
+export const queuePane = `<div class="grid gap-3 md:grid-cols-2"><div class="space-y-3"><div class="${card}"><h2 class="text-sm font-semibold">Fast seating</h2><p class="mb-2 ${help}">Seat a party by size in one click, at the best table that fits now.</p>
 <div class="flex flex-wrap items-center gap-2"><button type="button" data-act="less" aria-label="One fewer guest" class="${btn}">−</button><span data-text="ui.size" class="w-6 text-center tabular-nums"></span><button type="button" data-act="more" aria-label="One more guest" class="${btn}">+</button>
 <span class="text-sm">fits</span><b data-text="ui.pick" data-class="ui.tone" class="rounded px-2 py-1 text-white"></b><button type="button" data-act="join" class="${btn}">Add to queue</button></div>
 <div data-fast="ui.rev" class="mt-2"></div>
-<div data-fits="ui.rev" class="mt-3 flex flex-wrap gap-1"></div></div>
-<div class="${card}"><h2 class="text-sm font-semibold">Waiting</h2><p class="mb-2 ${help}">The door list, next first.</p><ul data-queue="ui.rev" class="divide-y divide-slate-200 dark:divide-slate-700"></ul></div></div>`
+<div data-fits="ui.rev" class="mt-3 flex flex-wrap gap-1"></div></div>${waitForms}</div>
+<div class="${card}"><h2 class="text-sm font-semibold">Priority queue</h2><p class="mb-2 ${help}">Everyone waiting, next first: reservations, then call-aheads, then walk-ins, raised by flags and time waited (policy). Each row says why.</p>${queueHead}<ul data-queue="ui.rev" class="divide-y divide-slate-200 dark:divide-slate-700"></ul></div></div>`
 export const queue = (app: App) => {
+  waitlist(app)
   Object.entries(acts).forEach(([n, f]) => app.act(n, bump(f)))
   app.binder(panel(app, 'data-fast', fast)).binder(panel(app, 'data-fits', strip)).binder(panel(app, 'data-queue', rows))
   ;['ui.size', 'ui.rev'].forEach(p => app.store.watch(p, () => refit(app), true))

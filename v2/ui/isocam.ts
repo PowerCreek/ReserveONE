@@ -55,6 +55,7 @@ export const isoDrag = (el: Element, h: Hooks) => {
   on.forEach(([t, f]) => el.ownerDocument.addEventListener(t, f as unknown as EventListener))
   el.addEventListener('click', swallow, true)
   el.addEventListener('contextmenu', ev => svgAt(el, ev) && ev.preventDefault())
+  ;['mousedown', 'pointerdown', 'auxclick'].forEach(k => el.addEventListener(k, ev => (ev as MouseEvent).button === 1 && svgAt(el, ev) && ev.preventDefault())) // no autoscroll, no page scroll from the middle button
   el.addEventListener('wheel', wheel as EventListener, {passive: false})
 }
 /** The svg point under the cursor (the visible box's centre when the browser cannot say). */

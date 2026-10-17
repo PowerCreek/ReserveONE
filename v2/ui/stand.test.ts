@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import type {Entity, HostEngine, HostEvent, State, World} from '../contracts/index.ts'
 import {Engine} from '../engine/index.ts'
+import {booking} from '../engine/booking.ts'
 import {App} from '../kernel/index.ts'
 import {dom, settle} from '../test/dom.ts'
 import {run} from './act.ts'
@@ -27,7 +28,7 @@ const mount = (ents: Entity[], engine: Partial<HostEngine> = Engine) => {
   const el = dom().getElementById('app')!
   const s: State = {...seed(), now: NOW}
   s.world.ents = Object.fromEntries([{id: 'f1', floor: {name: 'Main', active: true}}, host, ...ents].map((e): [string, Entity] => [e.id, e]))
-  const app = App.create(s).use(a => a.provide('engine', engine as HostEngine).provide('policy', defaultPolicy)).use(ui)
+  const app = App.create(s).use(a => a.provide('engine', engine as HostEngine).provide('policy', defaultPolicy).provide('booking', booking)).use(ui)
   app.mount(el)
   uiOf(app).rate = 0 // no walk-ins while the clock runs
   return {el, app}
@@ -187,4 +188,13 @@ test('every HostEvent has a narrated plain sentence (and the decline-and-leave e
   w.ents.p1 = {...w.ents.p1, queue: undefined}
   assert.equal(explain({ev: 'answered', party: 'p1', spot: 't2', yes: false}, w, defaultPolicy).msg, 'Chen party declined the banquette and left the list')
   assert.equal(explain({ev: 'left', party: 'p1'}, w, defaultPolicy).msg, 'W1 x4 left the list after declining the banquette')
+})
+test('door follows the priority order (policy.book): an arrived reservation outranks walk-ins and is the default focus; cards show the rank', async () => {
+  const res = party(3, 'R', 2, 'Booked', {reservation: {at: NOW - 60000, durationMin: 60, table: null, status: 'ARRIVED', phone: '', notes: ''}})
+  const {el} = mount([...room(), res])
+  await settle()
+  assert.deepEqual(door(el).map(([id]) => id), ['p3', 'p1', 'p2'])
+  assert.equal(door(el)[0][1], 'true')
+  assert.match(text(el, '[data-act="stand-focus"][data-id="p3"]'), /#1 Reservation/)
+  assert.match(text(el, cta), /to Booked party$/)
 })

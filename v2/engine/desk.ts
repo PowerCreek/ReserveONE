@@ -13,12 +13,13 @@ import {options} from './options.ts'
 import {areaOf} from './section.ts'
 import {concern} from './lease.ts'
 import type {Leased} from './lease.ts'
+import {order} from './bookrank.ts'
 import {MIN} from './time.ts'
 const since = (e: Pty) => e.queue?.since ?? e.reservation?.at ?? 0
 const row = (now: number) => (e: Pty): DoorRow =>
   ({party: e.id, label: e.party.label, name: e.party.name, size: e.party.size, kind: e.party.kind, waitedMin: Math.max(0, Math.floor((now - since(e)) / MIN))})
-/** The line (policy.queue.tier, then waited) minus parties the host already placed (leased or seated). */
-export const door = (p: Policy, w: World, now: number): DoorRow[] => line(p, w).filter(e => !where(w, e.id)).map(row(now))
+/** The door in the booking desk's priority order (policy.book points, waited), minus parties the host already placed (leased or seated). */
+export const door = (p: Policy, w: World, now: number): DoorRow[] => ((rank = order(p, w, now).map(r => r.party)) => line(p, w).filter(e => !where(w, e.id)).map(row(now)).sort((a, b) => (rank.indexOf(a.party) + 1 || 1e9) - (rank.indexOf(b.party) + 1 || 1e9)))()
 /** Party size -> the first door party of that size (what a size-only fast seat from the door takes). */
 export const bySize = (rows: DoorRow[]): Record<number, Id> => Object.fromEntries([...rows].reverse().map(r => [r.size, r.party]))
 /** Recorded wants (said or heard), feats asked about with no want, feats still to ask. */

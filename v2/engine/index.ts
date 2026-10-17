@@ -30,6 +30,7 @@ import {board} from './board.ts'
 export {outlook, spots, merges, fit, lookahead, seat, eta, turnover, rotate, serverFor, bus, alerts, reconcile, tick, spawn, intake, match, ladder, ask, options, respond, modeAt, holds, assign, knows, tell, act, stand, board}
 export {apply} from './patch.ts'
 export {queueOrder, line} from './queue.ts'
+export {booking} from './booking.ts'
 export {freeUp} from './free.ts'
 export {eventState} from './evstate.ts'
 export {sectionStats} from './section.ts'

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {GAPS, ISO, isoSvg, legend, tweak} from './iso.ts'
-import {Z, table} from './furniture.ts'
+import {Z, before, outer, table} from './furniture.ts'
 import {along, axes, axisOf, fitOf, zoomTo} from './isocam.ts'
 import {seen} from './geo.ts'
 import type {Ctx} from './iso.ts'
@@ -19,7 +19,7 @@ const world = (): World => ({nextParty: 1, ents: Object.fromEntries([
 const ctx = (): Ctx => ({w: world(), holds: [], areas: {main: {label: 'Main floor'}, bar: {label: 'Bar'}, roof: {label: 'Roof'}}})
 const order = (svg: string, ...ids: string[]) => ids.map(id => svg.indexOf(`data-tid="${id}"`))
 /** One table's group (up to the next table or the level's end). */
-const grp = (svg: string, id: string) => ((i = svg.indexOf(`data-tid="${id}"`)) => svg.slice(i, svg.indexOf('data-tid=', i + 10) > 0 ? svg.indexOf('data-tid=', i + 10) : undefined))()
+const grp = (svg: string, id: string) => svg.split(/(?=<g data-act="tcard" data-tid=")/).filter(x => x.startsWith(`<g data-act="tcard" data-tid="${id}"`)).join('')
 const lvl = (svg: string, n: number) => svg.match(new RegExp(`data-level="${n}" opacity="([^"]+)" transform="translate\\(([-\\d.]+) ([-\\d.]+)\\)"`))
 const vb = (svg: string) => svg.match(/viewBox="([^"]+)"/)![1]
 const count = (s: string, re: RegExp) => s.match(re)?.length ?? 0
@@ -68,7 +68,7 @@ test('zones outline the slab with names; walls and dividers stand up; insight ta
   const svg = isoSvg({...ctx(), w, alerts: {near: {level: 'crit', msg: 'x'}, far: {level: 'warn', msg: 'y'}}}, ISO)
   assert.match(svg, /data-izone="lobby"><title>Lobby<\/title><polygon[^>]*stroke-dasharray="5 4"[^]*>Lobby<\/text>/)
   assert.ok(svg.indexOf('data-izone="lobby"') > svg.indexOf('data-slab="g"') && svg.indexOf('data-izone="lobby"') < svg.indexOf('data-tid='))
-  assert.match(svg, /data-izone="divider"><title>Screen<\/title><polygon/)
+  assert.match(svg, /data-izone="divider"><title>Screen<\/title><g data-p="wall"><polygon/)
   assert.doesNotMatch(svg, />Screen<\/text>/)
   assert.match(grp(svg, 'near'), /data-insight="crit"[^>]*stroke-rose-600/)
   assert.match(grp(svg, 'far'), /data-insight="warn"[^>]*stroke-amber-500/)
@@ -92,7 +92,7 @@ test('furniture: chairs (legs, seat, back), benches, a single pedestal on a + ba
   w.ents.far!.seating = {chairs: {l: 2}, bench: ['b']}
   const g = grp(isoSvg({...ctx(), w}, ISO), 'far')
   assert.equal(count(g, /data-p="chair"/g), 2)
-  assert.equal(count(g, /data-p="bench"/g), 2) // a 40 px bench seats two (draw.ts places)
+  assert.equal(count(g, /data-p="bench"/g), 3) // the 40 px band (draw.ts contour) cut into cell segments, each a seat with its backrest
   assert.equal(count(g, /data-p="table"/g), 1)
   const tb = table({x: 0, y: 0, w: 32, h: 48}, [], Z.table, 'x')
   const span = (i: number) => ((f = tb.solids[i]!.foot) => [Math.max(...f.map(p => p[0])) - Math.min(...f.map(p => p[0])), Math.max(...f.map(p => p[1])) - Math.min(...f.map(p => p[1]))])()
@@ -104,17 +104,52 @@ test('round tops with petal chairs, high-tops taller, counters and stools from s
   const w = world()
   w.ents.far!.table = {...w.ents.far!.table!, shape: 'round'}
   w.ents.far!.seating = {chairs: {}, ring: 6}
-  w.ents.near!.seating = {chairs: {}, top: [[0, 0, 1, 2], [0, 2, 2, 1]], at: [[1, 0, 'l'], [1, 1, 'l'], [0, 3, 't']]}
+  w.ents.near!.seating = {chairs: {}, top: [[0, 0], [1, 0], [1, 2], [2, 2], [2, 3], [0, 3]], at: [[1, 0, 'l'], [1, 1, 'l'], [0, 3, 't']]}
   w.ents.up!.table = {...w.ents.up!.table!, shape: 'stool'}
   const svg = isoSvg({...ctx(), w}, ISO)
   assert.equal(count(grp(svg, 'far'), /data-p="chair"/g), 6)
   assert.ok(grp(svg, 'far').match(/<polygon points="[^"]+"/g)!.some(p => p.split(' ').length === 21)) // a 20-gon top
-  assert.equal(count(grp(svg, 'near'), /data-p="counter"/g), 2)
+  assert.equal(count(grp(svg, 'near'), /data-p="counter"/g), 4) // the L as one piece, cut into its 4 cells for the painter
   assert.equal(count(grp(svg, 'near'), /data-p="table"/g), 0)
   assert.equal(count(grp(svg, 'near'), /data-p="stool"/g), 3)
   assert.equal(count(grp(svg, 'up'), /data-p="stool"/g), 1)
   const labelY = (o: Entity['seating']) => ((v = world()) => ((v.ents.far!.seating = o), Number(grp(isoSvg({...ctx(), w: v}, ISO), 'far').match(/<text x="[^"]+" y="([^"]+)"/)![1])))()
   assert.ok(Math.abs(labelY({chairs: {l: 1}}) - labelY({chairs: {l: 1}, high: true}) - (Z.high - Z.table)) < 0.2)
+})
+test('painter: pieces sort on the axis that separates them under the turn; long walls sort per cell; tiles share no edges', () => {
+  const A = {x0: 0, y0: 0, x1: 10, y1: 10, z0: 0, z1: 20}, B = {...A, x0: 12, x1: 20}
+  assert.ok(before({deg: 0, c: [0, 0]})(A, B, 0, 0) < 0 && before({deg: 180, c: [0, 0]})(A, B, 0, 0) > 0)
+  assert.ok(before({deg: 0, c: [0, 0]})({...A, z1: 5}, {...A, z0: 5, z1: 8}, 9, 0) < 0) // stacked: bottom first
+  const w = world()
+  Object.assign(w.ents, {dv: {id: 'dv', zone: {label: 'Screen', kind: 'divider'}, pos: {floor: 'g', x: 144, y: 100, w: 0, h: 32}}, nb: {...w.ents.far!, id: 'nb', pos: {floor: 'g', x: 152, y: 100, w: 32, h: 32}}})
+  w.ents.far!.pos = {floor: 'g', x: 104, y: 100, w: 32, h: 32}
+  const at = (svg: string, re: RegExp) => [...svg.matchAll(re)].map(m => m.index!)
+  const ix = (o: typeof ISO) => ((svg = isoSvg({...ctx(), w}, o)) => ({far: at(svg, /data-tid="far" data-frag class/g), wall: at(svg, /data-p="wall"/g), nb: at(svg, /data-tid="nb" data-frag class/g)}))()
+  const r0 = ix(ISO)
+  assert.equal(r0.wall.length, 2) // 32 px of divider = 2 cell segments
+  assert.ok(Math.max(...r0.far) < Math.min(...r0.wall) && Math.max(...r0.wall) < Math.min(...r0.nb))
+  const r1 = ix(tweak(ISO, 'rot', '180'))
+  assert.ok(Math.max(...r1.nb) < Math.min(...r1.wall) && Math.max(...r1.wall) < Math.min(...r1.far))
+  const ts = [{x: 0, y: 0, w: 16, h: 16}, {x: 16, y: 0, w: 16, h: 16}]
+  assert.deepEqual(outer(ts)(ts[0]!), [true, false, true, true]) // top, right (shared), bottom, left
+})
+test('an open booth follows the contour: a D-shaped top and one U bench in segments; middle-button presses never scroll the page', async () => {
+  const w = world()
+  w.ents.far!.table = {...w.ents.far!.table!, shape: 'booth'}
+  w.ents.far!.pos = {floor: 'g', x: 100, y: 100, w: 64, h: 48}
+  w.ents.far!.seating = {chairs: {}, open: 'b'}
+  const g = grp(isoSvg({...ctx(), w}, ISO), 'far')
+  assert.ok(count(g, /data-p="bench"/g) >= 8) // three sides and two round corners, a cell at most per segment
+  assert.ok(g.split('data-p="table"')[1]!.match(/<polygon points="[^"]+"/g)!.some(p => p.split(' ').length > 9)) // the D: sampled arcs
+  w.ents.far!.seating = undefined
+  assert.equal(count(grp(isoSvg({...ctx(), w}, ISO), 'far'), /data-p="bench"/g), 2)
+  const {app, el} = rig()
+  app.apply(Object.values(world().ents).map(ent => ({op: 'add' as const, ent})))
+  await settle()
+  click(el, '[data-act="floorView"][data-id="iso"]')
+  await settle()
+  const svg = el.querySelector('[data-floor] svg[data-iso]')!
+  ;['mousedown', 'auxclick'].forEach(k => ((e = new window.MouseEvent(k, {bubbles: true, cancelable: true, button: 1})) => (svg.dispatchEvent(e), assert.ok(e.defaultPrevented, k)))())
 })
 test('occupancy: a seated table fills its first covers red and outlines the rest; others stay plain', () => {
   const w = world()
@@ -148,7 +183,7 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   click(el, '[data-act="floorView"][data-id="iso"]')
   await settle()
   assert.ok(f().querySelector('svg[data-iso]') && !f().querySelector('[data-floors]'))
-  assert.equal(f().querySelectorAll('[data-tid]').length, 3)
+  assert.equal(f().querySelectorAll('[data-tid]:not([data-frag])').length, 3)
   const svg = () => f().querySelector('svg[data-iso]')!
   const range = f().querySelector<HTMLInputElement>('input[type="range"][data-lv="1"]')!
   range.value = '20'
@@ -158,7 +193,7 @@ test('the floor panel toggles 2D | Iso and the iso controls repaint the same wor
   const box = svg().getAttribute('viewBox')
   click(el, '[data-act="iso"][data-k="hide"][data-v="1"]')
   await settle()
-  assert.equal(f().querySelectorAll('[data-tid]').length, 2)
+  assert.equal(f().querySelectorAll('[data-tid]:not([data-frag])').length, 2)
   assert.equal(f().querySelector('[data-k="hide"][data-v="1"]')!.getAttribute('aria-pressed'), 'false')
   assert.equal(svg().getAttribute('viewBox'), box)
   const ptr = (type: string, target: Element, x: number, y: number, o: object = {}) => target.dispatchEvent(new window.MouseEvent(type, {bubbles: true, clientX: x, clientY: y, button: 0, ...o}))
