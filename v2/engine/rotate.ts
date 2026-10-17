@@ -1,6 +1,6 @@
 import {having} from '../contracts/index.ts'
 import type {Engine, Ent, Entity, Id, Pick, Policy, Ranked} from '../contracts/index.ts'
-import {holdsOn, modeAt} from './modes.ts'
+import {holdsOn} from './modes.ts'
 import {planned} from './plan.ts'
 import {secsOf} from './ents.ts'
 import {areaOf, carveOf, cands, fits} from './section.ts'
@@ -13,13 +13,11 @@ const idle = (p: Policy, now: number, s: Staff) => Math.min(p.rotation.idleCapMi
 export const score = (p: Policy, now: number, s: Staff, add = 0) => -(s.staff.tally + add * p.plan.anticipate) / (s.staff.weight ?? 1) + idle(p, now, s) * p.rotation.idleWeight - s.staff.skip
 export const rankStaff = (p: Policy, ss: Staff[], now: number, add: Record<Id, number> = {}): Ranked[] => ss.filter(s => s.staff.active).map(s => ({staff: s.id, score: score(p, now, s, add[s.id])})).sort((a, b) => b.score - a.score)
 type Fore = {ss: Staff[]; add: Record<Id, number>}
-/** Does the active mode rotate every unit over every area? */
-const anywhere = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number) => !holdsOn(p, w, now) && !!p.service.modes[modeAt(p, w, now)]?.anywhere
 /** Who takes each planned reservation, in time order: the section holder when the mode holds tables, else the next in the rotation after the planned covers so far. */
 const forecast = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, ss: Staff[], skip?: Id, until = Infinity): Record<Id, number> =>
   planned(p, w, now, skip).filter(x => x.spot && x.at <= until).reduce<Fore>((a, x) => {
     const rk = rankStaff(p, a.ss, now)
-    const open = rk.find(q => anywhere(p, w, now) || x.tables.every(t => fits(areaOf(w.ents[t]))(a.ss.find(s => s.id === q.staff)!)))
+    const open = rk.find(q => x.tables.every(t => fits(areaOf(w.ents[t]), a.ss)(a.ss.find(s => s.id === q.staff)!)))
     const who = holdsOn(p, w, now) ? pickIn(a.ss, rk, secsOf(w, x.tables)).staff : open?.staff ?? null
     return {ss: bump(a.ss, who, x.size, x.at), add: who ? {...a.add, [who]: (a.add[who] ?? 0) + x.size} : a.add}
   }, {ss, add: {}}).add
@@ -34,20 +32,20 @@ export const pickIn = (ss: Staff[], rank: Ranked[], secs: Id[]): Pick => {
   const hit = rank.find(r => ss.find(s => s.id === r.staff)?.staff.sections.some(x => secs.includes(x)))
   return {staff: (hit ?? rank[0])?.staff ?? null, fallback: !hit}
 }
-interface Ctx {p: Policy; w: Parameters<Engine['rotate']>[1]; now: number; ss: Staff[]; rk: Ranked[]; ts: Entity[]; any: boolean}
+interface Ctx {p: Policy; w: Parameters<Engine['rotate']>[1]; now: number; ss: Staff[]; rk: Ranked[]; ts: Entity[]}
 const holder = (c: Ctx, id: Id) => c.ss.find(s => s.id === id)!
 /** Sectioned: the holders of any table (section, dealt top, or area pair, by the table's carve), in rank order. */
 const rows = (c: Ctx) => c.ts.map(t => carveOf(c.p, c.w, areaOf(t))).map((by, i) => ({by, cs: cands[by](c.ss, c.ts[i])}))
 const holders = (c: Ctx) => { const rs = rows(c); return c.rk.filter(r => rs.some(x => x.cs.some(s => s.id === r.staff))) }
 const carved = (c: Ctx, id: Id | null) => rows(c).find(x => x.cs.some(s => s.id === id))?.by
-/** Rotation: every ranked unit where the mode says `anywhere` (every server and bartender over every area), else units whose `staff.area` is unset or the tables' area. */
-const fitted = (c: Ctx) => c.rk.filter(r => c.any || c.ts.every(t => fits(areaOf(t))(holder(c, r.staff))))
+/** Rotation: floor units for floor tables; an area's bar staff for its tables (section.fits). */
+const fitted = (c: Ctx) => c.rk.filter(r => c.ts.every(t => fits(areaOf(t), c.ss)(holder(c, r.staff))))
 interface Way {list: (c: Ctx) => Ranked[]; by: (c: Ctx, id: Id | null) => Pick['by']; fallback: boolean}
 const WAYS: Record<'true' | 'false', Way> = {true: {list: holders, by: carved, fallback: false}, false: {list: fitted, by: () => 'rotation', fallback: false}}
 const REST: Way = {list: fitted, by: () => 'fallback', fallback: true}
 /** The mode's candidates, else (nobody holds or fits) ranked units fitting the area, flagged fallback. */
 const wayOf = (c: Ctx) => [WAYS[String(holdsOn(c.p, c.w, c.now)) as 'true' | 'false'], REST].map(x => ({x, list: x.list(c)})).find(y => y.list.length) ?? {x: REST, list: []}
-const ctxOf = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, skip?: Id): Omit<Ctx, 'ts'> => ({p, w, now, ss: having(w, 'staff'), rk: rotate(p, w, now, skip), any: anywhere(p, w, now)})
+const ctxOf = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, skip?: Id): Omit<Ctx, 'ts'> => ({p, w, now, ss: having(w, 'staff'), rk: rotate(p, w, now, skip)})
 const tablesAt = (w: Parameters<Engine['rotate']>[1], ids: Id[]) => ids.flatMap(i => (w.ents[i]?.table ? [w.ents[i]] : []))
 /** Who serves a seating of these tables (party of `size`, default the `skip` party's): the mode's candidates, then server prefs (engine/prefs.ts) within that order. */
 export const serverOf = (p: Policy, w: Parameters<Engine['rotate']>[1], now: number, tables: Id[], skip?: Id, size?: number): Pick => {

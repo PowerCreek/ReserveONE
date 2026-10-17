@@ -81,8 +81,8 @@ test('board gantt ticks: interval buckets over the window count ACTIVE seatings 
 test('board servers: rotation order with tally, weight, covers and tables seated now, held sections; off duty last with rank 0', () => {
   const w = room()
   assert.deepEqual(B.servers, [
-    {staff: 'w1', name: 'w1', rank: 1, tally: 5, seated: 3, tables: 1, weight: 1, active: true, sections: [{section: 'sA', name: 'A', ...pick(sectionStats(P, w, N, w.ents.sA as never))}], prefs: [], bogged: false},
-    {staff: 'w2', name: 'w2', rank: 0, tally: 0, seated: 0, tables: 0, weight: 1, active: false, sections: [], prefs: [], bogged: false},
+    {staff: 'w1', name: 'w1', rank: 1, tally: 5, seated: 3, tables: 1, weight: 1, active: true, sections: [{section: 'sA', name: 'A', ...pick(sectionStats(P, w, N, w.ents.sA as never))}], prefs: [], bogged: false, area: null},
+    {staff: 'w2', name: 'w2', rank: 0, tally: 0, seated: 0, tables: 0, weight: 1, active: false, sections: [], prefs: [], bogged: false, area: null},
   ])
 })
 const pick = ({occ, turns, need, under}: ReturnType<typeof sectionStats>) => ({occ, turns, need, under})

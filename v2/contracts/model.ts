@@ -17,6 +17,10 @@ export interface Pref {id: string; kind: 'avoid' | 'prefer'; on: PrefOn; give: '
 /** What a preference did at one seating: met = satisfied at no cost, enforced = it moved the table to someone else (or to this server), overridden = the rotation's obligation won (all bogged, nobody else could), with why. */
 export interface PrefMark {staff: Id; pref: string; state: 'met' | 'enforced' | 'overridden'; why: string}
 export type Ask = 'open' | 'offered' | 'granted' | 'declined'
+/** Body sides: top, right, bottom, left (level frame). */
+export type Side = 't' | 'r' | 'b' | 'l'
+/** stand = a host stand or POS cubby; room = restrooms and back rooms; prop = a kept fixture (a spare chair); divider = a shoulder-height partition (a line on a cell edge, no walking margin across it). */
+export type ZoneKind = 'area' | 'walkway' | 'aisle' | 'lobby' | 'stairs' | 'door' | 'wall' | 'stand' | 'room' | 'prop' | 'divider'
 export interface Components {
   floor: {name: string; active: boolean; level?: number} // level = storey (0 ground, 1 roof; default 0); floors on one level share one coordinate frame (stitched side by side), so `pos` places a table in its level's frame
   section: {name: string; color: string; minOccupancy?: number; minTurns?: number}
@@ -31,7 +35,8 @@ export interface Components {
   staff: {name: string; active: boolean; sections: Id[]; lastSeatedAt: number | null; tally: number; skip: number; maxCovers: number; weight?: number; area?: Id; crew?: string[]; prefs?: Pref[]} // weight = rotation participants this unit counts as (default 1; a bartender pair = 2); area = the only area it serves (default any); crew = a pair's names
   event: {name: string; tables: Id[]; start: number; end: number; locked: Id[]; reclaimed: boolean}
   spot: {tables: Id[]; label: string; capacity: number; status: TStatus; floor: Id; section: Id | null; feats?: string[]; last?: boolean} // derived by engine.spots; last = a merge through a last-resort table
-  zone: {label: string; kind: 'area' | 'walkway' | 'aisle' | 'lobby' | 'stairs' | 'door' | 'wall'} // a demarcated part of the building (with `pos`): drawn as dashed outlines and labels in the floor views; `door` and `stairs` mark the way in and up
+  zone: {label: string; kind: ZoneKind} // a demarcated part of the building (with `pos`): drawn as dashed outlines and labels in the floor views; `door` and `stairs` mark the way in and up
+  seating: {chairs: Partial<Record<Side, number>>; bench?: Side[]; turn?: boolean} // table (venue data, grid cells): chairs = loose chairs per side of the body, each in the one-cell seat band on that side (guests reach them through the walking margin or the aisle beyond); bench = sides with fixed upholstery (one cell, never moved); turn = the body may turn 90° to join neighbours on its short edges (a long table seated from the aisles). Absent = fixed seating inside the footprint (booths) or exempt (patio)
   feat: {tags: string[]} // table features (policy.host.feats ids); a spot unions its members' tags
   lease: {spot: Id; tables: Id[]; at: number; until: number; step: string; prefs?: PrefMark[]} // party: the tables leased to it while it is led and settles; at `until` (policy.host.clock.leaseMin) it is seated unless it raised a concern
   wants: {list: Want[]; heard: string[]} // party qualifiers; `heard` = feat ids the host recorded at intake

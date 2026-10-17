@@ -33,7 +33,7 @@ const served = (p: Policy, w: World, now: number, id: Id) => (r: Rung): Offer =>
 const offers = (p: Policy, w: World, now: number, id: Id): Offer[] =>
   ladder(p, w, now, id).map(served(p, w, now, id))
     .sort((a, b) => Number(!a.spot) - Number(!b.spot))
-const turns: Record<'true' | 'false', (p: Policy, w: World, now: number) => Id[]> = {true: () => [], false: (p, w, now) => rotate(p, w, now).map(r => r.staff)}
+const turns: Record<'true' | 'false', (p: Policy, w: World, now: number) => Id[]> = {true: () => [], false: (p, w, now) => rotate(p, w, now).map(r => r.staff).filter(id => !w.ents[id]?.staff?.area)} // bar staff take no floor turns
 const requests = (p: Policy, w: World, now: number): ReqRow[] => having(w, 'party', 'request').filter(e => e.request.status === 'open')
   .map(e => ({party: e.id, table: e.request.table, reason: e.request.reason, stage: e.request.stage, options: options(p, w, now, e.id)}))
 /** Every lease, soonest to settle first; `concern` = the party raised a table-change request meanwhile (the lease waits for the host). */

@@ -22,8 +22,10 @@ export const carveOf = (p: Policy, w: World, area: Id): Carve => {
   const pick = w.ents.service?.service?.carve[area]
   return (pick && ok.includes(pick) ? pick : ok[0]) ?? 'chunk'
 }
-/** Can this unit serve the area? Unset `staff.area` = any area. */
-export const fits = (area: Id) => (s: Staff) => !s.staff.area || s.staff.area === area
+/** The area's bar staff on duty. */
+export const keepers = (ss: Staff[], area: Id) => ss.filter(s => s.staff.active && s.staff.area === area)
+/** Can this unit serve the area? An area with bar staff on duty (among `ss`) is theirs alone; everywhere else only floor units (no `staff.area`) serve. */
+export const fits = (area: Id, ss: Staff[] = []) => (s: Staff) => (keepers(ss, area).length ? s.staff.area === area : !s.staff.area)
 const bySection = (ss: Staff[], t: Entity) => ss.filter(s => !!t.table?.section && s.staff.sections.includes(t.table.section))
 const byTop = (ss: Staff[], t: Entity) => ss.filter(s => s.id === t.assign?.staff)
 const byLevel = (ss: Staff[], t: Entity) => ss.filter(s => !!s.staff.area && s.staff.area === areaOf(t))

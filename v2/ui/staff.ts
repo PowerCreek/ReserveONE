@@ -13,7 +13,7 @@ import {btn, card, help} from './tone.ts'
 const change = (app: App, ev: Event) => run(app, {do: 'staff', id: arg(ev, 'id'), to: arg(ev, 'to') as 'duty' | 'skip'})
 const ranked = (app: App) => {
   const staff = having(app.store.state.world, 'staff')
-  return (ask(app, 'rotate') ?? staff.map(s => ({staff: s.id, score: 0}))).map(r => ({r, s: staff.find(x => x.id === r.staff)})).filter(x => x.s)
+  return (ask(app, 'rotate') ?? staff.map(s => ({staff: s.id, score: 0}))).map(r => ({r, s: staff.find(x => x.id === r.staff)})).filter(x => x.s && !x.s.staff.area) // bar staff keep their own area: no floor turn
 }
 /** The board's preference rows and bogged flag per unit (only read while the Staff tab shows). */
 interface Seen {rows: (id: Id) => PrefRow[]; bog: (id: Id) => boolean}

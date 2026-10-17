@@ -24,20 +24,15 @@ test('sectioned 10:00: main-floor parties are seated with the section holder, an
   assert.ok(tables.every(t => holds[t].by === 'chunk' && holds[t].staff !== null))
   assert.deepEqual([...new Set(tables.map(t => waiter(w, t)))].sort(), ['sv1', 'sv2', 'sv3', 'sv4'])
 })
-test('rotation 12:00: seatings spread across every unit; a bartender pair (weight 2) carries more raw covers than a floor server', () => {
-  const bar = having(base(), 'table', 'area').filter(t => t.area.id === 'bar' && t.table.shape !== 'stool' && t.table.status === 'available').map(t => t.id)
-  const up = having(base(), 'table', 'area').filter(t => t.area.id === 'roof' && t.table.shape !== 'stool').map(t => t.id)
-  const tables = up.flatMap((t, i) => [t, bar[i]]).filter((t): t is string => !!t) // the stools are first come, first served: the host seats the tables
-  const w = tables.reduce((x, t) => sit(x, at(12), t, 1), base()) // singles
+test('rotation 12:00: floor seatings spread across the floor servers; bar and roof seatings go to their own pairs only', () => {
+  const pick = (a: string) => having(base(), 'table', 'area').filter(t => t.area.id === a && t.table.shape !== 'stool' && t.table.status === 'available').map(t => t.id)
+  const [bar, up, main] = [pick('bar'), pick('roof'), pick('main').slice(0, 8)]
+  const w = [...main, ...bar, ...up].reduce((x, t) => sit(x, at(12), t, 1), base()) // singles; stools are first come, first served
   assert.equal(Engine.modeAt(defaultPolicy, w, at(12)), 'rotation')
-  const tally = Object.fromEntries(having(w, 'staff').map(s => [s.id, s.staff.tally / (s.staff.weight ?? 1)]))
-  assert.deepEqual(Object.keys(tally).sort(), ['bt_bar', 'bt_roof', 'sv1', 'sv2', 'sv3', 'sv4'])
-  assert.ok(Object.values(tally).every(n => n > 0), JSON.stringify(tally))
-  const per = Object.values(tally)
-  assert.ok(Math.max(...per) - Math.min(...per) <= 2, `covers per rotation slot stay level: ${JSON.stringify(tally)}`) // one party of 1 at most
-  const raw = (id: Id) => w.ents[id].staff!.tally
-  assert.ok(raw('bt_roof') > raw('sv1'), 'a pair counts as two rotation slots: more raw covers than a floor server')
-  assert.ok(tables.every(t => waiter(w, t) !== null))
+  assert.ok(bar.every(t => waiter(w, t) === 'bt_bar') && up.every(t => waiter(w, t) === 'bt_roof'), 'each pair keeps its own area')
+  assert.ok(main.every(t => ['sv1', 'sv2', 'sv3', 'sv4'].includes(waiter(w, t) ?? '')), 'floor tables to floor servers')
+  const tally = ['sv1', 'sv2', 'sv3', 'sv4'].map(id => w.ents[id].staff!.tally)
+  assert.ok(Math.max(...tally) - Math.min(...tally) <= 1, `floor covers stay level: ${tally}`)
 })
 /** A walk-in the sim spawned, seated at `table` by the player (not the sim host); then the clock runs. */
 const guest = (table: Id) => {

@@ -28,12 +28,14 @@ const choose = (cs: Cut[], room: number): Cut => {
   const inside = apart.filter(c => c.dev <= room)
   return inside.length ? [...inside].sort(better)[0]! : [...apart].sort(closest)[0]!
 }
-const split = (room: number, most: Most) => (ps: Pt[], k: number): Pt[][] => {
+/** The first cut goes across the wider spread; each cut below it turns 90° (quadrants, not strips). */
+const turn = (a: Axis): Axis => (a === 'x' ? 'y' : 'x')
+const split = (room: number, most: Most, prev?: Axis) => (ps: Pt[], k: number): Pt[][] => {
   const left = Math.floor(k / 2)
-  const a = widest(ps)
+  const a = prev ? turn(prev) : widest(ps)
   const sorted = [...ps].sort(along(a))
   const at = k < 2 || sorted.length < 2 ? sorted.length : choose(cuts(sorted, a, (sum(ps) * left) / k, [within(most, left), within(most, k - left)]), room).at
-  return k < 2 ? [sorted] : [...split(room, most)(sorted.slice(0, at), left), ...split(room, most)(sorted.slice(at), k - left)]
+  return k < 2 ? [sorted] : [...split(room, most, a)(sorted.slice(0, at), left), ...split(room, most, a)(sorted.slice(at), k - left)]
 }
 /** Ids of `ts` in k blocks (balanced covers, each a rectangle of nearby tables): left blocks before right, top before bottom. */
 export const partition = (p: Policy, ts: Entity[], k: number): Id[][] => {

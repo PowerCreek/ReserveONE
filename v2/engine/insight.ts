@@ -62,7 +62,7 @@ const drought = (c: Ctx): Insight[] => {
 // ---- imbalance: projected covers per server (tally, which already holds the covers seated now, + planned reservations within the horizon), per rotation weight
 const imbalance = (c: Ctx): Insight[] => {
   const add = ahead(c.p, c.w, c.now, c.now + cfg(c).horizonMin * MIN)
-  const load = c.servers.filter(s => s.active).map(s => ({s, n: (s.tally + (add[s.staff] ?? 0)) / s.weight})).sort((a, b) => b.n - a.n)
+  const load = c.servers.filter(s => s.active && !s.area).map(s => ({s, n: (s.tally + (add[s.staff] ?? 0)) / s.weight})).sort((a, b) => b.n - a.n)
   const [hi, lo] = [load[0], load.at(-1)]
   return hi && lo && hi.n - lo.n > cfg(c).imbalanceCovers ? [ins('imbalance', 'warn', `${hi.s.name} ${Math.round(hi.n)} vs ${lo.s.name} ${Math.round(lo.n)} covers by ${hm(c.now + cfg(c).horizonMin * MIN)}`, [], [hi.s.staff, lo.s.staff])] : []
 }

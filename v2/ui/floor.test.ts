@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {settle} from '../test/dom.ts'
 import {load} from './index.ts'
 import {ZOOM, floorSvg, tabList} from './floor.ts'
-import {alertsOf} from './draw.ts'
+import {alertsOf, seatsOf, table, zonesOf} from './draw.ts'
 import {defaultPolicy, having} from '../contracts/index.ts'
 import {venue} from '../venue.ts'
 import {click, rig} from './rig.ts'
@@ -130,8 +130,8 @@ test('grid lines sit at -(offset mod cell) and repeat every cell: a 7 px pan mov
 test('zones draw dashed with their labels on the shown floor: door points out, stairs show their flight', () => {
   const w = real()
   const main = floorSvg(w, [], 'rf1')
-  assert.deepEqual([...new Set([...main.matchAll(/data-zone="([^"]+)"/g)].map(m => m[1]))].sort(), ['aisle', 'area', 'door', 'lobby', 'stairs', 'walkway', 'wall'])
-  ;['Lobby', 'Front door', 'Stairs to the roof', 'Walkway', 'Booth aisle', 'Banquette aisle', 'Main dining', 'Grotto'].forEach(l => assert.match(main, new RegExp(`>${l}</text>`)))
+  assert.deepEqual([...new Set([...main.matchAll(/data-zone="([^"]+)"/g)].map(m => m[1]))].sort(), ['aisle', 'area', 'divider', 'door', 'lobby', 'room', 'stairs', 'stand', 'walkway', 'wall'])
+  ;['Lobby', 'Front door', 'Stairs to the roof', 'Walkway', 'Booth aisle', 'Banquette aisle', 'Main dining', 'Grotto', 'Host stand'].forEach(l => assert.match(main, new RegExp(`>${l}</text>`)))
   assert.match(main, />UP</)
   assert.match(main, /data-zone="door"[^]*?<polygon/) // the outward arrow
   assert.ok(main.indexOf('data-zone=') < main.indexOf('data-tid=')) // under the tables
@@ -172,4 +172,26 @@ test('camera: zoom buttons, fit, grid toggle and arrow keys move the 2D view', a
   await settle()
   assert.ok(!svg().querySelector('[data-grid]'))
   assert.equal(el.querySelector('[data-act="grid"]')!.getAttribute('aria-pressed'), 'false')
+})
+const four = (seating?: Entity['seating']): Entity => ({id: 'q', pos: {floor: 'g', x: 160, y: 160, w: 32, h: 48}, table: {label: 'Q', capacity: 4, min: 1, shape: 'rect', status: 'available', waiter: null, section: null}, ...(seating ? {seating} : {})})
+const rects = (svg: string) => [...svg.matchAll(/<rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)"/g)].map(m => m.slice(1).map(Number) as [number, number, number, number])
+test('seating: a 2x3-cell 4-top with chairs l:2 r:2 draws four 70% chairs on the grid lines, under the label; none without seating', () => {
+  const svg = table({nextParty: 1, ents: {}}, [])(four({chairs: {l: 2, r: 2}}) as never)
+  const cs = rects(svg.slice(svg.indexOf('<g data-seats'), svg.indexOf('</g>'))).map(([x, y, w, h]) => [x + w / 2, y + h / 2, w])
+  assert.deepEqual(cs.map(c => c.map(v => +v.toFixed(2))), [[152, 176, 11.2], [152, 192, 11.2], [200, 176, 11.2], [200, 192, 11.2]]) // bands x 144..160 and 192..208; y at 1 and 2 cells below top
+  assert.ok(svg.indexOf('data-seats') < svg.indexOf('>Q<') && svg.includes('pointer-events-none'))
+  assert.doesNotMatch(table({nextParty: 1, ents: {}}, [])(four() as never), /data-seats/)
+})
+test('seating: a corner bench b+l is one L of two bands that meet', () => {
+  const g = seatsOf(four({chairs: {}, bench: ['b', 'l']}) as never)
+  assert.deepEqual(g.benches, [{x: 144, y: 208, w: 48, h: 16}, {x: 144, y: 160, w: 16, h: 48}]) // the bottom band reaches out over the left band's foot
+})
+test('a divider zone is one solid line with no fill and no label; a prop is quiet too', () => {
+  const z = (id: string, kind: 'divider' | 'prop' | 'stand', x: number, y: number, w: number, h: number): Entity => ({id, zone: {label: id.toUpperCase(), kind}, pos: {floor: 'g', x, y, w, h}})
+  const svg = zonesOf({nextParty: 1, ents: {}}, [z('dv', 'divider', 100, 100, 0, 48), z('pr', 'prop', 10, 10, 16, 16), z('st', 'stand', 200, 200, 64, 32)] as never)
+  const dv = svg.slice(svg.indexOf('data-zone="divider"'), svg.indexOf('</g>', svg.indexOf('data-zone="divider"')))
+  assert.match(dv, /<line x1="100" y1="100" x2="100" y2="148"[^>]*stroke-width="2"/)
+  assert.doesNotMatch(dv, /<rect|<text|dasharray/)
+  assert.doesNotMatch(svg, />(DV|PR)<\/text>/)
+  assert.match(svg, />ST<\/text>/)
 })

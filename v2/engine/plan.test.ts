@@ -37,7 +37,7 @@ test('rotation defers the unit planned to take an upcoming reservation, so walk-
   assert.equal(Engine.rotate(P, w, N, 'pty1')[0].staff, 'a') // seating that party: its own plan does not count against a
   assert.equal(Engine.serverFor(P, w, N, ['t'], 'pty1').staff, 'a')
 })
-test('rotation covers every unit: a bartender pair (two slots) is planned like a server', () => {
+test('rotation covers the floor units: a bar pair takes no floor turn, however low its tally', () => {
   const w = room(rotation, staff('a', 4, 99), staff('pair', 0, 99, {area: 'bar', weight: 2}), tbl('x', 4))
-  assert.equal(Engine.serverFor(P, w, N, ['x']).staff, 'pair')
+  assert.equal(Engine.serverFor(P, w, N, ['x']).staff, 'a')
 })

@@ -1,6 +1,6 @@
 // SVG fragments for the floor (U2). Pure string builders over entities; classes come from tone.ts, data colours from entity data.
 import {defaultPolicy, having} from '../contracts/index.ts'
-import type {Components, Ent, Entity, Hold, Id, Insight, World} from '../contracts/index.ts'
+import type {Components, Ent, Entity, Hold, Id, Insight, Side, World} from '../contracts/index.ts'
 import {HRING} from './events.ts'
 import {DOOR, hull, levelOf, levels, lineNo, locate, rays} from './geo.ts'
 import type {Box} from './geo.ts'
@@ -40,8 +40,41 @@ export const serverOf = (w: World, hs: Hold[]) => (t: Ent<'table'>) => w.ents[hs
 /** The hover line every view shows for a table: label, capacity, status, server, features. */
 export const titleOf = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
   esc(`${t.table.label} cap ${t.table.capacity} ${t.table.status}, server ${serverOf(w, hs)(t)?.staff?.name ?? '-'}${tip(t)}`)
+// ---- seating marks: chairs and benches in the one-cell bands just outside a table's body (shared with the isometric view)
+type Seats = {chairs: Box[]; benches: Box[]}
+const BAND: Record<Side, (p: Box, c: number) => Box> = {
+  t: (p, c) => ({x: p.x, y: p.y - c, w: p.w, h: c}), b: (p, c) => ({x: p.x, y: p.y + p.h, w: p.w, h: c}),
+  l: (p, c) => ({x: p.x - c, y: p.y, w: c, h: p.h}), r: (p, c) => ({x: p.x + p.w, y: p.y, w: c, h: p.h}),
+}
+const SIDES = Object.keys(BAND) as Side[]
+const FLAT: Side[] = ['t', 'b']
+/** A bench side runs the whole side; where a perpendicular side is a bench too, it reaches out to meet it (an L). */
+const bench = (p: Box, c: number, on: Side[]) => (s: Side): Box => {
+  const [band, lo, hi] = [BAND[s](p, c), on.includes('l') ? c : 0, on.includes('r') ? c : 0]
+  return FLAT.includes(s) ? {...band, x: band.x - lo, w: band.w + lo + hi} : band
+}
+/** `n` chairs centred at L*(i+1)/(n+1) along the side, each ~70% of a cell, in the middle of the band. */
+const chairs = (p: Box, c: number) => ([s, n]: [Side, number]) => Array.from({length: n}, (_, i): Box => {
+  const [band, k, d] = [BAND[s](p, c), (i + 1) / (n + 1), c * 0.7]
+  const [cx, cy] = FLAT.includes(s) ? [p.x + p.w * k, band.y + c / 2] : [band.x + c / 2, p.y + p.h * k]
+  return {x: cx - d / 2, y: cy - d / 2, w: d, h: d}
+})
+export const seatsOf = (t: Ent<'pos'> & {seating?: Components['seating']}, cell = defaultPolicy.sim.grid): Seats => ({
+  chairs: Object.entries(t.seating?.chairs ?? {}).flatMap(([s, n]) => chairs(t.pos, cell)([s as Side, n ?? 0])),
+  benches: (t.seating?.bench ?? []).filter(s => SIDES.includes(s)).map(bench(t.pos, cell, t.seating?.bench ?? [])),
+})
+/** The fill family of a table's status, a shade deeper than its body (no stroke: marks stay quiet). */
+const TONE: Record<keyof typeof TABLE, string> = {
+  available: 'fill-emerald-300/70 dark:fill-emerald-700/70', leased: 'fill-sky-300/70 dark:fill-sky-700/70', occupied: 'fill-rose-300/70 dark:fill-rose-700/70',
+  lapsed: 'fill-amber-300/70 dark:fill-amber-700/70', blocked_private: 'fill-slate-300/70 dark:fill-slate-600/70',
+}
+export const seatTone = (st: keyof typeof TABLE) => TONE[st]
+const mark = (r: Box, rx: number, cls: string) => `<rect x="${f2(r.x)}" y="${f2(r.y)}" width="${f2(r.w)}" height="${f2(r.h)}" rx="${rx}" class="${cls}"/>`
+export const seats = (t: Ent<'table' | 'pos'> & {seating?: Components['seating']}) => ((s = seatsOf(t), c = seatTone(t.table.status)) =>
+  t.seating ? `<g data-seats class="pointer-events-none">${s.benches.map(b => mark(b, 3, c)).join('')}${s.chairs.map(r => mark(r, 3, c)).join('')}</g>` : '')()
+
 export const table = (w: World, hs: Hold[]) => (t: Ent<'table' | 'pos'> & {feat?: Components['feat']}) =>
-  `<g data-act="tcard" data-tid="${esc(t.id)}" class="cursor-pointer"><title>${titleOf(w, hs)(t)}</title><rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
+  `<g data-act="tcard" data-tid="${esc(t.id)}" class="cursor-pointer"><title>${titleOf(w, hs)(t)}</title>${seats(t)}<rect x="${t.pos.x}" y="${t.pos.y}" width="${t.pos.w}" height="${t.pos.h}" rx="${{booth: 4, stool: 20, rect: 12}[t.table.shape]}" stroke-width="2" ${t.table.shape === 'stool' ? 'stroke-dasharray="3 2" ' : ''}class="${TABLE[t.table.status]}"/>` +
     (t.pos.h < SMALL ? txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 3.5, 'fill-slate-800 text-[10px] font-semibold dark:fill-slate-100', t.table.label) :
       txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 - 2, 'fill-slate-800 text-[13px] font-semibold dark:fill-slate-100', t.table.label) +
       txt(t.pos.x + t.pos.w / 2, t.pos.y + t.pos.h / 2 + 12, 'fill-slate-600 text-[10px] dark:fill-slate-300', `${t.table.capacity}p`)) + '</g>'
@@ -95,10 +128,13 @@ const ZONE: Record<Components['zone']['kind'], string> = {
   aisle: 'fill-slate-200/30 stroke-slate-300 dark:fill-slate-800/30 dark:stroke-slate-600', lobby: 'fill-sky-100/50 stroke-sky-400 dark:fill-sky-950/40 dark:stroke-sky-600',
   door: 'fill-emerald-100 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400', stairs: 'fill-violet-100/60 stroke-violet-400 dark:fill-violet-950/40 dark:stroke-violet-500',
   wall: 'fill-slate-300/50 stroke-slate-400 dark:fill-slate-700/50 dark:stroke-slate-500',
+  stand: 'fill-indigo-100/80 stroke-indigo-500 dark:fill-indigo-950/70 dark:stroke-indigo-400', room: 'fill-teal-100/50 stroke-teal-400 dark:fill-teal-950/40 dark:stroke-teal-600',
+  prop: 'fill-slate-200/60 stroke-slate-400 dark:fill-slate-700/50 dark:stroke-slate-500', divider: 'stroke-slate-500 dark:stroke-slate-400',
 }
 const ZINK: Record<Components['zone']['kind'], string> = {
   area: 'fill-slate-500 dark:fill-slate-400', walkway: 'fill-slate-400 dark:fill-slate-500', aisle: 'fill-slate-400 dark:fill-slate-500', lobby: 'fill-sky-700 dark:fill-sky-300',
   door: 'fill-emerald-700 dark:fill-emerald-300', stairs: 'fill-violet-700 dark:fill-violet-300', wall: 'fill-slate-500 dark:fill-slate-400',
+  stand: 'fill-indigo-700 dark:fill-indigo-300', room: 'fill-teal-700 dark:fill-teal-300', prop: 'fill-slate-400 dark:fill-slate-500', divider: 'fill-slate-500 dark:fill-slate-400',
 }
 const HALO = 'stroke-slate-100 stroke-[3px] [paint-order:stroke] dark:stroke-slate-900'
 const LABEL = `text-[9px] font-semibold uppercase tracking-wider ${HALO}`
@@ -160,17 +196,21 @@ const EXTRA: Partial<Record<Components['zone']['kind'], (w: World, z: Z) => stri
   door: (w, z) => arrow(mid2(z.pos), outward(w, z), 26, DOOR_INK),
   stairs: flight,
 }
+/** A partition between tables: one solid thin line along the rect's long axis (the rect may have no width or no height); no fill, no name. */
+const divider = (z: Z) => ((p = z.pos, h = z.pos.w >= z.pos.h) =>
+  `<g data-zone="divider" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><line x1="${p.x}" y1="${p.y}" x2="${h ? p.x + p.w : p.x}" y2="${h ? p.y : p.y + p.h}" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke" class="${ZONE.divider}"/></g>`)()
 /** One zone's outline (dashed), its extra marks, its name (`l`; none = unnamed here). */
-const zoneOf = (w: World, z: Z, l?: Lab) =>
+const zoneOf = (w: World, z: Z, l?: Lab) => (z.zone.kind === 'divider' ? divider(z) :
   `<g data-zone="${esc(z.zone.kind)}" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><rect x="${z.pos.x}" y="${z.pos.y}" width="${z.pos.w}" height="${z.pos.h}" rx="3" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" class="${ZONE[z.zone.kind]}"/>` +
-  (EXTRA[z.zone.kind]?.(w, z) ?? '') + (l ? nameAt(z, l) : '') + '</g>'
+  (EXTRA[z.zone.kind]?.(w, z) ?? '') + (l ? nameAt(z, l) : '') + '</g>')
 /** Outlines draw areas first (largest), then the rest; names are placed fixed ones first (door, stairs, lobby), areas last, each against the tables
  * (with their section names above) and the names before it. `skip` = names a section already shows. */
-const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall', 'lobby', 'stairs', 'door']
+const ORDER: Components['zone']['kind'][] = ['area', 'walkway', 'aisle', 'wall', 'room', 'lobby', 'stand', 'prop', 'stairs', 'door', 'divider']
 /** What a table keeps clear of names: its section name above, its chips below (when it has any). */
 const pad = (t: FT): Box => ({x: t.pos.x - 8, y: t.pos.y - 18, w: t.pos.w + 16, h: t.pos.h + (onFloor(t).length ? 38 : 20)})
 const by = (ks: Components['zone']['kind'][]) => (a: Z, b: Z) => ks.indexOf(a.zone.kind) - ks.indexOf(b.zone.kind)
-const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
+const QUIET: Components['zone']['kind'][] = ['divider', 'prop'] // never named on the plan (the hover line says what they are)
+const labels = (w: World, zs: Z[], ts: FT[], skip: string[]) => [...zs].filter(z => !QUIET.includes(z.zone.kind)).sort(by([...ORDER].reverse())).reduce<{at: Map<Id, Lab>; blocks: Box[]}>((acc, z) =>
   ((l = skip.includes(z.zone.label.toLowerCase()) ? undefined : labOf(w, z, acc.blocks)) => (l ? {at: acc.at.set(z.id, l), blocks: [...acc.blocks, l.box]} : acc))(), {at: new Map(), blocks: ts.map(pad)}).at
 export const zonesOf = (w: World, zs: Z[], ts: FT[] = [], skip: string[] = []) => ((at = labels(w, zs, ts, skip)) => [...zs].sort(by(ORDER)).map(z => zoneOf(w, z, at.get(z.id))).join(''))()
 

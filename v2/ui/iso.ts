@@ -1,7 +1,7 @@
 // Isometric floor view (U2): every level of the same world stacked in one 3D frame. Pure string builders; classes are literals here or in tone.ts, data colours come from entity data.
 import {having} from '../contracts/index.ts'
 import type {Components, Ent, Hold, Id, World} from '../contracts/index.ts'
-import {ALERT, STAFF, serverOf, titleOf} from './draw.ts'
+import {ALERT, STAFF, seatTone, seatsOf, serverOf, titleOf} from './draw.ts'
 import type {Alerts} from './draw.ts'
 import {H, W, floorOf, hull, levelName, levelOf, levels} from './geo.ts'
 import type {Box} from './geo.ts'
@@ -47,7 +47,7 @@ const prism = (b: Box, z: number, h: number, cls: string, fill?: string) => {
 }
 const txt = (p: P3, cls: string, s: unknown, anchor = 'middle', dx = 0) => `<text x="${(sx(p) + dx).toFixed(1)}" y="${sy(p).toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
 // Palettes: each colours a table by one of its facts and names that fact for the legend.
-type T = Ent<'table' | 'pos'> & {area?: Components['area']; feat?: Components['feat']}
+type T = Ent<'table' | 'pos'> & {area?: Components['area']; feat?: Components['feat']; seating?: Components['seating']}
 export interface Ctx {w: World; holds: Hold[]; areas: Record<Id, {label: string}>; alerts?: Alerts; pick?: Id}
 interface Paint {key: string; name: string; cls: string; fill?: string; ink: string}
 const INK = 'fill-slate-900 dark:fill-slate-50', WHITE = 'fill-white'
@@ -79,10 +79,16 @@ const padded = (w: World, o: Iso, lv: number) => (f: Ent<'floor'>) =>
 /** Zones on the slab: dashed outlines on the level's plane, names at their (turned) top-left corner. */
 const ZLINE: Record<string, string> = {door: 'stroke-emerald-600 dark:stroke-emerald-400', stairs: 'stroke-violet-500 dark:stroke-violet-400', lobby: 'stroke-sky-500 dark:stroke-sky-400'}
 const ZNAME = 'fill-slate-500 stroke-slate-50 stroke-[3px] text-[9px] font-semibold uppercase tracking-wider [paint-order:stroke] dark:fill-slate-400 dark:stroke-slate-900'
+const ZFILL: Record<string, string> = {stand: 'fill-indigo-200/70 dark:fill-indigo-900/60', room: 'fill-teal-100/60 dark:fill-teal-900/40', prop: 'fill-slate-200/70 dark:fill-slate-700/60'}
+const ZEDGE: Record<string, string> = {stand: 'stroke-indigo-500 dark:stroke-indigo-400', room: 'stroke-teal-500 dark:stroke-teal-400', prop: 'stroke-slate-400 dark:stroke-slate-500'}
+const QUIET = ['divider', 'prop'] // never named on the plan
+/** A partition: one solid thin line along the rect's long axis. */
+const wall = (b: Box, z: number) => ((h = b.w >= b.h) => `<polyline points="${pt([b.x, b.y, z])} ${pt([h ? b.x + b.w : b.x, h ? b.y : b.y + b.h, z])}" fill="none" stroke-width="2" stroke-linecap="round" class="stroke-slate-500 dark:stroke-slate-400"/>`)()
 const zone = (o: Iso, lv: number) => (z: Ent<'zone' | 'pos'>) => {
   const [b, zz] = [turned(o.turn)(z.pos), zOf(o, lv) + 0.5]
-  return `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${corners(b, zz).map(pt).join(' ')}" fill="none" stroke-width="1" stroke-dasharray="5 4" class="${ZLINE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
-    txt([b.x + 4, b.y + 10, zz], ZNAME, z.zone.label, 'start') + '</g>'
+  if (z.zone.kind === 'divider') return `<g data-izone="divider"><title>${esc(z.zone.label)}</title>${wall(b, zz)}</g>`
+  return `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${corners(b, zz).map(pt).join(' ')}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
+    (QUIET.includes(z.zone.kind) ? '' : txt([b.x + 4, b.y + 10, zz], ZNAME, z.zone.label, 'start')) + '</g>'
 }
 const slab = (w: World, o: Iso, lv: number) => (f: Ent<'floor'>) =>
   ((p = padded(w, o, lv)(f)) => (p ? `<g data-slab="${esc(f.id)}">${prism(p, zOf(o, lv) - LIFT, LIFT, `${SLAB[lv % SLAB.length]} stroke-1`)}</g>` : ''))()
@@ -107,9 +113,11 @@ const name = (o: Iso, lv: number, all: (Box | undefined)[]) => (f: Ent<'floor'>,
 /** An insight (warn / crit) or the open card rings the block's top face. */
 const ringOf = (c: Ctx, t: T) => ((a = c.alerts?.[t.id]) => (a ? {cls: ALERT[a.level], tag: ` data-insight="${a.level}"`} : c.pick === t.id ? {cls: 'stroke-sky-500', tag: ' data-picked'} : undefined))()
 const ring3 = (c: Ctx, t: T, b: Box, z: number) => ((r = ringOf(c, t)) => (r ? `<polygon${r.tag} points="${corners(b, z).map(pt).join(' ')}" fill="none" stroke-width="3" class="${r.cls}"/>` : ''))()
+/** Chairs and benches as low pads on the floor under the block (quiet tone of the table's status), never catching the pointer. */
+const pads = (o: Iso, z: number, t: T) => ((s = seatsOf(t), c = seatTone(t.table.status)) => t.seating ? `<g data-iseats class="pointer-events-none">${[...s.benches.map(b => [b, 5] as const), ...s.chairs.map(r => [r, 3] as const)].map(([r, h]) => prism(turned(o.turn)(r), z, h, c)).join('')}</g>` : '')()
 const block = (c: Ctx, o: Iso, lv: number) => (t: T) => {
   const [b, paint, z] = [turned(o.turn)(t.pos), PAINT[o.pal](c)(t), zOf(o, lv)]
-  return `<g data-tid="${esc(t.id)}" data-act="tcard" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title>${prism(b, z, tall(t), `${paint.cls} stroke-1`, paint.fill)}${ring3(c, t, b, z + tall(t))}` +
+  return `<g data-tid="${esc(t.id)}" data-act="tcard" class="cursor-pointer"><title>${titleOf(c.w, c.holds)(t)}</title>${pads(o, z, t)}${prism(b, z, tall(t), `${paint.cls} stroke-1`, paint.fill)}${ring3(c, t, b, z + tall(t))}` +
     txt([b.x + b.w / 2, b.y + b.h / 2, z + tall(t) - 4], `${paint.ink} ${t.table.shape === 'stool' ? 'text-[8px]' : 'text-[12px]'} font-bold`, t.table.label) + '</g>'
 }
 const near = (o: Iso) => (t: T) => ((b = turned(o.turn)(t.pos)) => b.x + b.w / 2 + b.y + b.h / 2)()

@@ -79,3 +79,16 @@ test('zones outline each slab with their names; insight tables ring their top fa
   assert.match(svg, /data-tid="far" data-act="tcard"[^]*?data-insight="warn"[^>]*stroke-amber-500/)
   assert.doesNotMatch(isoSvg(ctx(), ISO), /data-insight/)
 })
+test('seating draws pads under the block (chairs and benches), pointer-less; dividers are a bare line', () => {
+  const w = world()
+  w.ents.far!.seating = {chairs: {l: 2}, bench: ['b']}
+  w.ents.dv = {id: 'dv', zone: {label: 'Screen', kind: 'divider'}, pos: {floor: 'g', x: 300, y: 300, w: 0, h: 48}}
+  const svg = isoSvg({...ctx(), w}, ISO)
+  const pads = svg.slice(svg.indexOf('data-iseats'), svg.indexOf('</g>', svg.indexOf('data-iseats')))
+  assert.equal(pads.match(/<polygon points="[^"]+" class="fill-emerald-300/g)!.length, 3 * 3 + 0 + 0 + 3 * 0 || 9) // 3 pads, each with a top and two shaded sides
+  assert.ok(svg.indexOf('data-iseats') < svg.indexOf('data-tid="far"') + 400 && svg.indexOf('data-iseats') > svg.indexOf('data-tid="far"'))
+  assert.match(svg, /pointer-events-none/)
+  assert.match(svg, /data-izone="divider"><title>Screen<\/title><polyline/)
+  assert.doesNotMatch(svg, />Screen<\/text>/)
+  assert.doesNotMatch(isoSvg(ctx(), ISO), /data-iseats/)
+})

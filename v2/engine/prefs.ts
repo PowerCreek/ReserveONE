@@ -25,14 +25,14 @@ export const matches = (on: PrefOn, ts: Entity[], size: number) => {
 /** A unit's preferences of one kind that cover these tables. */
 export const hits = (s: Entity | undefined, kind: Pref['kind'], ts: Entity[], size: number) => (s?.staff?.prefs ?? []).filter(x => x.kind === kind && matches(x.on, ts, size))
 
-// ---- bogged down: covers now (seated + leased) per weight, above the floor mean by policy.prefs.bogged
+// ---- bogged down: covers now (seated + leased) per weight, above the floor mean by policy.prefs.bogged (floor units only: bar staff keep to their own area)
 const wt = (s: Staff) => s.staff.weight ?? 1
 const seatedBy = (w: World) => having(w, 'slot').filter(s => s.slot.status === 'ACTIVE').map(s => [w.ents[s.slot.table]?.table?.waiter, w.ents[s.slot.party]?.party?.size ?? 0] as const)
 const leasedBy = (w: World) => having(w, 'party', 'lease').map(e => [w.ents[e.lease.tables[0] ?? '']?.table?.waiter, e.party.size] as const)
 const load = (w: World) => [...seatedBy(w), ...leasedBy(w)].reduce<Record<Id, number>>((m, [id, n]) => (id ? {...m, [id]: (m[id] ?? 0) + n} : m), {})
 /** Per active unit: is it bogged down right now? */
 export const bogged = (p: Policy, w: World, _now: number): Record<Id, boolean> => {
-  const [n, ss] = [load(w), having(w, 'staff').filter(s => s.staff.active)]
+  const [n, ss] = [load(w), having(w, 'staff').filter(s => s.staff.active && !s.staff.area)]
   const mean = ss.reduce((a, s) => a + (n[s.id] ?? 0), 0) / (ss.reduce((a, s) => a + wt(s), 0) || 1)
   return Object.fromEntries(ss.map(s => [s.id, (n[s.id] ?? 0) / wt(s) - mean >= p.prefs.bogged]))
 }

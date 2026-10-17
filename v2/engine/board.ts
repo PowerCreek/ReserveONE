@@ -125,10 +125,10 @@ interface Srv {rk: Id[]; ms: Mk[]; bog: Record<Id, boolean>}
 const server = (c: Ctx, v: Srv) => (s: Ent<'staff'>): ServerRow => {
   const mine = active(c).filter(x => c.w.ents[x.slot.table]?.table?.waiter === s.id)
   return {staff: s.id, name: s.staff.name, rank: v.rk.indexOf(s.id) + 1, tally: s.staff.tally, seated: covers(c, mine), tables: new Set(mine.map(x => x.slot.table)).size,
-    weight: s.staff.weight ?? 1, active: s.staff.active, sections: having(c.w, 'section').filter(x => s.staff.sections.includes(x.id)).map(section(c)), prefs: (s.staff.prefs ?? []).map(prefRow(v.ms, s.id)), bogged: !!v.bog[s.id]}
+    weight: s.staff.weight ?? 1, active: s.staff.active, sections: having(c.w, 'section').filter(x => s.staff.sections.includes(x.id)).map(section(c)), prefs: (s.staff.prefs ?? []).map(prefRow(v.ms, s.id)), bogged: !!v.bog[s.id], area: s.staff.area ?? null}
 }
 const servers = (c: Ctx): ServerRow[] => {
-  const rk = rotate(c.p, c.w, c.now).map(r => r.staff)
+  const rk = rotate(c.p, c.w, c.now).map(r => r.staff).filter(id => !c.w.ents[id]?.staff?.area) // bar staff take no floor turn: rank 0, listed last
   const pos = (id: Id) => (rk.includes(id) ? rk.indexOf(id) : rk.length)
   return having(c.w, 'staff').sort((a, b) => pos(a.id) - pos(b.id)).map(server(c, {rk, ms: marksOf(c), bog: bogged(c.p, c.w, c.now)}))
 }
