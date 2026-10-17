@@ -268,3 +268,14 @@ test('a drag-turn frame draws the same piece kinds as the resting frame, and the
   syncIso(svg!, c, o, [])
   assert.equal(svg!.innerHTML.length, ref!.innerHTML.length)
 })
+test('a poly zone stands up as one counter slab on its polygon (outline on the slab, tiles at counter height); a rect wall stays a box', () => {
+  const w = world()
+  const zn = (id: string, poly?: [number, number][]): Entity => ({id, zone: {label: id, kind: 'wall', ...(poly ? {poly} : {})}, pos: {floor: 'g', x: 200, y: 200, w: 96, h: 128}})
+  Object.assign(w.ents, {pz: zn('pz', [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]]), rz: {...zn('rz'), pos: {floor: 'g', x: 600, y: 200, w: 32, h: 32}}})
+  const svg = isoSvg({...ctx(), w}, ISO)
+  const base = svg.match(/<g data-izone="wall"><title>pz<\/title><polygon points="([^"]+)" fill="none"/)!
+  assert.equal(base[1]!.split(' ').length, 6) // the L outline: six corners
+  assert.equal(count(svg, /<title>pz<\/title>/g), 2) // outline + the slab's first tile
+  assert.equal(count(svg, /data-p="counter"/g), 24) // 2*6 + 6*2 cells, one tile each
+  assert.equal(count(svg, /data-p="wall"/g), 4) // the rect zone: 2x2 cell segments
+})

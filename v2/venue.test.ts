@@ -14,7 +14,7 @@ const labels = (ts: Entity[]) => ts.map(t => t.table!.label)
 
 test('every table carries an area tag with the expected counts', () => {
   assert.equal(tables.length, having(w, 'table').length)
-  assert.deepEqual(['main', 'grotto', 'patio', 'bar', 'roof'].map(a => inArea(a).length), [24, 6, 7, 19, 11])
+  assert.deepEqual(['main', 'grotto', 'patio', 'bar', 'roof'].map(a => inArea(a).length), [24, 6, 7, 19, 20])
   assert.deepEqual(labels(inArea('grotto')).sort(), ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'])
 })
 test('main is four quadrant blocks with balanced covers, never interleaved, held by the four floor servers', () => {
@@ -60,7 +60,7 @@ test('main floor capacities: booths 1-4 and 24 seat 6, the listed 2-tops seat 2,
   assert.deepEqual(main(twos).map(t => [t.capacity, t.shape]), twos.map(() => [2, 'rect']))
   assert.deepEqual(main(fours).map(t => [t.capacity, t.shape]), fours.map(() => [4, 'rect']))
   assert.deepEqual(fours, ['9', '10', '11', '12', '17', '18', '20', '22', '23'])
-  assert.equal(having(w, 'table').length, 67)
+  assert.equal(having(w, 'table').length, 76)
 })
 test('every level is laid out without overlaps (floors on one level share its frame); adjacency (adj) is the owner\'s runs, symmetric and on one floor', () => {
   const ts = having(w, 'table', 'pos', 'area')
@@ -73,15 +73,15 @@ test('every level is laid out without overlaps (floors on one level share its fr
   assert.deepEqual(['g1', 'g2', 'g4', 'b14', 'b15', 'b21', 'b20', 'b22', 'b13'].map(n => adj(`rf_${n}`)), [['rf_g2'], ['rf_g1', 'rf_g3'], ['rf_g5'], ['rf_b15'], ['rf_b14', 'rf_b16'], ['rf_b20'], ['rf_b21'], [], []])
   const R = (...ns: number[]) => ns.map(n => `rf_rt${n}`).sort()
   assert.deepEqual([4, 5, 6, 7, 8, 9, 10].map(n => adj(`rf_rt${n}`)), [R(5, 9), R(4, 6, 8), R(5, 7), R(6, 8), R(5, 7, 9), R(4, 8, 10), R(9)], 'roof: each snake row a run, rows joined across their aisle by column')
-  assert.deepEqual(['rt1', 'rt2', 'rt3', 'r_bar'].map(n => adj(`rf_${n}`)), [[], [], [], []])
+  assert.deepEqual(['rt1', 'rt2', 'rt3', 'r1', 'r7'].map(n => adj(`rf_${n}`)), [[], [], [], [], []])
 })
 test('labels are the owner\'s: T1-T24, G, B, P, R; floors are named and stacked on two levels', () => {
   const by = (a: string) => labels(inArea(a))
   assert.deepEqual(by('main'), Array.from({length: 24}, (_, i) => `T${i + 1}`))
   assert.ok(by('bar').every(l => /^B\d+$/.test(l)) && by('patio').every(l => /^P\d+$/.test(l)))
-  assert.deepEqual(by('roof'), [...Array.from({length: 10}, (_, i) => `RT${i + 1}`), 'Roof bar'])
+  assert.deepEqual(by('roof'), [...Array.from({length: 10}, (_, i) => `RT${i + 1}`), ...Array.from({length: 10}, (_, i) => `R${i + 1}`)])
   assert.deepEqual(having(w, 'floor').map(f => [f.id, f.floor.name, f.floor.level]), [['rf1', 'Main Dining Room', 0], ['rf2', 'Bar', 0], ['rf3', 'Patio', 0], ['rf4', 'Roof', 1]])
-  assert.deepEqual(['rt4', 'rt10', 'rt1', 'rt2', 'rt3', 'r_bar'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.feat!.tags.includes('hightop')]), [[4, false], [4, false], [4, true], [2, true], [6, true], [10, true]])
+  assert.deepEqual(['rt4', 'rt10', 'rt1', 'rt2', 'rt3', 'r1'].map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.feat!.tags.includes('hightop')]), [[4, false], [4, false], [4, true], [2, true], [6, true], [1, true]])
 })
 const p = (n: string) => w.ents[`rf_${n}`]!.pos!
 const at = (a: string) => having(w, 'table', 'area', 'pos').filter(t => t.area.id === a)
@@ -118,9 +118,10 @@ test('roof (owner): all RT; ids snake (RT4-RT6 back left, RT7-RT10 right) three 
   assert.ok(p('rt2').x - (p('rt1').x + p('rt1').w) >= 3 * G, 'RT1\'s right chairs, a cell or two, then RT2\'s')
   const rdoor0 = zone('Roof door')
   assert.ok(p('rt4').x + p('rt4').w === rdoor0.x && p('rt4').y === rdoor0.y + rdoor0.h, 'RT4\'s right chairs right under the roof door\'s bottom cell')
-  const bar = w.ents.rf_r_bar!
-  assert.deepEqual([bar.table!.capacity, bar.seating!.at!.length, bar.seating!.top!.length, bar.seating!.at!.filter(a => a[2] === 'r').length], [10, 10, 6, 6], 'one bar: an L top, 6 at the front, 4 under the foot')
-  assert.ok(p('r_bar').x - (p('rt3').x + p('rt3').w) >= 3 * G, 'RT3: seat band, an aisle, then the bar stools')
+  const rs = Array.from({length: 10}, (_, i) => `r${i + 1}`)
+  assert.deepEqual(rs.map(n => [w.ents[`rf_${n}`]!.table!.capacity, w.ents[`rf_${n}`]!.table!.shape]), rs.map(() => [1, 'stool']), 'ten single stools R1-R10')
+  assert.ok(rs.slice(0, 6).every((n, i) => p(n).x === p('r1').x && (i === 0 || p(n).y === p(rs[i - 1]!).y + G)) && rs.slice(6).every((n, i) => p(n).y === p('r7').y && (i === 0 || p(n).x === p(rs[5 + i]!).x + G)), 'R1-R6 down the front from the top, R7-R10 along the bottom edge left to right')
+  assert.ok(p('r1').x - (p('rt3').x + p('rt3').w) >= 3 * G - G, 'RT3: seat band, an aisle, then the bar stools')
   const [stairs, walkTop, wallR, rdoor] = ['Stairs down', 'Top walk', 'Wall', 'Roof door'].map(zone)
   assert.ok(at('roof').every(t => t.pos.x >= stairs!.x && t.pos.y >= stairs!.y), 'the stairs arrive top-left')
   assert.ok(holds(walkTop!, stairs!) && stairs!.y === walkTop!.y && stairs!.h === 2 * G, 'the stairs down are 2 cells tall at the top of the walk')
@@ -188,7 +189,7 @@ test('every table sits on whole grid cells: footprint and centre', () => {
 })
 test('zones mark each part, labelled as a host says them, and each area zone holds its tables on its floor', () => {
   assert.deepEqual([...new Set(zones.map(z => `${z.zone.label}:${z.zone.kind}`))].sort(), ['Banquette aisle:aisle', 'Bar counter:wall', 'Bar wall:wall', 'Bar:area', 'Booth aisle:aisle', 'Divider:divider', 'Exit (no re-entry):door', 'Front door:door', 'Grotto entrance:door', 'Grotto wall:wall', 'Grotto:area', 'Host stand:stand', "Ladies' room:room", 'Lobby:lobby', 'Main dining:area', "Men's room:room",
-    'POS (walkway):stand', 'POS:stand', 'Patio entrance:door', 'Patio:area', 'Restroom aisle:aisle', 'Restroom walk:walkway', 'Roof door:door', 'Roof:area', 'Stair wall:wall', 'Stairs down:stairs', 'Stairs to the roof:stairs', 'Top walk:walkway', 'Walkway:walkway', 'Wall:wall'])
+    'POS (walkway):stand', 'POS:stand', 'Patio entrance:door', 'Patio:area', 'Restroom aisle:aisle', 'Restroom walk:walkway', 'Roof bar counter:wall', 'Roof door:door', 'Roof:area', 'Stair wall:wall', 'Stairs down:stairs', 'Stairs to the roof:stairs', 'Top walk:walkway', 'Walkway:walkway', 'Wall:wall'])
   const area = {main: 'Main dining', grotto: 'Grotto', bar: 'Bar', patio: 'Patio', roof: 'Roof'}
   Object.entries(area).forEach(([a, label]) => assert.ok(at(a).every(t => holds(zone(label), t.pos) && zones.find(z => z.zone.label === label)!.pos.floor === t.pos.floor), label))
   assert.equal(w.ents[zones.find(z => z.zone.label === 'Stairs down')!.pos.floor]!.floor!.level, 1)
@@ -200,7 +201,7 @@ test('merge options come from those runs: any connected set up to policy.merge.m
   const ids = merges(defaultPolicy, w).map(s => s.id)
   assert.ok(['m:rf_17+rf_18+rf_19', 'm:rf_18+rf_19+rf_20+rf_21', 'm:rf_10+rf_11+rf_12', 'm:rf_g1+rf_g2+rf_g3', 'm:rf_b14+rf_b15+rf_b16', 'm:rf_b20+rf_b21'].every(i => ids.includes(i)))
   assert.ok(['m:rf_rt6+rf_rt7', 'm:rf_rt4+rf_rt5+rf_rt6', 'm:rf_rt10+rf_rt7+rf_rt8+rf_rt9', 'm:rf_rt4+rf_rt9'].every(i => ids.includes(i)))
-  assert.ok(!ids.some(i => /rf_(1|2|3|4|5|6|7|8|24|b22|b1|b13|p1|rt1|rt2|rt3|r_bar)(\+|$)/.test(i)), 'booths, quads, stools, patio, high tables and bar do not merge')
+  assert.ok(!ids.some(i => /rf_(1|2|3|4|5|6|7|8|24|b22|b1|b13|p1|rt1|rt2|rt3|r\d+)(\+|$)/.test(i)), 'booths, quads, stools, patio, high tables and bar do not merge')
   assert.ok(!ids.some(i => i.split('+').length > defaultPolicy.merge.max))
   assert.ok(!ids.includes('m:rf_17+rf_18+rf_19+rf_20+rf_21'))
 })
@@ -212,8 +213,8 @@ test('the centre lane (9-12) is pushed together only when no other merge is read
   assert.deepEqual(ask(['rf_9', 'rf_10', 'rf_11', 'rf_12', 'rf_18', 'rf_19', 'rf_20'], 8).tables.sort(), ['rf_18', 'rf_19', 'rf_20']) // so does the 17-23 run
 })
 test('bar stools are first come, first served: the host never offers or seats them, even when nothing else is free', () => {
-  const stools = ['rf_b1', 'rf_b7', 'rf_b12', 'rf_r_bar']
-  assert.deepEqual(stools.map(id => w.ents[id]!.table!.shape), Array(4).fill('stool'))
+  const stools = ['rf_b1', 'rf_b7', 'rf_b12', 'rf_r1', 'rf_r7']
+  assert.deepEqual(stools.map(id => w.ents[id]!.table!.shape), Array(5).fill('stool'))
   const alone = only(stools)
   const [it] = Engine.fit(defaultPolicy, alone, 0, [1])
   assert.deepEqual([it.ready, it.tables.some(t => stools.includes(t))], [false, false]) // every other table is busy: the party waits rather than take a stool

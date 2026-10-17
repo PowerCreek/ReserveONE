@@ -308,9 +308,13 @@ const doorOf = (w: World, z: Z, l?: Lab) => ((g = gapOn(w, z)) => (g
 const SPECIAL: Partial<Record<Components['zone']['kind'], (w: World, z: Z, l?: Lab) => string | undefined>> = {
   divider: (_w, z) => divider(z), wall: (_w, z) => (thin(z) ? wallLine(z) : undefined), door: doorOf,
 }
+/** A zone with an outline (`zone.poly`, cells from the rect's top-left) is drawn as that one polygon; any other as its rect. */
+const polyOf = (z: Z) => (z.zone.poly ?? []).map(([x, y]): Pt => [z.pos.x + x * cell0, z.pos.y + y * cell0])
+const dash = (z: Z, shape: string) => `<${shape} stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" class="${ZONE[z.zone.kind]}"/>`
+const outline2 = (z: Z) => (z.zone.poly ? dash(z, `polygon data-poly points="${pts(polyOf(z))}"`) : dash(z, `rect x="${z.pos.x}" y="${z.pos.y}" width="${z.pos.w}" height="${z.pos.h}" rx="3"`))
 /** One zone's outline (dashed), its extra marks, its name (`l`; none = unnamed here). */
 const zoneOf = (w: World, z: Z, l?: Lab) => (SPECIAL[z.zone.kind]?.(w, z, l) ??
-  `<g data-zone="${esc(z.zone.kind)}" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title><rect x="${z.pos.x}" y="${z.pos.y}" width="${z.pos.w}" height="${z.pos.h}" rx="3" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" class="${ZONE[z.zone.kind]}"/>` +
+  `<g data-zone="${esc(z.zone.kind)}" data-zid="${esc(z.id)}"><title>${esc(z.zone.label)}</title>${outline2(z)}` +
   (EXTRA[z.zone.kind]?.(w, z) ?? '') + (l ? nameAt(z, l) : '') + '</g>')
 /** Outlines draw areas first (largest), then the rest; names are placed fixed ones first (door, stairs, lobby), areas last, each against the tables
  * (with their section names above) and the names before it. `skip` = names a section already shows. */

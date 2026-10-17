@@ -14,8 +14,6 @@ const KIND = {
   bqTop: [3, 2, 'rect', {chairs: {b: 2}, bench: ['t']}], two: [2, 2, 'rect', {chairs: {b: 1}}], desk: [3, 2, 'booth'],
   stool: [1, 1, 'stool'], round6: [3, 3, 'round', {chairs: {}, ring: 6}],
   hi4: [2, 3, 'rect', {chairs: {l: 2, r: 2}, high: true}], hi2: [2, 2, 'rect', {chairs: {l: 1, r: 1}, high: true}], hi6: [2, 5, 'rect', {chairs: {l: 3, r: 3}, high: true}],
-  /** The roof bar: one L counter (front arm down, foot arm right), 6 high stools facing it from the left, 4 under the foot. */
-  barL: [6, 8, 'stool', {chairs: {}, high: true, top: [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]], at: [...[1, 2, 3, 4, 5, 6].map((y): [number, number, Side] => [-1, y, 'r']), ...[0, 1, 2, 3].map((x): [number, number, Side] => [x, 8, 't'])]}],
 } as const satisfies Record<string, readonly [number, number, Shape, Seating?]>
 type Kind = keyof typeof KIND
 /** One table: [id, label, capacity, kind, left, top] (cells, in its floor's frame). */
@@ -36,7 +34,7 @@ const main: Row[] = [
 /** Bar (right of the walkway, same frame, same height): B20 B21 B22 on its top wall, stools B1-B3 over the counter's top arm, B4-B8 down its walkway arm, B9-B12 under its bottom arm, B13 (a 2-top, its one stowed chair tucked under it) next to B12; the stools, counter and B13 sit two cells in from the walkway; then B16 B15 B14 on the bottom wall two cells apart. */
 const stools = (ns: number[], at: (i: number) => Pt) => ns.map((n, i) => r(`b${n}`, `B${n}`, 1, 'stool', ...at(i)))
 const bar: Row[] = [
-  r('b20', 'B20', 3, 'smallTL', BAR_X + 1, BAR_Y), r('b21', 'B21', 4, 'bqTop', BAR_X + 4, BAR_Y), r('b22', 'B22', 3, 'desk', BAR_X + 8, BAR_Y),
+  r('b20', 'B20', 3, 'smallTL', BAR_X + 1, BAR_Y), r('b21', 'B21', 4, 'bqTop', BAR_X + 4, BAR_Y), r('b22', 'B22', 4, 'hi4', BAR_X + 8, BAR_Y),
   ...stools([3, 2, 1], i => [CX + 1 + i, BAR_Y + 4]), ...stools([4, 5, 6, 7, 8], i => [CX, BAR_Y + 5 + i]), ...stools([9, 10, 11, 12], i => [CX + 1 + i, BAR_Y + 10]),
   r('b13', 'B13', 2, 'two', BAR_X + 11, 16),
   r('b16', 'B16', 3, 'smallBL', BAR_X + 1, BQ_Y), r('b15', 'B15', 4, 'bq4', BAR_X + 5, BQ_Y), r('b14', 'B14', 3, 'smallBR', BAR_X + 10, BQ_Y),
@@ -45,11 +43,15 @@ const patio: Row[] = [
   ...[1, 2, 3].map((n, i) => r(`p${n}`, `P${n}`, 2, 'quad', [6, 12, 18][i]!, 1)), ...[4, 5, 6, 7].map((n, i) => r(`p${n}`, `P${n}`, 6, 'round6', [20, 14, 8, 2][i]!, 5)),
 ]
 /** Roof (level 1; its frame's origin sits over the ground stairs). Top band: the top walk, its upper half the stairs down (half-turn, over the ground flight), a wall beside RT1 with the door under it facing right toward the bar; RT1 (4) and RT2 (2) high-tops. Then the snake (RT4's right chairs right under the door's bottom cell): RT4-RT6 right to left, three cells, RT7-RT10 left to right; RT3 (6-top high-top) an aisle off the L bar (10 high stools). */
+/** The roof bar's ten high stools, numbered from the top down the left side, then along the bottom edge left to right (R1-R6, R7-R10); the L counter they face is a zone. */
+const RBAR_AT: Pt = [24, 6]
+const RBAR: [n: number, x: number, y: number][] = [...[1, 2, 3, 4, 5, 6].map((y, i): [number, number, number] => [i + 1, RBAR_AT[0] - 1, RBAR_AT[1] + y]), ...[0, 1, 2, 3].map((x, i): [number, number, number] => [7 + i, RBAR_AT[0] + x, RBAR_AT[1] + 8])]
+const RBAR_TOP: [number, number][] = [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]]
 const roof: Row[] = [
   r('rt1', 'RT1', 4, 'hi4', 15, 0), r('rt2', 'RT2', 2, 'hi2', 21, 0), r('rt3', 'RT3', 6, 'hi6', 19, 8),
   r('rt4', 'RT4', 4, 'four', 11, 8), r('rt5', 'RT5', 4, 'four', 6, 8), r('rt6', 'RT6', 4, 'four', 1, 8),
   ...[7, 8, 9, 10].map((n, i) => r(`rt${n}`, `RT${n}`, 4, 'four', 1 + 5 * i, 14)),
-  r('r_bar', 'Roof bar', 10, 'barL', 24, 6),
+  ...RBAR.map(([n, x, y]) => r(`r${n}`, `R${n}`, 1, 'stool', x, y)),
 ]
 /** Where each floor's rows land: storey and origin (cells, in the level frame). Main and bar are one drawing; the patio sits below the bottom wall with P1 on T17's line and the door's approach empty; the roof's origin is the ground stairs' top-left. */
 const O: Pt = [1, 3]
@@ -85,7 +87,7 @@ const benched = (k: Kind) => [...(seatOf(k)?.bench?.length ? ['banquette'] : [])
 const BLOCKED = ['rf_b22']
 /** Tables by the entrance (lower-left, on T17's wall): the draft reaches them. */
 const NEAR_DOOR = ['rf_17']
-const byTable: Record<string, string[]> = {rf_1: ['window'], rf_2: ['window'], rf_9: ['accessible'], rf_10: ['accessible'], rf_24: ['roomy'], rf_rt3: ['roomy', 'hightop'], rf_rt1: ['hightop'], rf_rt2: ['hightop'], rf_r_bar: ['bar', 'hightop'], rf_b22: ['hightop']}
+const byTable: Record<string, string[]> = {rf_1: ['window'], rf_2: ['window'], rf_9: ['accessible'], rf_10: ['accessible'], rf_24: ['roomy'], rf_rt3: ['roomy', 'hightop'], rf_rt1: ['hightop'], rf_rt2: ['hightop'], ...Object.fromEntries(RBAR.map(([n]) => [`rf_r${n}`, ['bar', 'hightop']])), rf_b22: ['hightop']}
 const tags = (fid: string, [id, , , k]: Row) => [...new Set([...byShape[KIND[k][2]], ...(byFloor[fid] ?? []), ...(byTable[id] ?? []), ...benched(k), ...(NEAR_DOOR.includes(id) ? ['door'] : [])])]
 /** Tables that push together (owner): each run joins neighbours in order, `across` joins tables facing over an aisle (roof rows). Any connected set of free tables is a merge option (engine.merges). */
 const ids = (...xs: string[]) => xs.map(x => `rf_${x}`)
@@ -100,7 +102,7 @@ const NEIGHBOURS = EDGES.flatMap(([a, b]) => [[a, b], [b, a]] as const).reduce<R
 const CENTRE = ids('9', '10', '11', '12')
 const adjoin = (e: Entity): Entity => (NEIGHBOURS[e.id] ? {...e, adj: {with: NEIGHBOURS[e.id]!, ...(CENTRE.includes(e.id) && {last: true})}} : e)
 /** Demarcations a host names (cells; `at` = the frame the rect is drawn in, default the ground origin; w or h 0 = a line on cell edges). Owner: the front door on the bottom wall lower-left, the lobby inside it, the patio entrance on the lobby's bottom wall, a POS between the lobby and T17 (T17's height), the host stand above the lobby against the stair wall (in line with the T5-T16 band); the half-turn stairs (2-cell flights) above the stair wall (a line), the lower flight flush on the booth aisle so you walk straight on; the restroom aisle (3 cells) up the grotto's left wall to the men's room, the restroom walk (3 cells) turning left to the ladies' room (a 3-cell gap between); the grotto's 2-cell entrance on the booth aisle between its two lanes; a POS between T24 and the walkway (T24's top; T24's right edge on T14's); the walkway runs down to the exit (no re-entry) on the bottom wall by B16's wall. */
-type ZoneRow = [id: string, floor: string, label: string, kind: Components['zone']['kind'], r: Rect, at?: Pt]
+type ZoneRow = [id: string, floor: string, label: string, kind: Components['zone']['kind'], r: Rect, at?: Pt, poly?: [number, number][]]
 const LOBBY: Rect = [0, 18, 14, 5], DOOR: Rect = [1, BOTTOM, 2, 1], PATIO_DOOR: Rect = [10, BOTTOM, 3, 1], HOST: Rect = [0, 14, 9, 4], STAIR_WALL: Rect = [0, 14, 9, 0]
 const BOOTH_AISLE: Rect = [9, 12, WALK_X - 9, 2], BANQUETTE_AISLE: Rect = [14, 18, WALK_X - 14, 1], WALKWAY: Rect = [WALK_X, 0, 3, BOTTOM]
 const RR_AISLE: Rect = [9, 10, 3, 2], RR_WALK: Rect = [0, 7, 12, 3], MENS: Rect = [9, 0, 3, 7], LADIES: Rect = [0, 0, 6, 7]
@@ -122,7 +124,7 @@ const ZONES: ZoneRow[] = [
   ...DIVIDERS.map((d, i): ZoneRow => [`z_div${i + 1}`, 'rf1', 'Divider', 'divider', d]),
   ['z_counter', 'rf2', 'Bar counter', 'wall', COUNTER], ...BAR_WALLS.map((r, i): ZoneRow => [`z_bar_wall${i + 1}`, 'rf2', 'Bar wall', 'wall', r, O]),
   ['z_roof_walk', 'rf4', 'Top walk', 'walkway', ROOF_WALK, ROOF_AT], ['z_roof_stairs', 'rf4', 'Stairs down', 'stairs', ROOF_STAIRS, ROOF_AT],
-  ['z_roof_wall', 'rf4', 'Wall', 'wall', ROOF_WALL, ROOF_AT], ['z_roof_door', 'rf4', 'Roof door', 'door', ROOF_DOOR, ROOF_AT],
+  ['z_roof_bar', 'rf4', 'Roof bar counter', 'wall', [RBAR_AT[0], RBAR_AT[1], 6, 8], ROOF_AT, RBAR_TOP], ['z_roof_wall', 'rf4', 'Wall', 'wall', ROOF_WALL, ROOF_AT], ['z_roof_door', 'rf4', 'Roof door', 'door', ROOF_DOOR, ROOF_AT],
 ]
 /** Area zones: the hull of the area's tables with their seat bands, one cell out; the grotto is its room (its opening flush on the booth aisle). */
 const GROTTO: Rect = [12, 0, 14, 12]
@@ -148,5 +150,5 @@ export const venue = (_floor?: [number, number], g = G): Entity[] => [
       table: {label: row[1], capacity: row[2], min: 1, shape: KIND[row[3]][2], status: BLOCKED.includes(row[0]) ? 'blocked_private' : 'available', waiter: null, section: null},
     })),
   ]),
-  ...[...areaZones(), ...ZONES].map(([id, floor, label, kind, r, at]): Entity => ({id, zone: {label, kind}, pos: {floor, ...px(g, moved(at ?? O)(r))}})),
+  ...[...areaZones(), ...ZONES].map(([id, floor, label, kind, r, at, poly]): Entity => ({id, zone: {label, kind, ...(poly ? {poly} : {})}, pos: {floor, ...px(g, moved(at ?? O)(r))}})),
 ]

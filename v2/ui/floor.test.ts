@@ -338,3 +338,14 @@ test('a pan shifts the vertical rays by the same offset as the horizontal ones, 
   const xs = (v: Box) => [...gridLines(v).matchAll(/x1="([^"]+)" y1="[^"]+" x2="\1"/g)].map(m => +m[1]!)
   assert.ok(xs(b)[0]! >= b.x - G && xs(b).at(-1)! <= b.x + b.w && b.x + b.w - xs(b).at(-1)! <= G) // verticals cover the widened box
 })
+test('a zone with poly is one polygon on the poly points (wall fill), a rect zone stays a rect', () => {
+  const L: [number, number][] = [[0, 0], [2, 0], [2, 6], [6, 6], [6, 8], [0, 8]]
+  const z = (id: string, poly?: [number, number][]): Entity => ({id, zone: {label: id.toUpperCase(), kind: 'wall', ...(poly ? {poly} : {})}, pos: {floor: 'g', x: 300, y: 100, w: 96, h: 128}})
+  const [a, b] = [z('pz', L), z('rz')]
+  const p = zonesOf(world(a), [a] as never), r = zonesOf(world(b), [b] as never)
+  assert.equal(p.match(/<polygon/g)!.length, 1)
+  assert.match(p, /<polygon data-poly points="300,100 332,100 332,196 396,196 396,228 300,228"[^>]*fill-slate-300\/50/)
+  assert.doesNotMatch(p, /<rect/)
+  assert.match(r, /<rect x="300" y="100" width="96" height="128" rx="3"/)
+  assert.doesNotMatch(r, /<polygon/)
+})

@@ -77,6 +77,8 @@ const reachTo = (bs: Box[]) => (a: Box): Box => {
   return {...a, w: right.length ? Math.min(...right) - a.x : a.w, h: down.length ? Math.min(...down) - a.y : a.h}
 }
 const flat = (t: Turn, b: Box, z = 0) => rect(b).map(p => proj(t)([p[0], p[1], z]))
+/** A zone's outline in px: its `poly` (cells from the rect's top-left) or its rect. */
+const outlineOf = (z: Ent<'zone' | 'pos'>): V2[] => z.zone.poly?.map(([x, y]): V2 => [z.pos.x + x * G, z.pos.y + y * G]) ?? rect(z.pos)
 const slab = (t: Turn, lv: number) => ([f, b]: [Ent<'floor'>, Box]) =>
   `<g data-slab="${esc(f.id)}">${piece(t)({at: mid(b), solids: [{foot: rect(b), z: -LIFT, h: LIFT, cls: `${SLAB[lv % SLAB.length]} stroke-1`}]})}</g>`
 /** The level's grid: a line every cell, every 4th a shade stronger, clipped to its own slabs. */
@@ -94,8 +96,8 @@ const QUIET = ['divider', 'prop'] // never named on the plan
 const STANDING = ['wall', 'divider']
 const txt = (p: V2, cls: string, s: unknown, anchor = 'middle') => `<text x="${p[0].toFixed(1)}" y="${p[1].toFixed(1)}" text-anchor="${anchor}" class="${cls}">${esc(s)}</text>`
 const zone = (t: Turn) => (z: Ent<'zone' | 'pos'>) =>
-  `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${pts(flat(t, z.pos, 0.5))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
-  (QUIET.includes(z.zone.kind) ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
+  `<g data-izone="${esc(z.zone.kind)}"><title>${esc(z.zone.label)}</title><polygon points="${pts(outlineOf(z).map(p => proj(t)([p[0], p[1], 0.5])))}" fill="none" stroke-width="1" stroke-dasharray="${ZFILL[z.zone.kind] ? '0' : '5 4'}" class="${ZFILL[z.zone.kind] ?? ''} ${ZLINE[z.zone.kind] ?? ZEDGE[z.zone.kind] ?? 'stroke-slate-400 dark:stroke-slate-500'}"/>` +
+  (QUIET.includes(z.zone.kind) || z.zone.poly ? '' : txt(proj(t)([z.pos.x + 4, z.pos.y + 10, 0.5]), ZNAME, z.zone.label, 'start')) + '</g>'
 /** Standing zones: a wall box (counter height), a line wall at wall height, a divider at shoulder height. */
 const WALL = 'fill-stone-300 stroke-stone-500 stroke-[0.5px] dark:fill-stone-600 dark:stroke-stone-400'
 /** A fragment: one piece of furniture, its painter box and the markup around it (`open` / `close`); `key` names it within its level. Turned at draw time (`fhtml`, or moved in place by layersiso). */
@@ -103,11 +105,13 @@ export type Frag = {key: string; at: V2; box: Box3; open: string; close: string;
 const frag = (key: string, p: Piece, open: string): Frag => ({key, at: p.at, box: extent(p), open, close: '</g>', p})
 export const fhtml = (f: Frag, sh: Shape[]) => f.open + wrapKind(f.p.kind, sh.map(html).join('')) + f.close
 export const drawn = (tu: Turn) => (f: Frag) => shapes(tu)(f.p)
+/** A counter zone (`poly`): its outline extruded to counter height, cut into cell tiles like the ground bar. */
+const slab3 = (z: Ent<'zone' | 'pos'>): Piece[] => counter(outlineOf(z), G, WALL)
 const standing = (z: Ent<'zone' | 'pos'>): Frag[] => ((h = z.zone.kind === 'divider' ? Z.divider : z.pos.w && z.pos.h ? Z.bar : Z.wall) =>
-  wall(z.pos, h, WALL, G).map((p, i) => frag(`${z.id}/${i}`, p, `<g data-izone="${esc(z.zone.kind)}">${i ? '' : `<title>${esc(z.zone.label)}</title>`}`)))()
+  (z.zone.poly ? slab3(z) : wall(z.pos, h, WALL, G)).map((p, i) => frag(`${z.id}/${i}`, p, `<g data-izone="${esc(z.zone.kind)}">${i ? '' : `<title>${esc(z.zone.label)}</title>`}`)))()
 /** A wall's pieces depend on its zone only: kept between frames. */
 const walls = new Map<string, {sig: string; fr: Frag[]}>()
-const wallsOf = (z: Ent<'zone' | 'pos'>): Frag[] => ((sig = `${JSON.stringify(z.pos)}|${z.zone.kind}|${z.zone.label}`, hit = walls.get(z.id)) =>
+const wallsOf = (z: Ent<'zone' | 'pos'>): Frag[] => ((sig = `${JSON.stringify(z.pos)}|${JSON.stringify(z.zone.poly ?? 0)}|${z.zone.kind}|${z.zone.label}`, hit = walls.get(z.id)) =>
   hit?.sig === sig ? hit.fr : ((fr = standing(z)) => (walls.set(z.id, {sig, fr}), fr))())()
 // ---- tables as furniture; every piece is its own fragment so the painter can sort it among its neighbours (a table's pieces repeat its data-tid, marked data-frag)
 type Side = 't' | 'r' | 'b' | 'l'
@@ -209,7 +213,7 @@ export const hitsOf = (c: Ctx, tu: Turn, tabs: T[]) => tabs.map(hitOf(c, tu)).jo
 export const footprint = (tu: Turn, t: T) => pts(flat(tu, t.pos))
 /** What the level draws besides furniture, hits and movers: slabs, zone outlines and grid, table rings and names, floor names. */
 export const statics = (c: Ctx, o: Iso, tu: Turn, lv: number, tabs: T[], fs: [Ent<'floor'>, Box][]) => {
-  const zs = zonesAt(c.w, lv).filter(z => !STANDING.includes(z.zone.kind))
+  const zs = zonesAt(c.w, lv).filter(z => !STANDING.includes(z.zone.kind) || z.zone.poly)
   return {base: fs.map(slab(tu, lv)).join('') + zs.map(zone(tu)).join('') + gridOf(tu, lv, fs.map(x => x[1])), over: tabs.map(overOf(c, o, tu)).join(''), names: fs.map(name(tu)).join('')}
 }
 /** The level's fragments in draw-input order: tables far to near, then standing zones. */
@@ -268,7 +272,7 @@ export const isoControls = (c: Ctx, o: Iso) =>
 const staffIds = (w: World) => having(w, 'staff').map(x => x.id).join(',')
 /** Layout: everything the static layers draw (floors, table bodies and seating, zones). */
 export const layoutKey = (w: World) => [having(w, 'floor').map(f => `${f.id}:${f.floor.level ?? 0}:${f.floor.name}`), (having(w, 'table', 'pos') as T[]).map(t => `${t.id}${t.pos.floor}:${t.pos.x},${t.pos.y},${t.pos.w},${t.pos.h}:${t.table.shape}:${t.table.label}:${JSON.stringify(t.seating ?? 0)}:${t.area?.id ?? ''}:${t.feat?.tags.join('+') ?? ''}`),
-  having(w, 'zone', 'pos').map(z => `${z.id}${z.pos.floor}:${z.pos.x},${z.pos.y},${z.pos.w},${z.pos.h}:${z.zone.kind}:${z.zone.label}`)].join('#')
+  having(w, 'zone', 'pos').map(z => `${z.id}${z.pos.floor}:${z.pos.x},${z.pos.y},${z.pos.w},${z.pos.h}:${z.zone.kind}:${z.zone.label}:${JSON.stringify(z.zone.poly ?? 0)}`)].join('#')
 /** What a table's state pieces show (status, seats taken, server, section, outline, palette); the context part is shared by all tables. */
 export const stateKey = (c: Ctx, o: Iso) => ((ex = `${o.pal}|${c.pick ?? ''}|${staffIds(c.w)}`) => (t: T) =>
   `${ex}|${t.table.status}|${t.table.capacity}|${seatedAt(c.w, t.id)}|${slotAt(c.w, t.id) ? 1 : 0}|${c.w.ents[t.table.section ?? '']?.section?.color ?? ''}|${c.alerts?.[t.id]?.level ?? ''}|${titleOf(c.w, c.holds)(t)}|${c.areas[t.area?.id ?? 'main']?.label ?? ''}`)()
